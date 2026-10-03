@@ -3,9 +3,9 @@ namespace GodColony.Simulation.Colonies;
 /// <summary>
 /// Les bâtiments de la colonie : des huttes pour dormir, puis les ateliers de la chaîne du fer.
 /// La charbonnière brûle du bois en charbon de bois, le bas fourneau tire du fer du minerai,
-/// la forge fait des outils de ce fer.
+/// la forge fait des outils de ce fer. Le moulin à eau moud le grain en farine, le four à pain en fait du pain.
 /// </summary>
-public enum BuildingType { Hut, Kiln, Bloomery, Forge, Dam }
+public enum BuildingType { Hut, Kiln, Bloomery, Forge, Dam, Mill, Oven }
 
 /// <summary>
 /// Un bâtiment de la colonie, du chantier à l'achèvement. Tous font 2 × 2 cases ; ils coûtent du bois
@@ -31,7 +31,7 @@ public sealed class Building
 
     public bool IsHut => Type == BuildingType.Hut;
     public bool IsDam => Type == BuildingType.Dam;
-    public bool IsWorkshop => Type is BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge;
+    public bool IsWorkshop => Type is BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge or BuildingType.Mill or BuildingType.Oven;
 
     /// <summary>Case en haut à gauche du bâtiment.</summary>
     public int X { get; }
@@ -46,6 +46,8 @@ public sealed class Building
         BuildingType.Bloomery => 6,
         BuildingType.Forge => 10,
         BuildingType.Dam => 16,
+        BuildingType.Mill => 14,
+        BuildingType.Oven => 6,
         _ => HutWood,
     };
 
@@ -55,6 +57,8 @@ public sealed class Building
         BuildingType.Bloomery => 24,
         BuildingType.Forge => 12,
         BuildingType.Dam => 30,
+        BuildingType.Mill => 20,
+        BuildingType.Oven => 16,
         _ => 0,
     };
 
@@ -64,6 +68,8 @@ public sealed class Building
         BuildingType.Bloomery => 26f,
         BuildingType.Forge => 24f,
         BuildingType.Dam => 40f,
+        BuildingType.Mill => 26f,
+        BuildingType.Oven => 18f,
         _ => HutWorkSeconds,
     };
 
@@ -138,12 +144,20 @@ public sealed class Building
     /// <summary>La case où dort un résident : chacun a la sienne.</summary>
     public (int X, int Y) BedOf(Colonist colonist) => Tiles.ElementAt(Math.Max(0, Residents.IndexOf(colonist)) % HutCapacity);
 
+    /// <summary>Le nom est féminin en français (« une forge »).</summary>
+    public static bool IsFeminine(BuildingType type) => type is BuildingType.Hut or BuildingType.Kiln or BuildingType.Forge;
+
+    /// <summary>« un moulin », « une forge ».</summary>
+    public static string WithArticle(BuildingType type) => (IsFeminine(type) ? "une " : "un ") + NameOf(type);
+
     public static string NameOf(BuildingType type) => type switch
     {
         BuildingType.Kiln => "charbonnière",
         BuildingType.Bloomery => "bas fourneau",
         BuildingType.Forge => "forge",
         BuildingType.Dam => "barrage",
+        BuildingType.Mill => "moulin",
+        BuildingType.Oven => "four à pain",
         _ => "hutte",
     };
 }

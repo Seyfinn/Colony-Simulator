@@ -24,14 +24,12 @@ public static class FloraPainter
     /// <summary>Hauteur (en pixels depuis le haut de la carte) du pied de la plante : sert à la trier avec les colons.</summary>
     public static float FootY(int x, int y) => y * Tile + FootOffset(x, y).Y;
 
-    /// <summary>Petits bosquets mêlés. Le style dépend de la position et de la graine, jamais de la croissance.</summary>
-    public static int TreeStyleAt(LocalMap map, int x, int y)
-    {
-        float individual = Noise.Hash01(x, y, map.Seed + 31, 0);
-        float grove = Noise.Hash01(x / 9, y / 9, map.Seed + 71, 0);
-        float choice = Noise.Hash01(x, y, map.Seed + 73, 0) < 0.45f ? individual : grove;
-        return System.Math.Min((int)(choice * SpriteFactory.TreeVariantCount), SpriteFactory.TreeVariantCount - 1);
-    }
+    /// <summary>Apparence choisie selon le milieu d'origine, stable pendant la croissance et la repousse.</summary>
+    public static int TreeStyleAt(LocalMap map, int x, int y) => TreeDistribution.StyleAt(map, x, y);
+
+    /// <summary>Petites différences indépendantes du milieu et conservées à la repousse.</summary>
+    public static int TreeDetailAt(LocalMap map, int x, int y) => System.Math.Min(
+        (int)(Noise.Hash01(x, y, 139, map.Seed) * SpriteFactory.TreeDetailVariantCount), SpriteFactory.TreeDetailVariantCount - 1);
 
     /// <param name="tileOrigin">Position en pixels du coin haut gauche de la case, dans le repère où l'on dessine.</param>
     public static void Draw(CanvasItem canvas, LocalMap map, int x, int y, Vector2 tileOrigin, bool shadow)
@@ -42,7 +40,7 @@ public static class FloraPainter
 
         Texture2D sprite = flora switch
         {
-            FloraType.Tree => SpriteFactory.TreeVariant(TreeStyleAt(map, x, y)),
+            FloraType.Tree => SpriteFactory.TreeVariant(TreeStyleAt(map, x, y), TreeDetailAt(map, x, y)),
             FloraType.Stump => SpriteFactory.Stump,
             _ => map.GetBerries(x, y) > 0 ? SpriteFactory.Bush : SpriteFactory.BushEmpty,
         };

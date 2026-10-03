@@ -21,7 +21,7 @@ public static class WorkSectors
         WorkSector.Wood => [SkillType.Woodcutting],
         WorkSector.Stone => [SkillType.Mining],
         WorkSector.Construction => [SkillType.Construction],
-        WorkSector.Craft => [SkillType.Smithing],
+        WorkSector.Craft => [SkillType.Smithing, SkillType.Cooking],
         _ => [],
     };
 

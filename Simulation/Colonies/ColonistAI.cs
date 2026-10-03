@@ -54,7 +54,6 @@ public static class ColonistAI
     private const int CarryCapacity = 6;
     private const float FetchSeconds = 0.5f;
     private const float BuildActionSeconds = 3f;
-    private const float MealValue = 0.6f;
     private const float BerryValue = 0.2f;
 
     // Ce que rapporte une couche de roche minée.
@@ -538,10 +537,13 @@ public static class ColonistAI
     private static bool TryCraft(Colonist colonist, WorldState world)
     {
         Colony colony = colonist.Colony;
-        if (ToolChain.PickJob(colony, (int)ColonyBrain.HeatingTarget(colony, world.Clock.Season)) is not { } workshop)
+        if (Crafting.PickJob(colony, (int)ColonyBrain.HeatingTarget(colony, world.Clock.Season)) is not { } workshop)
             return false;
-        Recipe recipe = ToolChain.RecipeFor(workshop.Type);
-        float seconds = recipe.Seconds / WorkSpeed(colonist, SkillType.Smithing);
+        Recipe recipe = Crafting.RecipeFor(workshop.Type);
+        float seconds = recipe.Seconds / WorkSpeed(colonist, Crafting.SkillFor(workshop.Type));
+        // Un moulin tourne au rythme de la rivière : un barrage en amont le ralentit.
+        if (workshop.Type == BuildingType.Mill)
+            seconds /= MathF.Max(0.25f, Hydrology.MillFlow(world.Map, workshop));
         (int x, int y) = workshop.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
         return TryStart(colonist, world, new Activity(ActivityKind.Craft, x, y, Ticks(seconds)) { Building = workshop });
     }
@@ -742,7 +744,7 @@ public static class ColonistAI
     /// <summary>Vérifie, à l'arrivée, que l'action est toujours possible (un autre a pu cueillir le buisson entre-temps).</summary>
     private static bool CanBegin(Colonist colonist, WorldState world, Activity activity) => activity.Kind switch
     {
-        ActivityKind.Eat => colonist.Colony.Stock.TryTakeMeal(),
+        ActivityKind.Eat => colonist.Colony.Stock.TryTakeMeal(out float meal) && SetMealValue(activity, meal),
         ActivityKind.Chat => activity.Partner is { Transit: TransitState.None, IsSleeping: false } partner
                              && MathF.Abs(partner.X - colonist.X) + MathF.Abs(partner.Y - colonist.Y) <= ChatMaxGap,
         ActivityKind.Sow => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow }
@@ -760,10 +762,16 @@ public static class ColonistAI
         _ => true,
     };
 
+    private static bool SetMealValue(Activity activity, float value)
+    {
+        activity.MealValue = value;
+        return true;
+    }
+
     /// <summary>À l'arrivée à l'atelier, on prend au stock les matières de la recette ; elles manquent peut-être déjà.</summary>
     private static bool TakeCraftInputs(Colonist colonist, Activity activity, Building workshop)
     {
-        if (!ToolChain.TryTakeInputs(colonist.Colony, ToolChain.RecipeFor(workshop.Type), out double inputHours))
+        if (!ToolChain.TryTakeInputs(colonist.Colony, Crafting.RecipeFor(workshop.Type), out double inputHours))
             return false;
         activity.InputsTaken = true;
         activity.InputLaborHours = inputHours;
@@ -796,7 +804,7 @@ public static class ColonistAI
         switch (activity.Kind)
         {
             case ActivityKind.Eat:
-                colonist.Needs.Food += MealValue;
+                colonist.Needs.Food += activity.MealValue;
                 break;
             case ActivityKind.Forage:
             {
@@ -830,7 +838,7 @@ public static class ColonistAI
                 break;
             case ActivityKind.Craft when activity.InputsTaken && activity.Building is { } workshop:
             {
-                Recipe recipe = ToolChain.RecipeFor(workshop.Type);
+                Recipe recipe = Crafting.RecipeFor(workshop.Type);
                 bool first = colonist.Colony.AnnouncedProducts.Add(recipe.Output);
                 colonist.Carrying = (recipe.Output, recipe.OutputAmount);
                 activity.InputsTaken = false;
@@ -895,7 +903,7 @@ public static class ColonistAI
             // Une fabrication interrompue rend les matières à la colonie.
             if (activity is { Kind: ActivityKind.Craft, InputsTaken: true, Building: { } workshop })
             {
-                ToolChain.Refund(colonist.Colony, ToolChain.RecipeFor(workshop.Type));
+                ToolChain.Refund(colonist.Colony, Crafting.RecipeFor(workshop.Type));
                 activity.InputsTaken = false;
                 colonist.WorkCycleExtraHours = 0;
             }

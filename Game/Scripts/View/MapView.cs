@@ -12,6 +12,7 @@ public partial class MapView : Node2D
     public void Init(LocalMap map)
     {
         _map = map;
+        TreeDistribution.Prepare(map);
         int chunksX = (map.Width + ChunkView.Size - 1) / ChunkView.Size;
         int chunksY = (map.Height + ChunkView.Size - 1) / ChunkView.Size;
         _chunks = new ChunkView[chunksX, chunksY];

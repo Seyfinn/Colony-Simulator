@@ -68,6 +68,9 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest
             or ActivityKind.Craft;
 
+    /// <summary>Pour un repas : ce qu'il redonne à celui qui mange (selon qu'on a pris du pain, du grain ou des baies).</summary>
+    public float MealValue { get; set; } = Stockpile.GrainMealValue;
+
     /// <summary>Pour une fabrication : les matières sont prises au stock, le produit n'est pas encore sorti.</summary>
     public bool InputsTaken { get; set; }
 
@@ -85,7 +88,7 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Chop => SkillType.Woodcutting,
         ActivityKind.Mine => SkillType.Mining,
         ActivityKind.Build or ActivityKind.Dig => SkillType.Construction,
-        ActivityKind.Craft => SkillType.Smithing,
+        ActivityKind.Craft => Building is { } workshop ? Crafting.SkillFor(workshop.Type) : SkillType.Smithing,
         ActivityKind.Sow or ActivityKind.Harvest => SkillType.Farming,
         _ => null,
     };

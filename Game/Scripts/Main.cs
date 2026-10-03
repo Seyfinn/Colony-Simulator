@@ -114,6 +114,11 @@ public partial class Main : Node2D
                 _world.Colonies[0].Prayers.Ask(DecisionKind.Dam, "demo", "Construire un barrage sur la rivière ?",
                     "Nos champs manquent d'eau et le débit de la rivière est fort : un barrage formerait un lac en amont.", () => { }, _world.Clock);
             }
+            else if (arg == "--demo-workshops")
+            {
+                foreach (BuildingType type in new[] { BuildingType.Hut, BuildingType.Kiln, BuildingType.Bloomery, BuildingType.Forge, BuildingType.Mill, BuildingType.Oven })
+                    Urbanism.BuildInstantly(_world.Map, _world.Colonies[0], type);
+            }
             else if (arg == "--demo-dam")
                 Hydrology.BuildInstantly(_world.Map, _world.Colonies[0]);
             else if (arg == "--auto-dam")

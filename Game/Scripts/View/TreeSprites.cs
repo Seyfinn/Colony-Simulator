@@ -7,8 +7,9 @@ namespace GodColony.View;
 public static class TreeSprites
 {
     public const int StyleCount = 4;
+    public const int DetailCount = 6;
 
-    public static ImageTexture Create(int style)
+    public static ImageTexture Create(int style, int detail = 0)
     {
         var image = Image.CreateEmpty(32, 48, false, Image.Format.Rgba8);
         switch (style)
@@ -18,7 +19,82 @@ public static class TreeSprites
             case 3: Willow(image); break;
             default: Oak(image); break;
         }
+        if (detail != 0) AddDetails(image, style, detail);
         return ImageTexture.CreateFromImage(image);
+    }
+
+    private static (Color Dark, Color Leaf, Color Light) LeafColors(int style) => style switch
+    {
+        1 => (Color.Color8(59, 106, 71), Color.Color8(104, 153, 91), Color.Color8(157, 184, 113)),
+        2 => (Color.Color8(36, 76, 63), Color.Color8(56, 111, 85), Color.Color8(103, 150, 112)),
+        3 => (Color.Color8(64, 98, 62), Color.Color8(102, 143, 75), Color.Color8(154, 174, 102)),
+        _ => (Color.Color8(43, 82, 56), Color.Color8(77, 119, 64), Color.Color8(127, 161, 84)),
+    };
+
+    private static void AddDetails(Image image, int style, int detail)
+    {
+        var palette = LeafColors(style);
+        var leaves = new bool[32 * 48];
+        Color tone = detail switch
+        {
+            1 => new Color(0.92f, 0.96f, 1),
+            2 => new Color(1.07f, 1.04f, 0.96f),
+            4 => new Color(0.94f, 0.95f, 1.04f),
+            5 => new Color(1.06f, 0.99f, 0.92f),
+            _ => Colors.White,
+        };
+        for (int y = 0; y < 48; y++)
+        for (int x = 0; x < 32; x++)
+        {
+            Color original = image.GetPixel(x, y);
+            if (original != palette.Dark && original != palette.Leaf && original != palette.Light) continue;
+            leaves[y * 32 + x] = true;
+            float patch = 1 + ((x / 3 * 7 + y / 3 * 11 + detail * 13 + style * 5) % 11 - 5) * 0.009f;
+            float shadow = detail is 1 or 4 ? 1 - (detail == 1 ? x : 31 - x) / 31f * 0.11f : 1;
+            image.SetPixel(x, y, new Color(
+                Math.Clamp(original.R * tone.R * patch * shadow, 0, 1),
+                Math.Clamp(original.G * tone.G * patch * shadow, 0, 1),
+                Math.Clamp(original.B * tone.B * patch * shadow, 0, 1), original.A));
+        }
+        if (detail == 4)
+            for (int y = 1; y < 40; y++)
+            for (int x = 1; x < 31; x++)
+                if (leaves[y * 32 + x] && (x + y * 3 + style * 5) % 17 == 0
+                    && (image.GetPixel(x - 1, y).A == 0 || image.GetPixel(x + 1, y).A == 0))
+                    image.SetPixel(x, y, Colors.Transparent);
+        if (detail == 3)
+        {
+            var accents = style switch
+            {
+                1 => new[] { (14, 8), (20, 23) },
+                2 => new[] { (13, 17), (21, 30) },
+                3 => new[] { (8, 20), (23, 22), (11, 28) },
+                _ => new[] { (9, 11), (22, 20) },
+            };
+            foreach (var (x, y) in accents)
+            {
+                if (!leaves[y * 32 + x]) continue;
+                if (style == 2)
+                {
+                    Box(image, x, y, 2, 3, Color.Color8(114, 88, 54));
+                    Box(image, x, y, 1, 1, Color.Color8(181, 142, 84));
+                }
+                else if (style == 1)
+                {
+                    Box(image, x, y, 1, 3, Color.Color8(193, 181, 111));
+                    Box(image, x, y, 1, 1, Color.Color8(235, 224, 159));
+                }
+                else
+                {
+                    Box(image, x - 1, y, 3, 1, Color.Color8(230, 222, 175));
+                    Box(image, x, y - 1, 1, 3, Color.Color8(245, 235, 198));
+                    Box(image, x, y, 1, 1, Color.Color8(206, 170, 88));
+                }
+            }
+        }
+        if (detail == 5)
+            Box(image, 15, 42, 2, 2, style == 1 ? Color.Color8(79, 98, 81) : Color.Color8(77, 65, 44));
+        if (detail is 2 or 4) image.FlipX();
     }
 
     private static void Oak(Image image)
@@ -30,7 +106,7 @@ public static class TreeSprites
         Box(image, 11, 46, 4, 1, bark);
         Branch(image, 15, 33, -1, 7, bark);
         Branch(image, 17, 32, 1, 7, shade);
-        Color dark = Color.Color8(43, 82, 56), leaf = Color.Color8(77, 119, 64), light = Color.Color8(127, 161, 84);
+        var (dark, leaf, light) = LeafColors(0);
         Crown(image, 18, 22, 12, 12, dark, leaf, light, 1);
         Crown(image, 8, 20, 7, 10, dark, leaf, light, 2);
         Crown(image, 22, 15, 9, 11, dark, leaf, light, 3);
@@ -50,7 +126,7 @@ public static class TreeSprites
             Box(image, y % 2 == 0 ? 15 : 17, y, 2, 1, knot);
             Box(image, 18, y + 1, 1, 1, knot);
         }
-        Color dark = Color.Color8(59, 106, 71), leaf = Color.Color8(104, 153, 91), light = Color.Color8(157, 184, 113);
+        var (dark, leaf, light) = LeafColors(1);
         Crown(image, 18, 23, 7, 10, dark, leaf, light, 5);
         Crown(image, 12, 19, 6, 10, dark, leaf, light, 6);
         Crown(image, 16, 10, 7, 10, dark, leaf, light, 7);
@@ -62,7 +138,7 @@ public static class TreeSprites
         Box(image, 14, 27, 5, 21, trunkShade);
         Box(image, 14, 28, 2, 19, trunk);
         Box(image, 12, 47, 9, 1, trunkShade);
-        Color dark = Color.Color8(36, 76, 63), leaf = Color.Color8(56, 111, 85), light = Color.Color8(103, 150, 112);
+        var (dark, leaf, light) = LeafColors(2);
         // Trois étages de branches : la silhouette reste immédiatement différente des feuillus.
         foreach (var tier in new[] { (Top: 22, Height: 17, Width: 14), (Top: 12, Height: 17, Width: 11), (Top: 2, Height: 18, Width: 8) })
             for (int y = tier.Top; y <= tier.Top + tier.Height; y++)
@@ -86,7 +162,7 @@ public static class TreeSprites
         Box(image, 10, 46, 13, 2, shade);
         Branch(image, 14, 31, -1, 8, bark);
         Branch(image, 17, 31, 1, 8, shade);
-        Color dark = Color.Color8(64, 98, 62), leaf = Color.Color8(102, 143, 75), light = Color.Color8(154, 174, 102);
+        var (dark, leaf, light) = LeafColors(3);
         Crown(image, 9, 20, 8, 10, dark, leaf, light, 8);
         Crown(image, 23, 20, 8, 11, dark, leaf, light, 9);
         Crown(image, 16, 13, 13, 10, dark, leaf, light, 10);

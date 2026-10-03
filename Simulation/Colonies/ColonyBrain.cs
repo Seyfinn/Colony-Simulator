@@ -18,7 +18,9 @@ public sealed record ColonySensors(
     bool HasWorkshopSite,
     bool WorkshopsReady,
     float OrePressure,
-    bool CanalWork)
+    bool CanalWork,
+    BreadDemand Bread,
+    bool FoodWorkshopsReady)
 {
     /// <summary>Étage 1 de la pyramide : nourriture et chauffage.</summary>
     public bool SurvivalAssured => Math.Max(FoodPressure, HeatingPressure) <= 60f;
@@ -54,6 +56,9 @@ public static class ColonyBrain
     private const float MaxConstructionShare = 0.3f;
     private const float MaxFarmShare = 0.6f;
     private const float MaxCraftShare = 0.25f;
+    private const float BreadCraftShare = 0.12f;
+    /// <summary>Grain en surplus qui dort au grenier : on met deux fois plus de bras au moulin et au four.</summary>
+    private const int LargeGrainSurplus = 60;
     /// <summary>Part des bras qu'on envoie fouiller la roche pour y trouver du minerai (plus modeste que la carrière).</summary>
     private const float MaxOreShare = 0.25f;
 
@@ -213,9 +218,9 @@ public static class ColonyBrain
     {
         if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || colony.ConstructionSites.Any())
             return false;
-        if (ToolChain.NextWorkshopToBuild(colony) is not { } type)
+        if (Crafting.NextWorkshopToBuild(colony, map) is not { } type)
             return false;
-        if (Urbanism.FindWorkshopSite(map, colony) is not { } site)
+        if ((type == BuildingType.Mill ? Urbanism.FindMillSite(map, colony) : Urbanism.FindWorkshopSite(map, colony)) is not { } site)
             return false;
 
         Urbanism.PlanBuilding(map, colony, type, site.X, site.Y);
@@ -223,7 +228,9 @@ public static class ColonyBrain
         {
             BuildingType.Kiln => "Nous avons trouvé du fer, mais pas d'outils pour le travailler : il nous faut d'abord du charbon de bois. Nous bâtissons une charbonnière.",
             BuildingType.Bloomery => "Le charbon de bois est là : nous bâtissons un bas fourneau pour tirer le fer du minerai.",
-            _ => "Nous aurons du fer : nous bâtissons une forge pour en faire des outils.",
+            BuildingType.Forge => "Nous aurons du fer : nous bâtissons une forge pour en faire des outils.",
+            BuildingType.Mill => "Nos greniers débordent de grain : nous bâtissons un moulin sur la rivière pour le moudre.",
+            _ => "Nous avons de la farine : nous bâtissons un four pour en faire du pain.",
         });
         return true;
     }
@@ -298,6 +305,8 @@ public static class ColonyBrain
         {
             ResourceType.Charcoal => "Notre premier charbon de bois sort de la charbonnière : de quoi chauffer la forge.",
             ResourceType.Iron => "Un premier lingot de fer sort du bas fourneau !",
+            ResourceType.Flour => "Le moulin tourne : notre première farine est moulue.",
+            ResourceType.Bread => "Notre premier pain sort du four : il nourrit bien mieux que le grain cru.",
             _ => "Notre premier outil de fer est forgé : le travail ira plus vite.",
         });
 
@@ -314,9 +323,10 @@ public static class ColonyBrain
         }
         if (building.IsWorkshop)
         {
+            string name = Building.NameOf(building.Type);
             Say(colony, clock, building.Type == BuildingType.Bloomery
                 ? "Le bas fourneau est achevé : on peut y fondre le minerai."
-                : $"La {Building.NameOf(building.Type)} est achevée : on peut s'y mettre.");
+                : $"{(Building.IsFeminine(building.Type) ? "La" : "Le")} {name} est {(Building.IsFeminine(building.Type) ? "achevée" : "achevé")} : on peut s'y mettre.");
             return;
         }
         colony.Labor.RecordHut(LaborLedger.TicksToHours(building.LaborTicks));
@@ -369,8 +379,8 @@ public static class ColonyBrain
 
         return new ColonySensors(foodDays, foodPressure, heatingPressure, woodTarget, woodPressure,
             homeless, housingPressure, hasSite, stonePressure, farmShare,
-            chain, colony.ConstructionSites.Any(b => !b.IsHut), colony.Buildings.Any(b => b.IsWorkshop && b.IsComplete), orePressure,
-            colony.CanalsInProgress.Any());
+            chain, colony.ConstructionSites.Any(b => !b.IsHut), colony.Buildings.Any(b => b.IsComplete && b.IsWorkshop && !FoodChain.IsFoodWorkshop(b.Type)), orePressure,
+            colony.CanalsInProgress.Any(), FoodChain.Demand(colony), colony.Buildings.Any(b => b.IsComplete && FoodChain.IsFoodWorkshop(b.Type)));
     }
 
     /// <summary>
@@ -392,9 +402,14 @@ public static class ColonyBrain
         // La chaîne du fer : on fouille la roche pour le minerai manquant, et l'on travaille dans les ateliers.
         if (comfortAssured && sensors.Chain.Active)
             stone = Math.Max(stone, sensors.OrePressure / 100f * MaxOreShare);
-        float craft = comfortAssured && sensors.Chain.Active && sensors.WorkshopsReady
+        float ironCraft = comfortAssured && sensors.Chain.Active && sensors.WorkshopsReady
             ? Math.Max(0.1f, MaxCraftShare * sensors.Chain.ToolShortfall / Math.Max(1, sensors.Chain.ToolsWanted))
             : 0f;
+        // Le moulin et le four : un ou deux colons y travaillent tant qu'il y a du grain en surplus ou de la farine à cuire.
+        float breadCraft = comfortAssured && sensors.Bread.Active && sensors.FoodWorkshopsReady
+            ? BreadCraftShare * (sensors.Bread.GrainSurplus >= LargeGrainSurplus ? 2f : 1f)
+            : 0f;
+        float craft = Math.Min(MaxCraftShare, ironCraft + breadCraft);
 
         // Survie menacée : pas de temps libre, tous les bras disponibles vont aux besoins vitaux.
         float vital = food + wood;
@@ -569,6 +584,8 @@ public static class ColonyBrain
         Add(ResourceType.Charcoal, "charbon de bois");
         Add(ResourceType.Iron, "fer");
         Add(ResourceType.Tools, "outil");
+        Add(ResourceType.Flour, "farine");
+        Add(ResourceType.Bread, "pain");
         if (labor.HoursPerHut is { } hut)
             parts.Add($"hutte {hut:0} h");
         if (labor.HoursPerCanalTile is { } canal)

@@ -129,6 +129,28 @@ public static class Hydrology
         return best;
     }
 
+    /// <summary>
+    /// Le débit qui fait tourner un moulin : celui de la rivière qui le longe (moindre si un barrage en amont la retient),
+    /// 1 au bord d'un lac ou d'un canal. 0 si aucune eau ne touche le bâtiment.
+    /// </summary>
+    public static float MillFlow(LocalMap map, Building mill)
+    {
+        float best = 0f;
+        for (int y = mill.Y - 1; y <= mill.Y + mill.Height; y++)
+        for (int x = mill.X - 1; x <= mill.X + mill.Width; x++)
+        {
+            bool inside = x >= mill.X && x < mill.X + mill.Width && y >= mill.Y && y < mill.Y + mill.Height;
+            bool corner = (x < mill.X || x >= mill.X + mill.Width) && (y < mill.Y || y >= mill.Y + mill.Height);
+            if (inside || corner || !map.InBounds(x, y))
+                continue;
+            if (map.IsFlooded(x, y) || map.IsCanalWet(x, y))
+                best = Math.Max(best, 1f);
+            else if (map.IsRiver(x, y))
+                best = Math.Max(best, map.GetFlow(x, y));
+        }
+        return best;
+    }
+
     /// <summary>Outil de développement : bâtit tout de suite le meilleur barrage possible, sans prière ni travail.</summary>
     public static Building? BuildInstantly(LocalMap map, Colony colony)
     {

@@ -88,6 +88,30 @@ public static class ResourceIcons
                 Box(image, 3, 8, 9, 2, Color.Color8(130, 163, 158));
                 Box(image, 2, 12, 12, 1, Color.Color8(51, 71, 73));
                 break;
+            case "Flour":
+                // Un sac de farine noué.
+                Box(image, 3, 5, 10, 9, Color.Color8(197, 178, 140));
+                Box(image, 4, 6, 8, 7, Color.Color8(238, 230, 205));
+                Box(image, 5, 3, 6, 3, Color.Color8(197, 178, 140));
+                Box(image, 5, 5, 6, 1, Color.Color8(130, 98, 62));
+                Box(image, 6, 9, 4, 1, Color.Color8(209, 198, 168));
+                break;
+            case "Bread":
+                // Un pain rond bien doré.
+                Oval16(image, 8, 9, 6, 4, Color.Color8(116, 70, 41));
+                Oval16(image, 8, 8, 5, 4, Color.Color8(199, 134, 70));
+                Box(image, 5, 6, 2, 1, Color.Color8(240, 190, 115));
+                Box(image, 8, 5, 2, 1, Color.Color8(240, 190, 115));
+                Box(image, 10, 7, 2, 1, Color.Color8(240, 190, 115));
+                break;
+            case "Coins":
+                foreach (var p in new[] { new Vector2I(3, 9), new Vector2I(8, 8), new Vector2I(5, 4) })
+                {
+                    Box(image, p.X, p.Y, 6, 4, Color.Color8(124, 90, 38));
+                    Box(image, p.X, p.Y, 6, 3, Color.Color8(226, 190, 90));
+                    Box(image, p.X + 1, p.Y, 3, 1, Color.Color8(250, 232, 156));
+                }
+                break;
             case "Tools":
                 for (int i = 0; i < 10; i++) Box(image, 3 + i, 12 - i, 2, 2, Color.Color8(176, 125, 70));
                 Box(image, 8, 2, 6, 4, Color.Color8(64, 91, 92));
@@ -105,8 +129,20 @@ public static class ResourceIcons
     {
         "Food" => "Nourriture", "Grain" => "Céréales", "Wood" => "Bois", "Stone" => "Pierre",
         "IronOre" => "Minerai de fer", "Charcoal" => "Charbon", "Iron" => "Fer", "Tools" => "Outils",
+        "Flour" => "Farine", "Bread" => "Pain", "Coins" => "Pièces",
         _ => resource.ToString(),
     };
+
+    private static void Oval16(Image image, int cx, int cy, int rx, int ry, Color color)
+    {
+        for (int y = cy - ry; y <= cy + ry; y++)
+        for (int x = cx - rx; x <= cx + rx; x++)
+        {
+            float dx = (x - cx) / (float)rx, dy = (y - cy) / (float)ry;
+            if (dx * dx + dy * dy <= 1f && x >= 0 && y >= 0 && x < 16 && y < 16)
+                image.SetPixel(x, y, color);
+        }
+    }
 
     private static void Box(Image image, int x, int y, int width, int height, Color color)
     {

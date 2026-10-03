@@ -10,7 +10,8 @@ namespace GodColony.View;
 public static class SpriteFactory
 {
     public const int TreeVariantCount = TreeSprites.StyleCount;
-    private static readonly ImageTexture?[] Trees = new ImageTexture?[TreeVariantCount];
+    public const int TreeDetailVariantCount = TreeSprites.DetailCount;
+    private static readonly ImageTexture?[,] Trees = new ImageTexture?[TreeVariantCount, TreeDetailVariantCount];
     private static ImageTexture? _bush;
     private static ImageTexture? _bushEmpty;
     private static ImageTexture[]? _campfire;
@@ -20,10 +21,11 @@ public static class SpriteFactory
 
     /// <summary>Chêne, bouleau, conifère et saule : quatre silhouettes en 32 × 48 pixels.</summary>
     public static ImageTexture Tree => TreeVariant(0);
-    public static ImageTexture TreeVariant(int variant)
+    public static ImageTexture TreeVariant(int variant, int detail = 0)
     {
-        variant = Math.Clamp(variant, 0, Trees.Length - 1);
-        return Trees[variant] ??= BuildTree(variant);
+        variant = Math.Clamp(variant, 0, TreeVariantCount - 1);
+        detail = Math.Clamp(detail, 0, TreeDetailVariantCount - 1);
+        return Trees[variant, detail] ??= TreeSprites.Create(variant, detail);
     }
 
     private static ImageTexture? _hut;
@@ -81,6 +83,47 @@ public static class SpriteFactory
             FillBox(image, 5, 58, 10, 13, timber);
             FillBox(image, 6, 59, 8, 2, light);
             FillBox(image, 7, 62, 6, 5, Color.Color8(151, 112, 76));
+        }
+        else if (kind == "Mill")
+        {
+            // Moulin à eau : murs de pierre, toit de chaume, roue à aubes sur le côté.
+            FillBox(image, 14, 36, 36, 36, joint);
+            FillBox(image, 16, 38, 32, 34, Color.Color8(190, 176, 140));
+            for (int y = 40; y < 71; y += 6) FillBox(image, 16, y, 32, 1, Color.Color8(160, 146, 112));
+            FillBox(image, 36, 38, 12, 34, Color.Color8(163, 150, 118));
+            for (int y = 12; y <= 37; y++)
+            {
+                int left = 32 - (y - 12) * 21 / 25 - 3;
+                int right = 32 + (y - 12) * 21 / 25 + 3;
+                for (int x = Math.Max(0, left); x <= Math.Min(63, right); x++)
+                    image.SetPixel(x, y, y % 4 == 0 ? Color.Color8(142, 112, 62) : Color.Color8(201, 170, 99));
+            }
+            FillBox(image, 24, 54, 9, 18, timber);
+            FillBox(image, 26, 56, 5, 16, Color.Color8(61, 48, 38));
+            FillBox(image, 20, 43, 6, 7, Color.Color8(78, 95, 87));
+            Oval(image, 54, 56, 9, 14, timber);
+            Oval(image, 54, 56, 6, 10, Color.Color8(86, 128, 134));
+            FillBox(image, 53, 42, 2, 28, light);
+            FillBox(image, 44, 55, 20, 2, light);
+        }
+        else if (kind == "Oven")
+        {
+            // Four à pain : dôme d'argile, bouche voûtée, cheminée et pelle à pain.
+            Oval(image, 32, 56, 24, 18, Color.Color8(143, 98, 70));
+            Oval(image, 29, 53, 20, 14, Color.Color8(194, 140, 98));
+            for (int y = 42; y < 68; y += 6)
+            {
+                int half = (int)(22 * Math.Sqrt(Math.Max(0, 1 - (y - 56) * (y - 56) / 324f)));
+                FillBox(image, 32 - half, y, half * 2, 1, Color.Color8(160, 112, 79));
+            }
+            FillBox(image, 40, 26, 7, 14, joint);
+            FillBox(image, 41, 25, 5, 2, stone);
+            FillBox(image, 24, 58, 17, 14, joint);
+            Oval(image, 32, 60, 8, 7, joint);
+            FillBox(image, 26, 62, 13, 10, Color.Color8(42, 33, 28));
+            FillBox(image, 28, 66, 9, 3, Color.Color8(231, 148, 66));
+            FillBox(image, 6, 52, 3, 20, timber);
+            FillBox(image, 3, 49, 9, 5, light);
         }
         else
         {
@@ -377,11 +420,6 @@ public static class SpriteFactory
         for (int x = Math.Max(0, cx - rx); x <= Math.Min(image.GetWidth() - 1, cx + rx); x++)
             if ((x - cx) * (x - cx) / (float)(rx * rx) + (y - cy) * (y - cy) / (float)(ry * ry) <= 1)
                 image.SetPixel(x, y, color);
-    }
-
-    private static ImageTexture BuildTree(int variant)
-    {
-        return TreeSprites.Create(variant);
     }
 
     private static ImageTexture BuildStump()

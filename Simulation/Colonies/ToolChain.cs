@@ -117,10 +117,6 @@ public static class ToolChain
         return null;
     }
 
-    /// <summary>Ce qui est déjà en train d'être fabriqué (les fabricants ont pris les matières mais n'ont pas fini).</summary>
-    private static int Pending(Colony colony, ResourceType output) =>
-        colony.Members.Count(m => m.Activity is { Kind: ActivityKind.Craft, Building: { } site } && RecipeFor(site.Type).Output == output);
-
     /// <summary>
     /// Que fabriquer maintenant ? On finit par le bout de la chaîne : forger si l'on a de quoi, sinon fondre,
     /// sinon brûler du charbon (sans entamer le bois de chauffage). Renvoie l'atelier où aller travailler.
@@ -135,14 +131,14 @@ public static class ToolChain
         bool Has((ResourceType Type, int Amount)[] inputs) => inputs.All(i => stock.Get(i.Type) >= i.Amount);
 
         if (colony.Workshops(BuildingType.Forge).FirstOrDefault() is { } forge
-            && Has(Forging.Inputs) && demand.ToolShortfall > Pending(colony, ResourceType.Tools))
+            && Has(Forging.Inputs) && demand.ToolShortfall > Crafting.Pending(colony, ResourceType.Tools))
             return forge;
         if (colony.Workshops(BuildingType.Bloomery).FirstOrDefault() is { } bloomery
-            && Has(Smelting.Inputs) && stock.Get(ResourceType.Iron) + Pending(colony, ResourceType.Iron) < demand.IronTarget)
+            && Has(Smelting.Inputs) && stock.Get(ResourceType.Iron) + Crafting.Pending(colony, ResourceType.Iron) < demand.IronTarget)
             return bloomery;
         if (colony.Workshops(BuildingType.Kiln).FirstOrDefault() is { } kiln
             && stock.Get(ResourceType.Wood) >= WoodPerBatch + heatingReserve
-            && stock.Get(ResourceType.Charcoal) + CharcoalPerBatch * Pending(colony, ResourceType.Charcoal) < demand.CharcoalTarget)
+            && stock.Get(ResourceType.Charcoal) + CharcoalPerBatch * Crafting.Pending(colony, ResourceType.Charcoal) < demand.CharcoalTarget)
             return kiln;
         return null;
     }

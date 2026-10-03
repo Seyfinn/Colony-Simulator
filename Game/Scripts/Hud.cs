@@ -124,6 +124,9 @@ public partial class Hud : CanvasLayer
                 "Charcoal" => "Charbon de bois produit par la charbonnière, utilisé pour travailler le fer.",
                 "Iron" => "Fer produit au bas fourneau pour fabriquer des outils.",
                 "Tools" => "Outils fabriqués à la forge pour équiper les travailleurs.",
+                "Flour" => "Farine moulue par le moulin à eau ; elle ne se mange pas crue.",
+                "Bread" => "Pain cuit au four : il nourrit mieux que les céréales crues.",
+                "Coins" => "Pièces de la monnaie commune à toutes les colonies.",
                 _ => ResourceIcons.Name(type),
             };
             row.AddChild(card);
@@ -408,7 +411,7 @@ public partial class Hud : CanvasLayer
     private static string SkillName(SkillType skill) => skill.ToString() switch
     {
         "Foraging" => "Cueillette", "Fishing" => "Pêche", "Woodcutting" => "Bûcheronnage", "Mining" => "Minage",
-        "Farming" => "Agriculture", "Smithing" => "Métallurgie", _ => "Construction",
+        "Farming" => "Agriculture", "Smithing" => "Métallurgie", "Cooking" => "Boulangerie", _ => "Construction",
     };
 
     private static string Describe(Colonist colonist)
@@ -432,12 +435,12 @@ public partial class Hud : CanvasLayer
             ActivityKind.SupplySite => "Apporte des matériaux au chantier",
             ActivityKind.Build => there
                 ? (activity.Building is { IsHut: false } site
-                    ? $"Bâtit {(site.Type is BuildingType.Bloomery or BuildingType.Dam ? "un" : "une")} {Building.NameOf(site.Type)}"
+                    ? $"Bâtit {Building.WithArticle(site.Type)}"
                     : "Bâtit une hutte")
                 : "Part sur le chantier",
             ActivityKind.Dig => there ? "Creuse un canal" : "Part creuser le canal",
             ActivityKind.Craft => activity.Building is { } workshop
-                ? $"{(there ? "Travaille" : "Part")} {(workshop.Type == BuildingType.Bloomery ? "au" : "à la")} {Building.NameOf(workshop.Type)}"
+                ? $"{(there ? "Travaille" : "Part")} {(Building.IsFeminine(workshop.Type) ? "à la" : "au")} {Building.NameOf(workshop.Type)}"
                 : "Travaille à l'atelier",
             ActivityKind.Chat => there ? "Bavarde" : "Va rejoindre quelqu'un pour bavarder",
             ActivityKind.Sow => there ? "Sème" : "Part semer",

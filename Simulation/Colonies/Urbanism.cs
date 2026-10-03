@@ -19,6 +19,33 @@ public static class Urbanism
 
     private const int WorkshopMinDistance = 5;
 
+    /// <summary>
+    /// Un moulin à eau se pose au bord d'une rivière, d'un lac de retenue ou d'un canal en eau, sur un terrain plat :
+    /// le plus près possible du camp. Null s'il n'y a pas d'eau vive à portée.
+    /// </summary>
+    public static (int X, int Y)? FindMillSite(LocalMap map, Colony colony)
+    {
+        (int X, int Y)? best = null;
+        float bestDistance = float.MaxValue;
+        int radius = FoodChain.MillSearchRadius;
+        for (int dy = -radius; dy <= radius; dy++)
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            int x = colony.CampX + dx, y = colony.CampY + dy;
+            if (!map.InBounds(x, y) || !IsBuildable(map, colony, x, y))
+                continue;
+            float distance = MathF.Sqrt((dx + 0.5f) * (dx + 0.5f) + (dy + 0.5f) * (dy + 0.5f));
+            if (distance < WorkshopMinDistance || distance >= bestDistance)
+                continue;
+            var probe = new Building(BuildingType.Mill, x, y);
+            if (Hydrology.MillFlow(map, probe) <= 0f)
+                continue;
+            bestDistance = distance;
+            best = (x, y);
+        }
+        return best;
+    }
+
     private static (int X, int Y)? FindSite(LocalMap map, Colony colony, int minDistance)
     {
         (int X, int Y)? best = null;
@@ -116,6 +143,17 @@ public static class Urbanism
 
     /// <summary>Ouvre un chantier : on dégage le terrain (souches comprises) et on pose les fondations.</summary>
     public static Building PlanHut(LocalMap map, Colony colony, int x, int y) => PlanBuilding(map, colony, BuildingType.Hut, x, y);
+
+    /// <summary>Outil de développement : pose tout de suite un bâtiment achevé sur le meilleur emplacement libre.</summary>
+    public static Building? BuildInstantly(LocalMap map, Colony colony, BuildingType type)
+    {
+        (int X, int Y)? site = type == BuildingType.Mill ? FindMillSite(map, colony) : FindWorkshopSite(map, colony);
+        if (site is not { } s)
+            return null;
+        Building building = PlanBuilding(map, colony, type, s.X, s.Y);
+        building.Progress = 1f;
+        return building;
+    }
 
     public static Building PlanBuilding(LocalMap map, Colony colony, BuildingType type, int x, int y)
     {
