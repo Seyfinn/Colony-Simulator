@@ -85,15 +85,21 @@ public class MultiColonyTests(ITestOutputHelper output)
     public void Deux_colonies_vivent_une_annee_sans_se_gener_chacune_dans_son_monde()
     {
         WorldState world = TwoPeoples(colonists: 8);
+        var watches = world.Colonies.ToDictionary(c => c, _ => new StarvationWatch());
         for (long i = 0; i < TimeConstants.TicksPerYear; i++)
+        {
             world.Step();
+            if (i % TimeConstants.TicksPerDay == 0)
+                foreach (Colony c in world.Colonies)
+                    watches[c].Observe(c);
+        }
 
         foreach (Colony colony in world.Colonies)
         {
             output.WriteLine($"{colony.Name} : {colony.Members.Count} colons, nourriture {colony.Stock.FoodUnits}, bois {colony.Stock.Get(ResourceType.Wood)}, " +
                              $"pierre {colony.Stock.Get(ResourceType.Stone)}, minerai {colony.Stock.Get(ResourceType.IronOre)}, humeur {colony.AverageMood:P0}");
             Assert.Equal(8, colony.Members.Count);
-            Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.03f, $"{c.Name} frôle la famine."));
+            Assert.Null(watches[colony].Victim);
         }
     }
 }

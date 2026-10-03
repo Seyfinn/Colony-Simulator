@@ -62,6 +62,21 @@ public sealed class Colony
     /// <summary>Les bâtiments de la colonie, achevés ou en chantier.</summary>
     public List<Building> Buildings { get; } = [];
 
+    /// <summary>
+    /// Ce que la colonie fabriquerait volontiers en plus pour ses voisines (des outils, par exemple) : c'est le commerce
+    /// qui oriente sa production, donc sa spécialisation.
+    /// </summary>
+    public Dictionary<ResourceType, int> ExportInterest { get; } = [];
+
+    /// <summary>Les derniers voyages de caravane, envoyés ou reçus, du plus ancien au plus récent.</summary>
+    public List<TradeRecord> Trades { get; } = [];
+
+    /// <summary>Travail épargné au total grâce au commerce, en heures (somme des gains attendus des voyages réussis).</summary>
+    public double LifetimeTradeGainHours { get; internal set; }
+
+    /// <summary>Dernier départ d'une de ses caravanes.</summary>
+    internal long LastCaravanTicks { get; set; } = long.MinValue / 2;
+
     /// <summary>Les décisions que la colonie soumet au joueur.</summary>
     public PrayerBook Prayers => _prayers ??= new PrayerBook(this);
     private PrayerBook? _prayers;
@@ -83,6 +98,12 @@ public sealed class Colony
     /// au lieu de rester bloqué sur les plus proches. Vidé chaque jour, car la carrière change.
     /// </summary>
     internal HashSet<(int X, int Y)> UnreachableStands { get; } = [];
+
+    /// <summary>Dernière fois que la carrière a été déplacée (ou jugée épuisée).</summary>
+    internal long LastQuarryMoveTicks { get; set; } = long.MinValue / 2;
+
+    /// <summary>Un filon de fer a été aperçu à la carrière : la colonie sait qu'il y a du minerai à portée.</summary>
+    public bool IronSeen { get; internal set; }
 
     /// <summary>Les produits dont la colonie a déjà annoncé la première fabrication.</summary>
     internal HashSet<ResourceType> AnnouncedProducts { get; } = [];

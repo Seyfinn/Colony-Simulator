@@ -10,6 +10,9 @@ public static class ColonyFounder
     private const int StartingFoodPerColonist = 4;
     private const int GatherRadius = 5;
 
+    /// <summary>La dotation de départ de chaque peuple en monnaie commune.</summary>
+    public const int StartingCoins = 400;
+
     public const int MinStartingColonists = 5;
     public const int MaxStartingColonists = 10;
 
@@ -33,6 +36,7 @@ public static class ColonyFounder
         colony.Map = map;
         colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map);
         colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount);
+        colony.Stock.Add(ResourceType.Coins, StartingCoins);
 
         for (int i = 0; i < colonistCount; i++)
         {

@@ -3,12 +3,17 @@ namespace GodColony.Simulation.Colonies;
 /// <summary>
 /// Les proportions du terrain qui conviennent à une espèce (les nains veulent des montagnes, les humains des plaines).
 /// </summary>
-public sealed record MapStyle(float MountainShare, float WaterShare)
+public sealed record MapStyle(float MountainShare, float WaterShare, float ForestBias = 0f, float SoilRichness = 1f)
 {
     public static readonly MapStyle Temperate = new(0.22f, 0.08f);
-    public static readonly MapStyle Highlands = new(0.40f, 0.05f);
-    public static readonly MapStyle Woodlands = new(0.12f, 0.10f);
-    public static readonly MapStyle Steppe = new(0.18f, 0.04f);
+
+    /// <summary>Hautes terres : beaucoup de roche, peu de forêt, un sol maigre (3 céréales par parcelle au lieu de 4).</summary>
+    public static readonly MapStyle Highlands = new(0.40f, 0.05f, ForestBias: -0.12f, SoilRichness: 0.75f);
+
+    /// <summary>Forêts : peu de montagnes, des arbres partout.</summary>
+    public static readonly MapStyle Woodlands = new(0.12f, 0.10f, ForestBias: 0.1f);
+
+    public static readonly MapStyle Steppe = new(0.18f, 0.04f, ForestBias: -0.08f);
 }
 
 /// <summary>

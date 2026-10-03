@@ -58,7 +58,11 @@ public static class ToolChain
     public static bool UsesTools(SkillType skill) =>
         skill is SkillType.Woodcutting or SkillType.Mining or SkillType.Farming or SkillType.Construction;
 
+    /// <summary>Ce qu'il faut d'outils à la colonie pour ses propres travailleurs.</summary>
     public static int ToolsWanted(Colony colony) => (int)MathF.Ceiling(colony.Workers.Count() * ToolsPerWorker);
+
+    /// <summary>Ce que la colonie veut en stock : ses propres outils, plus ceux que ses voisines lui achèteraient.</summary>
+    public static int ToolsTarget(Colony colony) => ToolsWanted(colony) + colony.ExportInterest.GetValueOrDefault(ResourceType.Tools);
 
     /// <summary>La part des travailleurs équipée d'un outil, de 0 à 1.</summary>
     public static float Coverage(Colony colony)
@@ -86,12 +90,12 @@ public static class ToolChain
 
     /// <summary>La colonie a-t-elle déjà vu du minerai de fer ? Sans cette découverte, elle ne pense pas aux outils de fer.</summary>
     public static bool IronDiscovered(Colony colony) =>
-        colony.Labor.TotalProduced(ResourceType.IronOre) > 0 || colony.Stock.Get(ResourceType.IronOre) > 0
+        colony.IronSeen || colony.Labor.TotalProduced(ResourceType.IronOre) > 0 || colony.Stock.Get(ResourceType.IronOre) > 0
         || colony.Stock.Get(ResourceType.Iron) > 0 || colony.Stock.Get(ResourceType.Tools) > 0;
 
     public static ChainDemand Demand(Colony colony)
     {
-        int wanted = ToolsWanted(colony);
+        int wanted = ToolsTarget(colony);
         int shortfall = Math.Max(0, wanted - colony.Stock.Get(ResourceType.Tools));
         if (shortfall == 0 || !IronDiscovered(colony))
             return ChainDemand.None with { ToolsWanted = wanted };

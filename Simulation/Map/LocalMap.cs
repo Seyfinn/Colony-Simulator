@@ -362,6 +362,28 @@ public sealed class LocalMap
         return IsIronVein(x, y, level) ? Material.IronOre : Material.Stone;
     }
 
+    /// <summary>
+    /// Combien de couches faut-il retirer pour atteindre un filon de fer sous cette case ? 0 si le filon affleure,
+    /// <see cref="int.MaxValue"/> s'il n'y en a pas dans les <paramref name="maxDepth"/> premières couches (ni de quoi creuser plus bas).
+    /// C'est le flair des mineurs : ils creusent là où le minerai est proche.
+    /// </summary>
+    public int DepthToOre(int x, int y, int maxDepth)
+    {
+        int top = GetElevation(x, y) - 1;
+        for (int depth = 0; depth < maxDepth; depth++)
+        {
+            int layer = top - depth;
+            if (layer < MinMiningElevation)
+                break;
+            if (MaterialAt(x, y, layer) == Material.IronOre)
+                return depth;
+        }
+        return int.MaxValue;
+    }
+
+    /// <summary>Richesse du sol cultivable (1 au naturel) : les terres de montagne rendent moins aux semailles.</summary>
+    public float SoilRichness { get; internal set; } = 1f;
+
     public Material TopMaterial(int x, int y) => MaterialAt(x, y, GetElevation(x, y) - 1);
 
     public Surface GetSurface(int x, int y)

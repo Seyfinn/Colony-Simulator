@@ -19,13 +19,14 @@ public static class MapGenerator
         {
             int e = elevation[y * width + x];
             SoilType soil = ChooseSoil(x, y, e, elevation, width, height, seed);
-            (FloraType flora, float growth) = ChooseFlora(x, y, e, soil, seed);
+            (FloraType flora, float growth) = ChooseFlora(x, y, e, soil, seed, style);
             map.SetGenerated(x, y, e, soil, flora, growth);
         }
 
         foreach ((int x, int y, int downX, int downY) in Rivers.Generate(elevation, width, height, seed))
             map.SetRiver(x, y, downX, downY);
         map.ComputeBanks();
+        map.SoilRichness = style.SoilRichness;
         return map;
     }
 
@@ -96,14 +97,14 @@ public static class MapGenerator
         return false;
     }
 
-    private static (FloraType, float) ChooseFlora(int x, int y, int e, SoilType soil, int seed)
+    private static (FloraType, float) ChooseFlora(int x, int y, int e, SoilType soil, int seed, MapStyle style)
     {
         if (e <= LocalMap.WaterLevel || soil == SoilType.Sand)
             return (FloraType.None, 0f);
 
         float roll = Noise.Hash01(x, y, 1, seed);
         float growth = 0.4f + 0.6f * Noise.Hash01(x, y, 2, seed);
-        float forest = Noise.Fractal2D(x / 18f, y / 18f, seed + 31, 4);
+        float forest = Noise.Fractal2D(x / 18f, y / 18f, seed + 31, 4) + style.ForestBias;
 
         if (e >= LocalMap.MountainElevation)
             return e <= LocalMap.MountainElevation + 1 && roll < 0.04f ? (FloraType.Tree, growth) : (FloraType.None, 0f);

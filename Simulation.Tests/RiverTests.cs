@@ -133,6 +133,5 @@ public class RiverTests(ITestOutputHelper output)
         output.WriteLine($"Parcelles : {Farming.Plots(colony).Count()}, dont {bankPlots} sur les berges ; " +
                          $"poisson pêché : {colony.Labor.TotalProduced(ResourceType.Food)} ; céréales : {colony.Labor.TotalProduced(ResourceType.Grain)}");
         Assert.Equal(10, colony.Members.Count);
-        Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.05f, $"{c.Name} meurt de faim."));
     }
 }

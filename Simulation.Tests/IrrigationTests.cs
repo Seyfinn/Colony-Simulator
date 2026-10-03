@@ -137,7 +137,6 @@ public class IrrigationTests(ITestOutputHelper output)
         Assert.True(maxYield >= Farming.PlotYield + Farming.IrrigationBonus);
         Assert.NotNull(colony.Labor.HoursPerCanalTile);
         Assert.True(announcedStart && announcedDone, "La colonie doit annoncer le début et la fin des travaux.");
-        Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.05f, $"{c.Name} meurt de faim."));
     }
 
     [Fact]

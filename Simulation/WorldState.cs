@@ -22,6 +22,9 @@ public sealed class WorldState
     /// <summary>Les âges, les couples, les naissances et la mort sont-ils actifs ?</summary>
     private readonly bool _lifecycle;
 
+    /// <summary>Le commerce entre colonies est-il actif ? (On peut le couper pour étudier des colonies isolées.)</summary>
+    private readonly bool _trade;
+
     /// <summary>Écart entre les graines des cartes de deux colonies.</summary>
     private const int MapSeedStep = 7919;
 
@@ -33,6 +36,15 @@ public sealed class WorldState
     public GameClock Clock { get; }
     public List<Colony> Colonies { get; } = [];
 
+    /// <summary>Où sont les colonies les unes par rapport aux autres.</summary>
+    public WorldMap WorldMap { get; } = new();
+
+    /// <summary>Les caravanes en route entre deux colonies.</summary>
+    public List<Caravan> Caravans { get; } = [];
+
+    /// <summary>Nombre de voyages de caravane menés à leur terme depuis le début de la partie.</summary>
+    public int CompletedCaravans { get; internal set; }
+
     /// <summary>La carte de la première colonie (la seule, dans une partie à une colonie). Chaque colonie a la sienne.</summary>
     public LocalMap Map => Colonies[0].Map;
 
@@ -43,12 +55,14 @@ public sealed class WorldState
 
     /// <param name="startingColonists">Nombre de colons fondateurs (par colonie) ; tiré au hasard entre 5 et 10 si l'on n'en précise pas.</param>
     /// <param name="migration">Faux pour couper les arrivées de voyageurs et les départs.</param>
+    /// <param name="trade">Faux pour que les colonies n'échangent rien.</param>
     /// <param name="colonyCount">
     /// Nombre de colonies. Chacune a son espèce (humains, puis nains, elfes, orcs) et sa propre carte locale,
     /// dont le relief convient à son peuple.
     /// </param>
-    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true, bool lifecycle = true, int colonyCount = 1)
+    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true, bool lifecycle = true, int colonyCount = 1, bool trade = true)
     {
+        _trade = trade;
         _migration = migration;
         _lifecycle = lifecycle;
         Random = new Random(seed);
@@ -61,6 +75,8 @@ public sealed class WorldState
                 ?? Random.Next(ColonyFounder.MinStartingColonists, ColonyFounder.MaxStartingColonists + 1);
             Colonies.Add(ColonyFounder.Found(map, Random, ColonyName(i, species), founders, NextColonistId, Clock, species));
         }
+        for (int i = 0; i < Colonies.Count; i++)
+            WorldMap.Place(Colonies[i], i, Colonies.Count);
         foreach (Colony colony in Colonies)
             ColonyBrain.Think(colony, colony.Map, Clock);
     }
@@ -94,6 +110,8 @@ public sealed class WorldState
                     ColonyBrain.LightFire(colony, Clock);
                 if (_lifecycle)
                     Lifecycle.Hourly(this, colony);
+                if (Clock.Hour == Trade.PlanningHour && _trade)
+                    Trade.Daily(this, colony);
                 if (_migration)
                 {
                     Migration.Hourly(this, colony);
@@ -102,6 +120,9 @@ public sealed class WorldState
                 }
             }
         }
+
+        if (Clock.Hour != hour && _trade)
+            Trade.Hourly(this);
 
         foreach (Colony colony in Colonies)
         {

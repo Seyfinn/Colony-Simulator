@@ -17,7 +17,7 @@ public static class Farming
 
     /// <summary>Ce que rapporte la parcelle de cette case : plus sur les berges.</summary>
     public static int YieldAt(LocalMap map, int x, int y) =>
-        PlotYield + (map.IsFertileBank(x, y) ? BankBonus : 0) + (map.IsIrrigated(x, y) ? IrrigationBonus : 0);
+        (int)MathF.Round(PlotYield * map.SoilRichness) + (map.IsFertileBank(x, y) ? BankBonus : 0) + (map.IsIrrigated(x, y) ? IrrigationBonus : 0);
 
     /// <summary>Céréales de plus pour une parcelle qu'un canal irrigue.</summary>
     public const int IrrigationBonus = 2;

@@ -20,7 +20,8 @@ public sealed record ColonySensors(
     float OrePressure,
     bool CanalWork,
     BreadDemand Bread,
-    bool FoodWorkshopsReady)
+    bool FoodWorkshopsReady,
+    bool Prospecting)
 {
     /// <summary>Étage 1 de la pyramide : nourriture et chauffage.</summary>
     public bool SurvivalAssured => Math.Max(FoodPressure, HeatingPressure) <= 60f;
@@ -47,7 +48,7 @@ public static class ColonyBrain
     private const float AutumnFoodTargetDays = 10f;
     private const float FoodCrisisDays = 1f;
     private const int WoodBaseReserve = 20;
-    private const int StoneReserveTarget = 60;
+    internal const int StoneReserveTarget = 60;
 
     // Part maximale de la main-d'œuvre que chaque secteur peut mobiliser.
     private const float MaxFoodShare = 0.9f;
@@ -56,6 +57,10 @@ public static class ColonyBrain
     private const float MaxConstructionShare = 0.3f;
     private const float MaxFarmShare = 0.6f;
     private const float MaxCraftShare = 0.25f;
+
+    /// <summary>Tant qu'on n'a pas trouvé de fer, on veut bien creuser jusqu'à cette quantité de pierre pour en chercher.</summary>
+    private const int ProspectBudget = 180;
+    private const float ProspectShare = 0.15f;
     private const float BreadCraftShare = 0.12f;
     /// <summary>Grain en surplus qui dort au grenier : on met deux fois plus de bras au moulin et au four.</summary>
     private const int LargeGrainSurplus = 60;
@@ -102,6 +107,12 @@ public static class ColonyBrain
 
     public static void Think(Colony colony, LocalMap map, GameClock clock)
     {
+        RelocateQuarryIfExhausted(colony, map, clock);
+        if (!colony.IronSeen && WorkSites.OreVisibleNearQuarry(map, colony))
+        {
+            colony.IronSeen = true;
+            Say(colony, clock, "Les mineurs ont repéré un filon de fer à la carrière.");
+        }
         PlanFields(colony, map, clock);
         ColonySensors sensors = Sense(colony, clock);
         if (PlanConstruction(colony, map, sensors, clock) || PlanWorkshop(colony, map, sensors, clock)
@@ -116,6 +127,24 @@ public static class ColonyBrain
         colony.AssignSectors();
 
         Narrate(colony, sensors, clock);
+    }
+
+    /// <summary>Jours à attendre avant de chercher une nouvelle carrière, pour ne pas en changer sans cesse.</summary>
+    private const int QuarryMoveCooldownDays = 8;
+
+    /// <summary>La carrière n'offre plus assez de roche : la colonie ouvre un nouveau front de taille, ailleurs.</summary>
+    private static void RelocateQuarryIfExhausted(Colony colony, LocalMap map, GameClock clock)
+    {
+        if (colony.Quarry is not { } quarry || clock.Hour != 12
+            || clock.Ticks - colony.LastQuarryMoveTicks < QuarryMoveCooldownDays * TimeConstants.TicksPerDay
+            || WorkSites.RocksLeft(map, quarry) >= WorkSites.ExhaustedQuarryRocks)
+            return;
+        colony.LastQuarryMoveTicks = clock.Ticks;
+        if (WorkSites.FindQuarry(map, colony.CampX, colony.CampY) is not { } next || next == quarry
+            || WorkSites.RocksLeft(map, next) <= WorkSites.RocksLeft(map, quarry))
+            return;
+        colony.Quarry = next;
+        Say(colony, clock, "La carrière est presque épuisée : nous ouvrons un nouveau front de taille.");
     }
 
     /// <summary>
@@ -380,7 +409,8 @@ public static class ColonyBrain
         return new ColonySensors(foodDays, foodPressure, heatingPressure, woodTarget, woodPressure,
             homeless, housingPressure, hasSite, stonePressure, farmShare,
             chain, colony.ConstructionSites.Any(b => !b.IsHut), colony.Buildings.Any(b => b.IsComplete && b.IsWorkshop && !FoodChain.IsFoodWorkshop(b.Type)), orePressure,
-            colony.CanalsInProgress.Any(), FoodChain.Demand(colony), colony.Buildings.Any(b => b.IsComplete && FoodChain.IsFoodWorkshop(b.Type)));
+            colony.CanalsInProgress.Any(), FoodChain.Demand(colony), colony.Buildings.Any(b => b.IsComplete && FoodChain.IsFoodWorkshop(b.Type)),
+            !ToolChain.IronDiscovered(colony) && colony.Labor.TotalProduced(ResourceType.Stone) < ProspectBudget);
     }
 
     /// <summary>
@@ -398,6 +428,10 @@ public static class ColonyBrain
             : 0f;
         bool comfortAssured = sensors.SurvivalAssured && sensors.HousingPressure <= ComfortHousingLimit;
         float stone = comfortAssured ? sensors.StonePressure / 100f * MaxStoneShare : 0f;
+
+        // Pas encore de fer en vue : un ou deux mineurs creusent la roche à sa recherche (dans la limite d'un budget).
+        if (comfortAssured && sensors.Prospecting)
+            stone = Math.Max(stone, ProspectShare);
 
         // La chaîne du fer : on fouille la roche pour le minerai manquant, et l'on travaille dans les ateliers.
         if (comfortAssured && sensors.Chain.Active)

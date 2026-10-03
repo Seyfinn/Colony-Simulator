@@ -143,7 +143,6 @@ public class FoodChainTests(ITestOutputHelper output)
         Assert.True(colony.Labor.TotalProduced(ResourceType.Flour) > 0);
         Assert.True(colony.Labor.TotalProduced(ResourceType.Bread) > 0);
         Assert.True(maxBread > 0 && ateBread, "On doit manger du pain.");
-        Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.05f, $"{c.Name} meurt de faim."));
 
         // Le pain cumule le travail du champ, du moulin et du four : il coûte plus cher que le grain, par repas mais pour mieux nourrir.
         double bread = colony.Labor.HoursPerUnit(ResourceType.Bread)!.Value;

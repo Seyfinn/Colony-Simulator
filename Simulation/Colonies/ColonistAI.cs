@@ -18,6 +18,9 @@ public static class ColonistAI
     private const int FoodPerFish = 2;
     private const float ChopSeconds = 4f;
     private const float MineSeconds = 5f;
+
+    /// <summary>Au-delà de ce multiple de la réserve de pierre, on ne creuse plus la roche stérile pour trouver du minerai.</summary>
+    private const int StoneGlutFactor = 3;
     /// <summary>Creuser une case de canal à la bêche : plus long que d'abattre un arbre.</summary>
     private const float DigSeconds = 4f;
     private const float DeliverSeconds = 0.5f;
@@ -557,6 +560,10 @@ public static class ColonistAI
                      .Where(r => !colony.UnreachableStands.Contains((r.StandX, r.StandY)))
                      .Take(TargetsToTry))
         {
+            // On cherche du minerai, mais aucun filon n'est proche : inutile d'entasser de la pierre dont on n'a que faire.
+            if (wantOre && colony.Stock.Get(ResourceType.Stone) >= ColonyBrain.StoneReserveTarget * StoneGlutFactor
+                && colony.Map.DepthToOre(rockX, rockY, WorkSites.OreProspectDepth) == int.MaxValue)
+                return false;
             if (TryStart(colonist, world, new Activity(ActivityKind.Mine, rockX, rockY, Ticks(seconds)) { StandX = standX, StandY = standY }))
                 return true;
             colony.UnreachableStands.Add((standX, standY));
