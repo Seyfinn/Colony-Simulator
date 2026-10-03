@@ -34,6 +34,23 @@ public class LifecycleTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Il_y_a_des_centaines_de_prenoms_sans_doublon()
+    {
+        var random = new Random(1);
+        var females = new HashSet<string>();
+        var males = new HashSet<string>();
+        for (int i = 0; i < 20000; i++)
+        {
+            females.Add(Names.Pick(Sex.Female, random, []));
+            males.Add(Names.Pick(Sex.Male, random, []));
+        }
+        output.WriteLine($"Prénoms féminins {females.Count}, masculins {males.Count}");
+        Assert.True(females.Count >= 150 && males.Count >= 150);
+        Assert.True(females.Count + males.Count >= 300);
+        Assert.Empty(females.Intersect(males));
+    }
+
+    [Fact]
     public void Une_colonie_commence_avec_des_adultes_seulement_sans_couple_ni_tombe()
     {
         foreach (int seed in new[] { 1, 2, 3, 12345 })
