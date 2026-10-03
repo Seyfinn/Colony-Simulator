@@ -26,6 +26,29 @@ public sealed class Skills
         return skills;
     }
 
+    /// <summary>Un voyageur expérimenté : un métier déjà maîtrisé (niveau 8 à 12), le reste tiré au hasard.</summary>
+    public static Skills Veteran(Random random, SkillType specialty)
+    {
+        Skills skills = Random(random);
+        skills._level[(int)specialty] = 8f + 4f * random.NextSingle();
+        skills._talent[(int)specialty] = MathF.Max(skills._talent[(int)specialty], 1f);
+        return skills;
+    }
+
+    /// <summary>Le nom du métier, au masculin ou au féminin.</summary>
+    public static string TradeName(SkillType skill, Sex sex)
+    {
+        bool f = sex == Sex.Female;
+        return skill switch
+        {
+            SkillType.Foraging => f ? "cueilleuse" : "cueilleur",
+            SkillType.Fishing => f ? "pêcheuse" : "pêcheur",
+            SkillType.Woodcutting => f ? "bûcheronne" : "bûcheron",
+            SkillType.Mining => f ? "mineuse" : "mineur",
+            _ => f ? "bâtisseuse" : "bâtisseur",
+        };
+    }
+
     public float Level(SkillType skill) => _level[(int)skill];
 
     /// <summary>Multiplicateur d'apprentissage, de 0,5 (peu doué) à 1,5 (très doué).</summary>

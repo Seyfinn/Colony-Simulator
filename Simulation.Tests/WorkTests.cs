@@ -10,7 +10,7 @@ public class WorkTests(ITestOutputHelper output)
     [Fact]
     public void La_colonie_coupe_du_bois_et_creuse_sa_carriere()
     {
-        var world = new WorldState(12345);
+        var world = new WorldState(12345, startingColonists: 20, migration: false);
         Colony colony = world.Colonies[0];
         Assert.NotNull(colony.Quarry);
         (int qx, int qy) = colony.Quarry.Value;
@@ -51,7 +51,7 @@ public class WorkTests(ITestOutputHelper output)
     [Fact]
     public void Les_postes_vont_aux_plus_doues()
     {
-        var world = new WorldState(12345);
+        var world = new WorldState(12345, startingColonists: 20, migration: false);
         Colony colony = world.Colonies[0];
         colony.WorkShares[WorkSector.Food] = 0.5f;
         colony.WorkShares[WorkSector.Wood] = 0.3f;

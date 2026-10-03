@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using Godot;
 using GodColony.Simulation;
 using GodColony.Simulation.Colonies;
@@ -141,7 +142,7 @@ public partial class Main : Node2D
         Colonist? nearest = null;
         float bestDistance = SelectRadius * TerrainPainter.TileSize;
         foreach (Colony colony in _world.Colonies)
-        foreach (Colonist colonist in colony.Members)
+        foreach (Colonist colonist in colony.Members.Concat(colony.Transients))
         {
             // On vise le corps du colon, un peu au-dessus de ses pieds.
             Vector2 body = _colonistsView.DisplayPosition(colonist) - new Vector2(0, 6);
@@ -211,7 +212,9 @@ public partial class Main : Node2D
 
         Colony colony = _world.Colonies[0];
         Stockpile stock = colony.Stock;
-        _hud.SetColony($"{colony.Name}  ·  {colony.Members.Count} colons  ·  humeur {colony.AverageMood * 100:0} %  ·  " +
+        int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
+        string population = arriving > 0 ? $"{colony.Members.Count} colons (+{arriving} en route)" : $"{colony.Members.Count} colons";
+        _hud.SetColony($"{colony.Name}  ·  {population}  ·  humeur {colony.AverageMood * 100:0} %  ·  " +
                        $"nourriture {stock.Get(ResourceType.Food)}  ·  bois {stock.Get(ResourceType.Wood)}  ·  " +
                        $"pierre {stock.Get(ResourceType.Stone)}  ·  minerai de fer {stock.Get(ResourceType.IronOre)}");
 
@@ -223,6 +226,10 @@ public partial class Main : Node2D
 
         _hud.ShowShares(colony);
         _hud.ShowThoughts(colony);
+
+        // Un colon sélectionné qui a quitté la colonie n'a plus de fiche.
+        if (_selected is not null && _selected.Transit == TransitState.None && !_selected.Colony.Members.Contains(_selected))
+            Select(null);
         _hud.ShowColonist(_selected);
     }
 

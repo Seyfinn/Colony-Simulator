@@ -15,9 +15,36 @@ public static class Names
         "Odon", "Perceval", "Raoul", "Savary", "Thibaut", "Urbain", "Yvon", "Bertrand", "Gauvain", "Renaud",
     ];
 
-    public static string Pick(Sex sex, Random random)
+    /// <summary>Un prénom au hasard, de préférence qu'aucun autre membre de la colonie ne porte déjà.</summary>
+    public static string Pick(Sex sex, Random random, IEnumerable<string> taken)
     {
         string[] list = sex == Sex.Female ? Female : Male;
-        return list[random.Next(list.Length)];
+        var used = new HashSet<string>(taken);
+        string name = list[random.Next(list.Length)];
+        if (!used.Contains(name))
+            return name;
+        string? free = list.FirstOrDefault(n => !used.Contains(n));
+        if (free is not null)
+            return free;
+
+        // Tous les prénoms sont pris : on les numérote, comme les rois (« Odon II »).
+        for (int n = 2; ; n++)
+        {
+            string numbered = $"{name} {Roman(n)}";
+            if (!used.Contains(numbered))
+                return numbered;
+        }
+    }
+
+    private static string Roman(int n)
+    {
+        var result = new System.Text.StringBuilder();
+        foreach ((int value, string symbol) in new[] { (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I") })
+            while (n >= value)
+            {
+                result.Append(symbol);
+                n -= value;
+            }
+        return result.ToString();
     }
 }

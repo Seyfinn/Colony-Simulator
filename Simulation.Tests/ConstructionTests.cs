@@ -9,7 +9,7 @@ public class ConstructionTests(ITestOutputHelper output)
     [Fact]
     public void Quand_la_survie_est_assuree_la_colonie_bati_une_hutte_et_s_y_installe()
     {
-        var world = new WorldState(12345);
+        var world = new WorldState(12345, startingColonists: 20, migration: false);
         Colony colony = world.Colonies[0];
         colony.Stock.Add(ResourceType.Food, 1000);
         colony.Stock.Add(ResourceType.Wood, 100);
@@ -30,7 +30,7 @@ public class ConstructionTests(ITestOutputHelper output)
     [Fact]
     public void Les_huttes_ne_se_chevauchent_pas_et_laissent_un_passage()
     {
-        var world = new WorldState(12345);
+        var world = new WorldState(12345, startingColonists: 20, migration: false);
         Colony colony = world.Colonies[0];
         for (int i = 0; i < 6; i++)
         {

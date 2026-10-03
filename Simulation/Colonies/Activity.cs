@@ -19,6 +19,10 @@ public enum ActivityKind
     /// <summary>Apporter les matériaux sur le chantier.</summary>
     SupplySite,
     Build,
+    /// <summary>Un voyageur marche jusqu'au camp pour se joindre à la colonie.</summary>
+    Arrive,
+    /// <summary>Un colon malheureux quitte la colonie pour de bon.</summary>
+    Depart,
 }
 
 /// <summary>

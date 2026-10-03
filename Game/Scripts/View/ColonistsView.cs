@@ -74,6 +74,8 @@ public partial class ColonistsView : Node2D
             foreach (Colonist colonist in colony.Members)
                 if (!colonist.IsSleepingAtHome)
                     DrawColonist(colonist);
+            foreach (Colonist traveler in colony.Transients)
+                DrawColonist(traveler);
         }
     }
 

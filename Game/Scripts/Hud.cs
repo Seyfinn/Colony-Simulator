@@ -111,8 +111,13 @@ public partial class Hud : CanvasLayer
         _rest.Set(colonist.Needs.Rest);
         _leisure.Set(colonist.Needs.Leisure);
         _mood.Set(colonist.Needs.Mood);
-        _colonistSector.Text = $"Affecté à : {SectorName(colonist.Sector)}\n" +
-                               (colonist.Home is null ? "Dort à la belle étoile" : "Dort dans une hutte");
+        _colonistSector.Text = colonist.Transit switch
+        {
+            TransitState.Arriving => "Voyageur : n'a pas encore rejoint la colonie",
+            TransitState.Leaving => "A quitté la colonie",
+            _ => $"Affecté à : {SectorName(colonist.Sector)}\n" +
+                 (colonist.Home is null ? "Dort à la belle étoile" : "Dort dans une hutte"),
+        };
 
         // Niveau et talent : « ★ » = très doué (apprend vite), « · » = peu doué.
         var lines = new System.Text.StringBuilder("Compétences\n");
@@ -163,6 +168,8 @@ public partial class Hud : CanvasLayer
             ActivityKind.FetchMaterials => "Va chercher du bois pour le chantier",
             ActivityKind.SupplySite => "Apporte du bois au chantier",
             ActivityKind.Build => there ? "Bâtit une hutte" : "Part sur le chantier",
+            ActivityKind.Arrive => "Marche vers la colonie",
+            ActivityKind.Depart => "Quitte la colonie pour de bon",
             _ => "Se promène",
         };
     }

@@ -100,7 +100,7 @@ public static class ColonyBrain
         Urbanism.PlanHut(map, colony, site.X, site.Y);
         Say(colony, clock, colony.Buildings.Count == 1
             ? $"{sensors.Homeless} colons dorment à la belle étoile : nous décidons de bâtir notre première hutte."
-            : $"Encore {sensors.Homeless} colons sans toit : nous ouvrons le chantier d'une nouvelle hutte.");
+            : $"Encore {sensors.Homeless} {(sensors.Homeless > 1 ? "colons sans toit" : "colon sans toit")} : nous ouvrons le chantier d'une nouvelle hutte.");
         return true;
     }
 
@@ -108,7 +108,7 @@ public static class ColonyBrain
     public static void OnBuildingComplete(Colony colony, Building building, GameClock clock)
     {
         colony.Labor.RecordHut(LaborLedger.TicksToHours(building.LaborTicks));
-        colony.MoveIn(building);
+        colony.FillVacancies();
         int homeless = colony.Homeless;
         Say(colony, clock, homeless > 0
             ? $"Une hutte est achevée : {building.Residents.Count} colons y dorment désormais à l'abri ({homeless} encore dehors)."
@@ -262,7 +262,9 @@ public static class ColonyBrain
             : freeRatio > 0.6f ? "beaucoup"
             : Announced(colony, "temps libre");
         if (Changed(colony, "temps libre", freeBand) && free > 0)
-            Say(colony, clock, $"Tout va bien : {free} colons profitent de leur temps libre.");
+            Say(colony, clock, free == 1
+                ? "Tout va bien : 1 colon profite de son temps libre."
+                : $"Tout va bien : {free} colons profitent de leur temps libre.");
     }
 
     public static string CostSummary(LaborLedger labor)
@@ -327,7 +329,7 @@ public static class ColonyBrain
         public int Hours { get; set; }
     }
 
-    private static void Say(Colony colony, GameClock clock, string text)
+    internal static void Say(Colony colony, GameClock clock, string text)
     {
         colony.Thoughts.Add(new Thought(clock.Ticks, text));
         if (colony.Thoughts.Count > MaxThoughts)

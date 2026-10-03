@@ -14,9 +14,12 @@ public sealed class WorldState
     /// <summary>La partie commence à 8 h du matin, au premier jour du printemps.</summary>
     private const long StartTicks = TimeConstants.TicksPerDay * 8 / 24;
 
-    private const int StartingColonists = 20;
-
     private int _nextColonistId = 1;
+
+    /// <summary>Les voyageurs et les départs sont-ils actifs ? (On peut les couper pour étudier une colonie fermée.)</summary>
+    private readonly bool _migration;
+
+    internal int NextColonistId() => _nextColonistId++;
 
     public GameClock Clock { get; }
     public LocalMap Map { get; }
@@ -26,13 +29,18 @@ public sealed class WorldState
     /// <summary>Tout le hasard de la simulation passe par ici : une même graine rejoue la même histoire.</summary>
     public Random Random { get; }
 
-    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160)
+    /// <param name="startingColonists">Nombre de colons fondateurs ; tiré au hasard entre 5 et 10 si l'on n'en précise pas.</param>
+    /// <param name="migration">Faux pour couper les arrivées de voyageurs et les départs.</param>
+    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true)
     {
+        _migration = migration;
         Random = new Random(seed);
         Clock = new GameClock(StartTicks);
         Map = MapGenerator.Generate(mapWidth, mapHeight, seed);
         Pathfinder = new Pathfinder(Map);
-        Colonies.Add(ColonyFounder.Found(Map, Random, "Première colonie", StartingColonists, () => _nextColonistId++));
+        int founders = startingColonists
+            ?? Random.Next(ColonyFounder.MinStartingColonists, ColonyFounder.MaxStartingColonists + 1);
+        Colonies.Add(ColonyFounder.Found(Map, Random, "Première colonie", founders, NextColonistId));
         foreach (Colony colony in Colonies)
             ColonyBrain.Think(colony, Map, Clock);
     }
@@ -53,12 +61,23 @@ public sealed class WorldState
                 ColonyBrain.Think(colony, Map, Clock);
                 if (Clock.Hour == FireLightingHour)
                     ColonyBrain.LightFire(colony, Clock);
+                if (_migration)
+                {
+                    Migration.Hourly(this, colony);
+                    if (Clock.Hour == Migration.ArrivalHour)
+                        Migration.Daily(this, colony);
+                }
             }
         }
 
         foreach (Colony colony in Colonies)
-        foreach (Colonist colonist in colony.Members)
-            ColonistAI.Tick(colonist, this);
+        {
+            foreach (Colonist colonist in colony.Members)
+                ColonistAI.Tick(colonist, this);
+            if (colony.Transients.Count > 0)
+                foreach (Colonist traveler in colony.Transients.ToArray())
+                    ColonistAI.TickTransient(traveler, this);
+        }
     }
 
     /// <summary>On allume le feu pour la nuit à 20 h.</summary>

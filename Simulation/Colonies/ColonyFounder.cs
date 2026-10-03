@@ -5,8 +5,12 @@ namespace GodColony.Simulation.Colonies;
 /// <summary>Choisit un bon emplacement et y installe une nouvelle colonie.</summary>
 public static class ColonyFounder
 {
-    private const int StartingFood = 80;
+    /// <summary>Provisions de départ par colon : de quoi tenir quelques jours, le temps d'organiser la cueillette.</summary>
+    private const int StartingFoodPerColonist = 4;
     private const int GatherRadius = 5;
+
+    public const int MinStartingColonists = 5;
+    public const int MaxStartingColonists = 10;
 
     public static Colony Found(LocalMap map, Random random, string name, int colonistCount, Func<int> nextId)
     {
@@ -22,13 +26,14 @@ public static class ColonyFounder
         {
             Quarry = WorkSites.FindQuarry(map, campX, campY),
         };
-        colony.Stock.Add(ResourceType.Food, StartingFood);
+        colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount);
 
         for (int i = 0; i < colonistCount; i++)
         {
             Sex sex = i % 2 == 0 ? Sex.Female : Sex.Male;
             (int x, int y) = colony.GatherSpots[random.Next(colony.GatherSpots.Count)];
-            var colonist = new Colonist(nextId(), Names.Pick(sex, random), sex, colony, Skills.Random(random), x + 0.5f, y + 0.5f);
+            string colonistName = Names.Pick(sex, random, colony.Members.Select(m => m.Name));
+            var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random), x + 0.5f, y + 0.5f);
             colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Rest = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Leisure = 0.6f + 0.35f * random.NextSingle();

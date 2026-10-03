@@ -77,6 +77,78 @@ public static class ColonistAI
             Act(colonist, world);
     }
 
+    /// <summary>
+    /// Un colon quitte la colonie : il laisse ce qu'il portait, libère sa place et marche jusqu'au bord de la carte.
+    /// </summary>
+    internal static void BeginDeparture(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        EndActivity(colonist);
+
+        // Ce qu'il portait reste à la colonie ; un chantier qui l'attendait réclamera d'autres bras.
+        if (colonist.Carrying is { } load)
+        {
+            if (colonist.CarryingTo is { } site)
+                site.WoodInTransit -= load.Amount;
+            colony.Stock.Add(load.Type, load.Amount);
+            colonist.Carrying = null;
+            colonist.CarryingTo = null;
+        }
+        colonist.WorkCycleStartTicks = -1;
+
+        colony.Members.Remove(colonist);
+        if (colonist.Home is { } home)
+        {
+            home.Residents.Remove(colonist);
+            colonist.Home = null;
+        }
+        colony.FillVacancies();
+        colony.AssignSectors();
+
+        colonist.Transit = TransitState.Leaving;
+        colony.Transients.Add(colonist);
+    }
+
+    /// <summary>Fait marcher un voyageur vers le camp (arrivée) ou vers le bord de la carte (départ).</summary>
+    internal static void TickTransient(Colonist colonist, WorldState world)
+    {
+        colonist.PrevX = colonist.X;
+        colonist.PrevY = colonist.Y;
+
+        if (colonist.Activity is null && !StartTransitWalk(colonist, world))
+        {
+            // Aucun chemin : l'arrivant apparaît directement au camp, le partant disparaît sur place.
+            EndTransit(colonist, world);
+            return;
+        }
+
+        if (colonist.PathIndex < colonist.Path.Count)
+            Move(colonist, world);
+        else
+            EndTransit(colonist, world);
+    }
+
+    private static bool StartTransitWalk(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        if (colonist.Transit == TransitState.Arriving)
+        {
+            (int x, int y) = colony.GatherSpots[world.Random.Next(Math.Min(12, colony.GatherSpots.Count))];
+            return TryStart(colonist, world, new Activity(ActivityKind.Arrive, x, y, 0));
+        }
+        return Migration.FindEdgePoint(world, colonist.TileX, colonist.TileY) is { } exit
+               && TryStart(colonist, world, new Activity(ActivityKind.Depart, exit.X, exit.Y, 0));
+    }
+
+    private static void EndTransit(Colonist colonist, WorldState world)
+    {
+        EndActivity(colonist);
+        if (colonist.Transit == TransitState.Arriving)
+            Migration.Join(world, colonist);
+        else
+            colonist.Colony.Transients.Remove(colonist);
+    }
+
     private static void UpdateNeeds(Colonist colonist, WorldState world)
     {
         Needs needs = colonist.Needs;

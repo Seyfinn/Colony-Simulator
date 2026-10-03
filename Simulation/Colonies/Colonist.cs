@@ -2,6 +2,9 @@ namespace GodColony.Simulation.Colonies;
 
 public enum Sex { Female, Male }
 
+/// <summary>Un colon est « de passage » quand il marche vers la colonie pour la rejoindre, ou en sort pour toujours.</summary>
+public enum TransitState { None, Arriving, Leaving }
+
 public sealed class Colonist
 {
     public Colonist(int id, string name, Sex sex, Colony colony, Skills skills, float x, float y)
@@ -35,6 +38,12 @@ public sealed class Colonist
 
     public int TileX => (int)X;
     public int TileY => (int)Y;
+
+    /// <summary>Tant qu'il n'est pas arrivé (ou une fois parti), il ne compte pas parmi les membres de la colonie.</summary>
+    public TransitState Transit { get; internal set; }
+
+    /// <summary>Heures de suite passées dans la déprime ; trop longtemps, et il quitte la colonie.</summary>
+    internal int UnhappyHours { get; set; }
 
     public Needs Needs { get; } = new();
     public Activity? Activity { get; internal set; }

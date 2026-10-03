@@ -46,10 +46,20 @@ public sealed class Colony
     /// <summary>Colons qui n'ont pas de hutte et dorment à la belle étoile.</summary>
     public int Homeless => Members.Count(m => m.Home is null);
 
-    /// <summary>Une hutte vient d'être achevée : on y installe des colons qui dormaient dehors.</summary>
-    internal void MoveIn(Building building)
+    /// <summary>
+    /// Ceux qui arrivent ou s'en vont : ils marchent entre le bord de la carte et le camp,
+    /// sans faire partie des membres (ni de leurs statistiques).
+    /// </summary>
+    public List<Colonist> Transients { get; } = [];
+
+    /// <summary>Dernier jour où l'on a dû refuser un voyageur (pour ne pas radoter dans les pensées).</summary>
+    internal long LastRefusalDay { get; set; } = -100;
+
+    /// <summary>Les places libres des huttes achevées vont aux colons qui dormaient dehors.</summary>
+    internal void FillVacancies()
     {
-        foreach (Colonist colonist in Members.Where(m => m.Home is null).Take(Building.HutCapacity).ToList())
+        foreach (Building building in Buildings.Where(b => b.IsComplete))
+        foreach (Colonist colonist in Members.Where(m => m.Home is null).Take(Building.HutCapacity - building.Residents.Count).ToList())
         {
             colonist.Home = building;
             building.Residents.Add(colonist);
