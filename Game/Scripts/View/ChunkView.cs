@@ -66,7 +66,10 @@ public partial class ChunkView : Node2D
         {
             int x = _tileX0 + tx, y = _tileY0 + ty;
             if (_map.InBounds(x, y))
+            {
+                EnvironmentDetails.Draw(this, _map, x, y, new Vector2(tx * tile, ty * tile));
                 FloraPainter.Draw(this, _map, x, y, new Vector2(tx * tile, ty * tile), shadow: true);
+            }
         }
     }
 }

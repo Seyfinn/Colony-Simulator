@@ -37,6 +37,7 @@ public partial class Hud : CanvasLayer
     private TextureRect _portrait = null!;
     private int _portraitId = -1;
     private bool _portraitElder;
+    private WoodlandBiome _portraitBiome;
     private Label _colonistName = null!, _colonistActivity = null!, _colonistSector = null!;
     private Label _colonistAge = null!, _colonistFamily = null!, _colonistTraits = null!, _colonistRelations = null!;
     private readonly Dictionary<SkillType, Label> _skills = [];
@@ -354,16 +355,17 @@ public partial class Hud : CanvasLayer
         }
     }
 
-    public void ShowColonist(Colonist? colonist)
+    public void ShowColonist(Colonist? colonist, WoodlandBiome biome = WoodlandBiome.TemperatePlain)
     {
         _colonistPanel.Visible = colonist is not null;
         if (colonist is null) return;
         bool elder = colonist.Stage == LifeStage.Elder;
-        if (_portraitId != colonist.Id || _portraitElder != elder)
+        if (_portraitId != colonist.Id || _portraitElder != elder || _portraitBiome != biome)
         {
-            _portrait.Texture = SpriteFactory.Colonist(colonist.Id, elder)[0];
+            _portrait.Texture = SpriteFactory.Colonist(colonist.Id, elder, biome)[0];
             _portraitId = colonist.Id;
             _portraitElder = elder;
+            _portraitBiome = biome;
         }
         _colonistName.Text = colonist.FullName;
         _colonistActivity.Text = Describe(colonist);

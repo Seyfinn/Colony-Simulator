@@ -24,13 +24,17 @@ public partial class ColonistsView : Node2D
     /// <summary>Halos et braises réservés au mode d'observation.</summary>
     public bool AmbientEffectsEnabled { get; set; } = true;
 
-    public void Init(WorldState world)
+    /// <summary>La colonie observée : la vue ne dessine qu'elle, sur sa propre carte.</summary>
+    private Colony _colony = null!;
+
+    public void Init(WorldState world, Colony colonyToShow)
     {
         _world = world;
+        _colony = colonyToShow;
         TextureFilter = TextureFilterEnum.Nearest;
 
         // Halo à plusieurs paliers : chaleur locale, sans surexposer le village en journée.
-        foreach (Colony colony in world.Colonies)
+        foreach (Colony colony in new[] { colonyToShow })
         {
             var texture = new GradientTexture2D
             {
@@ -74,7 +78,7 @@ public partial class ColonistsView : Node2D
     public override void _Draw()
     {
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
-        foreach (Colony colony in _world.Colonies)
+        foreach (Colony colony in new[] { _colony })
         {
             // Au sol, sans épaisseur : les champs passent sous tout le reste.
             foreach (Field field in colony.Fields)
@@ -109,7 +113,7 @@ public partial class ColonistsView : Node2D
             foreach ((int x, int y) in _nearby)
             {
                 (int fx, int fy) = (x, y);
-                _standing.Add((FloraPainter.FootY(fx, fy), () => FloraPainter.Draw(this, _world.Map, fx, fy, new Vector2(fx, fy) * Tile, shadow: false)));
+                _standing.Add((FloraPainter.FootY(fx, fy), () => FloraPainter.Draw(this, _colony.Map, fx, fy, new Vector2(fx, fy) * Tile, shadow: false)));
             }
 
             _standing.Sort((a, b) => a.Y.CompareTo(b.Y));
@@ -145,7 +149,7 @@ public partial class ColonistsView : Node2D
     {
         for (int y = y0; y <= y1; y++)
         for (int x = x0; x <= x1; x++)
-            if (_world.Map.InBounds(x, y) && _world.Map.GetFlora(x, y) != Simulation.Map.FloraType.None)
+            if (_colony.Map.InBounds(x, y) && _colony.Map.GetFlora(x, y) != Simulation.Map.FloraType.None)
                 _nearby.Add((x, y));
     }
 
@@ -256,7 +260,7 @@ public partial class ColonistsView : Node2D
         DrawColoredPolygon([top + new Vector2(-3, -3), top + new Vector2(3, -3), top], ArtDirection.Cream);
     }
 
-    /// <summary>Un barrage tient sur une seule case de rivière : un mur de pierre et des pieux de bois (illustration provisoire).</summary>
+    /// <summary>Vanne de bois entre deux culées de pierre, sur une seule case.</summary>
     private void DrawDam(Building dam)
     {
         var origin = new Vector2(dam.X, dam.Y) * Tile;
@@ -277,15 +281,7 @@ public partial class ColonistsView : Node2D
             return;
         }
         DrawGroundShadow(origin + new Vector2(16, 28), 17, 3, 0.25f);
-        DrawRect(new Rect2(origin + new Vector2(0, 10), new Vector2(Tile, 16)), stone);
-        DrawRect(new Rect2(origin + new Vector2(0, 10), new Vector2(Tile, 3)), stoneLight);
-        DrawRect(new Rect2(origin + new Vector2(0, 23), new Vector2(Tile, 3)), stoneDark);
-        foreach (int x in new[] { 3, 14, 25 })
-        {
-            DrawRect(new Rect2(origin + new Vector2(x, 4), new Vector2(4, 24)), timber);
-            DrawRect(new Rect2(origin + new Vector2(x, 4), new Vector2(1, 24)), light);
-        }
-        DrawRect(new Rect2(origin + new Vector2(1, 6), new Vector2(Tile - 2, 3)), timber);
+        DrawTexture(SpriteFactory.BuildingSprite("Dam"), origin + new Vector2(0, Tile - 48));
     }
 
     private void DrawBuilding(Building building)
@@ -301,8 +297,13 @@ public partial class ColonistsView : Node2D
         if (building.IsComplete)
         {
             DrawGroundShadow(basePoint + new Vector2(34, -1), 29, 5, 0.22f);
-            Texture2D sprite = SpriteFactory.BuildingSprite(building.Type.ToString());
+            Texture2D sprite = SpriteFactory.BuildingSprite(building.Type.ToString(), BiomeVisuals.At(_colony.Map, building.X, building.Y));
             DrawTexture(sprite, basePoint - new Vector2(0, sprite.GetHeight()));
+            return;
+        }
+        if (building.IsWorkshop)
+        {
+            DrawWorkshopSite(building, footprint, basePoint);
             return;
         }
         // Fondations de pierre, plancher, ossature puis charpente selon les travaux réels.
@@ -349,11 +350,42 @@ public partial class ColonistsView : Node2D
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
     }
 
+    private void DrawWorkshopSite(Building building, Rect2 footprint, Vector2 basePoint)
+    {
+        Color timber = Color.Color8(111, 77, 49), light = Color.Color8(172, 127, 78);
+        DrawRect(footprint.Grow(-5), Color.Color8(117, 118, 102), false, 2);
+        Texture2D sprite = SpriteFactory.BuildingSprite(building.Type.ToString(), BiomeVisuals.At(_colony.Map, building.X, building.Y));
+        // La maçonnerie et les équipements apparaissent du sol vers le toit ; chaque atelier garde sa forme.
+        int rows = Math.Clamp((int)(building.Progress * sprite.GetHeight()), 4, sprite.GetHeight());
+        DrawTextureRectRegion(sprite, new Rect2(basePoint - new Vector2(0, rows), new Vector2(64, rows)),
+            new Rect2(0, sprite.GetHeight() - rows, 64, rows));
+        foreach (int x in new[] { 4, 57 })
+        {
+            DrawRect(new Rect2(basePoint + new Vector2(x, -49), new Vector2(2, 47)), timber);
+            DrawLine(basePoint + new Vector2(x, -49), basePoint + new Vector2(x, -3), light);
+        }
+        DrawLine(basePoint + new Vector2(5, -23), basePoint + new Vector2(58, -23), light, 2);
+        DrawLine(basePoint + new Vector2(5, -23), basePoint + new Vector2(27, -3), timber, 2);
+        for (int i = 0; i < Math.Min(8, building.StoneDelivered / 3); i++)
+        {
+            Vector2 rock = footprint.Position + new Vector2(8 + i % 4 * 7, 8 + i / 4 * 5);
+            DrawRect(new Rect2(rock, new Vector2(6, 4)), Color.Color8(135, 147, 132));
+            DrawLine(rock, rock + new Vector2(5, 0), Color.Color8(194, 192, 159));
+        }
+        for (int i = 0; i < Math.Min(5, building.WoodDelivered / 2); i++)
+        {
+            Vector2 log = footprint.Position + new Vector2(39, 8 + i * 4);
+            DrawRect(new Rect2(log, new Vector2(15, 3)), timber);
+            DrawLine(log, log + new Vector2(14, 0), light);
+        }
+    }
+
     private void DrawColonist(Colonist colonist)
     {
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
         Vector2 feet = DisplayPosition(colonist).Round();
-        ImageTexture[] frames = SpriteFactory.Colonist(colonist.Id, colonist.Stage == LifeStage.Elder);
+        ImageTexture[] frames = SpriteFactory.Colonist(colonist.Id, colonist.Stage == LifeStage.Elder,
+            BiomeVisuals.At(_colony.Map, colonist.TileX, colonist.TileY));
         float scale = colonist.Stage == LifeStage.Child ? 0.7f : 1f;
         DrawGroundShadow(feet, (int)(7 * scale), 2, 0.24f);
 

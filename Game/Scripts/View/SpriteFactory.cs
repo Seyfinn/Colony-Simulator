@@ -16,8 +16,7 @@ public static class SpriteFactory
     private static ImageTexture? _bushEmpty;
     private static ImageTexture[]? _campfire;
     private static ImageTexture? _firepit, _grave, _chat, _sleep;
-    private static readonly Dictionary<(int Id, bool Elder), ImageTexture[]> Colonists = [];
-    private static readonly Dictionary<string, ImageTexture> Workshops = [];
+    private static readonly Dictionary<(int Id, bool Elder, WoodlandBiome Biome), ImageTexture[]> Colonists = [];
 
     /// <summary>Chêne, bouleau, conifère et saule : quatre silhouettes en 32 × 48 pixels.</summary>
     public static ImageTexture Tree => TreeVariant(0);
@@ -28,202 +27,19 @@ public static class SpriteFactory
         return Trees[variant, detail] ??= TreeSprites.Create(variant, detail);
     }
 
-    private static ImageTexture? _hut;
+    /// <summary>Maison de 64 × 80 pixels : architecture adaptée au milieu.</summary>
+    public static ImageTexture Hut => BuildingSprites.Get("Hut");
 
-    /// <summary>Hutte de 64 × 80 pixels : murs à colombages et toit de chaume.</summary>
-    public static ImageTexture Hut => _hut ??= BuildHut();
-
-    public static ImageTexture BuildingSprite(string kind)
+    public static ImageTexture BuildingSprite(string kind, WoodlandBiome biome = WoodlandBiome.TemperatePlain)
     {
-        if (kind == "Hut") return Hut;
-        if (!Workshops.TryGetValue(kind, out var texture))
-            Workshops[kind] = texture = BuildWorkshop(kind);
-        return texture;
+        return BuildingSprites.Get(kind, biome);
     }
 
-    private static ImageTexture BuildWorkshop(string kind)
-    {
-        var image = Image.CreateEmpty(64, 80, false, Image.Format.Rgba8);
-        Color stone = Color.Color8(144, 158, 140), joint = Color.Color8(78, 95, 87);
-        Color timber = Color.Color8(104, 78, 50), light = Color.Color8(173, 131, 78);
-        FillBox(image, 5, 72, 54, 5, joint);
-        FillBox(image, 6, 72, 51, 2, stone);
-        if (kind == "Kiln")
-        {
-            Oval(image, 32, 54, 25, 20, Color.Color8(101, 104, 72));
-            Oval(image, 29, 51, 20, 16, Color.Color8(156, 151, 100));
-            for (int y = 38; y < 68; y += 5)
-            {
-                int half = (int)(23 * Math.Sqrt(Math.Max(0, 1 - (y - 54) * (y - 54) / 400f)));
-                FillBox(image, 32 - half, y, half * 2, 1, Color.Color8(119, 123, 80));
-            }
-            FillBox(image, 28, 31, 8, 7, joint);
-            FillBox(image, 29, 30, 6, 2, stone);
-            Oval(image, 32, 61, 7, 8, joint);
-            FillBox(image, 25, 61, 15, 11, joint);
-            FillBox(image, 28, 60, 9, 11, Color.Color8(42, 51, 47));
-            FillBox(image, 43, 69, 13, 3, timber);
-            FillBox(image, 43, 68, 12, 1, light);
-        }
-        else if (kind == "Bloomery")
-        {
-            FillBox(image, 17, 18, 31, 54, joint);
-            FillBox(image, 19, 19, 27, 52, stone);
-            FillBox(image, 40, 19, 6, 52, Color.Color8(111, 133, 119));
-            for (int y = 22; y < 69; y += 6)
-            {
-                FillBox(image, 19, y, 27, 1, joint);
-                for (int x = 20 + y / 6 % 2 * 5; x < 45; x += 10) FillBox(image, x, y + 1, 1, 5, joint);
-            }
-            FillBox(image, 15, 16, 35, 4, stone);
-            FillBox(image, 18, 14, 29, 2, Color.Color8(190, 201, 172));
-            FillBox(image, 23, 13, 19, 2, Color.Color8(52, 67, 61));
-            FillBox(image, 25, 53, 13, 19, joint);
-            FillBox(image, 28, 55, 7, 15, Color.Color8(52, 60, 54));
-            FillBox(image, 5, 58, 10, 13, timber);
-            FillBox(image, 6, 59, 8, 2, light);
-            FillBox(image, 7, 62, 6, 5, Color.Color8(151, 112, 76));
-        }
-        else if (kind == "Mill")
-        {
-            // Moulin à eau : murs de pierre, toit de chaume, roue à aubes sur le côté.
-            FillBox(image, 14, 36, 36, 36, joint);
-            FillBox(image, 16, 38, 32, 34, Color.Color8(190, 176, 140));
-            for (int y = 40; y < 71; y += 6) FillBox(image, 16, y, 32, 1, Color.Color8(160, 146, 112));
-            FillBox(image, 36, 38, 12, 34, Color.Color8(163, 150, 118));
-            for (int y = 12; y <= 37; y++)
-            {
-                int left = 32 - (y - 12) * 21 / 25 - 3;
-                int right = 32 + (y - 12) * 21 / 25 + 3;
-                for (int x = Math.Max(0, left); x <= Math.Min(63, right); x++)
-                    image.SetPixel(x, y, y % 4 == 0 ? Color.Color8(142, 112, 62) : Color.Color8(201, 170, 99));
-            }
-            FillBox(image, 24, 54, 9, 18, timber);
-            FillBox(image, 26, 56, 5, 16, Color.Color8(61, 48, 38));
-            FillBox(image, 20, 43, 6, 7, Color.Color8(78, 95, 87));
-            Oval(image, 54, 56, 9, 14, timber);
-            Oval(image, 54, 56, 6, 10, Color.Color8(86, 128, 134));
-            FillBox(image, 53, 42, 2, 28, light);
-            FillBox(image, 44, 55, 20, 2, light);
-        }
-        else if (kind == "Oven")
-        {
-            // Four à pain : dôme d'argile, bouche voûtée, cheminée et pelle à pain.
-            Oval(image, 32, 56, 24, 18, Color.Color8(143, 98, 70));
-            Oval(image, 29, 53, 20, 14, Color.Color8(194, 140, 98));
-            for (int y = 42; y < 68; y += 6)
-            {
-                int half = (int)(22 * Math.Sqrt(Math.Max(0, 1 - (y - 56) * (y - 56) / 324f)));
-                FillBox(image, 32 - half, y, half * 2, 1, Color.Color8(160, 112, 79));
-            }
-            FillBox(image, 40, 26, 7, 14, joint);
-            FillBox(image, 41, 25, 5, 2, stone);
-            FillBox(image, 24, 58, 17, 14, joint);
-            Oval(image, 32, 60, 8, 7, joint);
-            FillBox(image, 26, 62, 13, 10, Color.Color8(42, 33, 28));
-            FillBox(image, 28, 66, 9, 3, Color.Color8(231, 148, 66));
-            FillBox(image, 6, 52, 3, 20, timber);
-            FillBox(image, 3, 49, 9, 5, light);
-        }
-        else
-        {
-            // Forge ouverte : charpente, petit foyer et enclume sous un toit d'ardoise.
-            foreach (int x in new[] { 7, 52 })
-            {
-                FillBox(image, x, 40, 4, 33, timber);
-                FillBox(image, x, 40, 1, 32, light);
-            }
-            FillBox(image, 8, 66, 48, 6, timber);
-            FillBox(image, 38, 40, 15, 26, joint);
-            for (int y = 41; y < 65; y += 5) FillBox(image, 39, y, 13, 3, stone);
-            FillBox(image, 42, 54, 8, 9, Color.Color8(43, 55, 50));
-            FillBox(image, 20, 58, 8, 12, timber);
-            FillBox(image, 16, 53, 17, 3, Color.Color8(173, 192, 179));
-            FillBox(image, 19, 56, 11, 4, Color.Color8(102, 133, 126));
-            FillBox(image, 20, 60, 9, 2, joint);
-            FillBox(image, 12, 54, 5, 1, Color.Color8(173, 192, 179));
-            for (int y = 10; y <= 43; y++)
-            {
-                int left = 17 - (y - 10) * 14 / 33;
-                int right = 48 + (y - 10) * 13 / 33;
-                for (int x = left; x <= right; x++)
-                    image.SetPixel(x, y, y % 5 == 0 ? joint : (x / 5 + y / 5) % 3 == 0
-                        ? Color.Color8(132, 158, 148) : Color.Color8(96, 128, 120));
-            }
-            FillBox(image, 3, 43, 58, 3, timber);
-            FillBox(image, 46, 7, 9, 22, joint);
-            FillBox(image, 47, 7, 7, 3, stone);
-        }
-        return ImageTexture.CreateFromImage(image);
-    }
-
-    private static ImageTexture BuildHut()
-    {
-        var image = Image.CreateEmpty(64, 80, false, Image.Format.Rgba8);
-        Color timber = Color.Color8(100, 69, 46), timberLight = Color.Color8(151, 107, 66);
-        Color wall = Color.Color8(205, 180, 131), wallShade = Color.Color8(167, 139, 99);
-        Color stone = Color.Color8(118, 117, 104), stoneLight = Color.Color8(162, 156, 132);
-        FillBox(image, 6, 43, 49, 30, wall);
-        FillBox(image, 55, 42, 6, 29, wallShade);
-        // Grain discret de l'enduit et ombre sous la corniche.
-        for (int y = 45; y < 73; y++)
-        for (int x = 8; x < 55; x++)
-            if ((x * 17 + y * 11) % 47 == 0) image.SetPixel(x, y, wallShade.Lerp(wall, 0.65f));
-        FillBox(image, 6, 43, 49, 5, wallShade);
-        foreach (int x in new[] { 6, 24, 38, 53 })
-        {
-            FillBox(image, x, 43, 3, 30, timber);
-            FillBox(image, x, 49, 1, 22, timberLight);
-        }
-        FillBox(image, 6, 65, 49, 2, timber);
-        FillBox(image, 6, 72, 54, 5, stone);
-        for (int x = 7; x < 60; x += 7)
-        {
-            FillBox(image, x, 72, 5, 1, stoneLight);
-            image.SetPixel(x, 75, timber);
-        }
-        // Porte en planches, encadrée de bois, avec seuil de pierre.
-        FillBox(image, 27, 50, 11, 25, timber);
-        FillBox(image, 29, 53, 7, 21, Color.Color8(73, 53, 38));
-        for (int x = 29; x < 36; x += 3) FillBox(image, x, 54, 1, 18, timberLight.Lerp(timber, 0.6f));
-        image.SetPixel(34, 64, Color.Color8(221, 183, 87));
-        FillBox(image, 26, 75, 14, 3, stoneLight);
-        // Deux petites fenêtres en retrait, croisillons et rebords.
-        foreach (int x in new[] { 12, 43 })
-        {
-            FillBox(image, x - 1, 51, 10, 12, timber);
-            FillBox(image, x, 52, 8, 9, Color.Color8(49, 78, 81));
-            FillBox(image, x, 52, 3, 3, Color.Color8(126, 167, 155));
-            FillBox(image, x + 3, 52, 1, 9, timberLight);
-            FillBox(image, x, 56, 8, 1, timberLight);
-            FillBox(image, x - 2, 62, 12, 2, timberLight);
-        }
-        // Chaume en mèches courtes : lumière en haut à gauche, pan droit ombré.
-        for (int y = 8; y <= 44; y++)
-        {
-            int left = 17 - (y - 8) * 14 / 36;
-            int right = 48 + (y - 8) * 13 / 36;
-            for (int x = left; x <= right; x++)
-            {
-                bool side = x > 46 + (y - 8) / 4;
-                int straw = (x / 2 * 13 + y / 4 * 7) % 9;
-                Color c = side ? Color.Color8(142, 108, 61) : Color.Color8(191, 155, 86);
-                if (straw < 2) c = c.Lightened(0.16f);
-                if (y % 6 == 5) c = c.Darkened(0.13f);
-                if (x == left || x == right || y == 44) c = timber;
-                image.SetPixel(x, y, c);
-            }
-        }
-        FillBox(image, 17, 7, 32, 2, Color.Color8(222, 185, 108));
-        FillBox(image, 4, 45, 56, 2, timber);
-        return ImageTexture.CreateFromImage(image);
-    }
 
     private static void FillBox(Image image, int x, int y, int width, int height, Color color)
     {
-        for (int py = y; py < y + height; py++)
-        for (int px = x; px < x + width; px++)
-            image.SetPixel(px, py, color);
+        for (int py = Math.Max(0, y); py < Math.Min(image.GetHeight(), y + height); py++)
+        for (int px = Math.Max(0, x); px < Math.Min(image.GetWidth(), x + width); px++) image.SetPixel(px, py, color);
     }
 
     private static ImageTexture? _stump;
@@ -289,13 +105,13 @@ public static class SpriteFactory
     ];
 
     /// <summary>Quatre poses de marche et cheveux gris pour les anciens, sans modifier la simulation.</summary>
-    public static ImageTexture[] Colonist(int id, bool elder = false)
+    public static ImageTexture[] Colonist(int id, bool elder = false, WoodlandBiome biome = WoodlandBiome.TemperatePlain)
     {
-        var key = (id, elder);
+        var key = (id, elder, biome);
         if (Colonists.TryGetValue(key, out ImageTexture[]? frames))
             return frames;
         Color hair = elder ? Color.Color8(170, 173, 163) : Hair[id * 7 % Hair.Length];
-        Color clothes = Clothes[id % Clothes.Length];
+        Color clothes = BiomeVisuals.Clothing(biome, id, Clothes[id % Clothes.Length]);
         Color skin = Skin[id * 5 % Skin.Length];
         var palette = new Dictionary<char, Color>
         {
@@ -312,12 +128,12 @@ public static class SpriteFactory
             ['p'] = Color.Color8(81, 78, 62),
             ['b'] = Color.Color8(55, 46, 37),
         };
-        frames = [BuildColonist(palette, 0), BuildColonist(palette, 1), BuildColonist(palette, 2), BuildColonist(palette, 3)];
+        frames = [BuildColonist(palette, 0, biome, id), BuildColonist(palette, 1, biome, id), BuildColonist(palette, 2, biome, id), BuildColonist(palette, 3, biome, id)];
         Colonists[key] = frames;
         return frames;
     }
 
-    private static ImageTexture BuildColonist(Dictionary<char, Color> palette, int frame)
+    private static ImageTexture BuildColonist(Dictionary<char, Color> palette, int frame, WoodlandBiome biome, int id)
     {
         var image = Image.CreateEmpty(16, 24, false, Image.Format.Rgba8);
         string[] rows = [.. ColonistBody, .. ColonistLegs[frame]];
@@ -334,6 +150,7 @@ public static class SpriteFactory
             FillBox(image, x, y, 2, 3, palette['c']);
             FillBox(image, x, y + 3, 2, 2, palette['s']);
         }
+        BiomeVisuals.Dress(image, biome, id, palette['C'], palette['s'], frame);
         return ImageTexture.CreateFromImage(image);
     }
 

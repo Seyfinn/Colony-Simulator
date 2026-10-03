@@ -71,6 +71,7 @@ public partial class DayNightAmbience : Node2D
     {
         if (!_initialized || !_profile.Detailed) return;
         Vector2 size = GetViewportRect().Size;
+        DrawWater(size);
         float dawn = _profile.Dawn, day = _profile.Day, dusk = _profile.Dusk, night = _profile.Night;
         float warmth = dawn * 0.16f + day * 0.06f + dusk * 0.2f;
         Glow(new Rect2(-size.X * 0.4f, -size.Y * 0.7f, size.X * 1.4f, size.Y * 1.8f),
@@ -98,6 +99,47 @@ public partial class DayNightAmbience : Node2D
                         size.X * 0.8f, size.Y * 0.3f), new Color(0.82f, 0.9f, 0.86f, dawn * 0.11f));
             }
         DrawMotes(size);
+    }
+
+    private void DrawWater(Vector2 size)
+    {
+        Transform2D canvas = GetViewport().GetCanvasTransform(), inverse = canvas.AffineInverse();
+        Vector2 first = inverse * Vector2.Zero, last = inverse * size;
+        const int tile = TerrainPainter.TileSize;
+        int left = Math.Max(0, (int)(first.X / tile)), top = Math.Max(0, (int)(first.Y / tile));
+        int right = Math.Min(_map.Width - 1, (int)(last.X / tile) + 1), bottom = Math.Min(_map.Height - 1, (int)(last.Y / tile) + 1);
+        int drawn = 0;
+        for (int y = top; y <= bottom && drawn < 120; y++)
+        for (int x = left; x <= right && drawn < 120; x++)
+        {
+            Surface surface = _map.GetSurface(x, y);
+            if (surface is not (Surface.Water or Surface.River)) continue;
+            float seed = Noise.Hash01(x, y, 179, _map.Seed);
+            if (seed < 0.55f) continue;
+            bool river = surface == Surface.River && !_map.IsCanal(x, y);
+            float flow = river ? _map.GetFlow(x, y) : 0.3f;
+            float phase = ((float)_time * (0.22f + flow * 0.22f) + seed * 5) % 1;
+            var downstream = river ? _map.RiverDownstream(x, y) : null;
+            Vector2 direction = downstream is { } next ? new Vector2(next.X - x, next.Y - y).Normalized() : Vector2.Down;
+            Vector2 offset = new(11 + seed * 10, 10 + Noise.Hash01(x, y, 181, _map.Seed) * 12);
+            if (river) offset = new Vector2(16, 16) + direction * ((phase - 0.5f) * 15);
+            if (_map.IsCanal(x, y))
+            {
+                offset = new Vector2(15, 15);
+                // Le reflet reste à l'intérieur du chenal, y compris aux coudes.
+                if (WaterGeometry.Distance((int)offset.X, (int)offset.Y, WaterGeometry.Connections(_map, x, y)) > 4) continue;
+            }
+            Vector2 point = new Vector2(x, y) * tile + offset;
+            Vector2 across = river ? new Vector2(-direction.Y, direction.X) : Vector2.Right;
+            float half = _map.IsCanal(x, y) ? 3 : 2 + phase * 3;
+            float alpha = MathF.Sin(phase * MathF.PI) * (0.14f + flow * 0.1f);
+            Color foam = Color.Color8(211, 233, 207) * _tint;
+            foam.A = alpha;
+            Vector2 a = (canvas * (point - across * half)).Round(), b = (canvas * (point + across * half)).Round();
+            if (a.X < 0 || a.Y < 0 || b.X > size.X || b.Y > size.Y) continue;
+            DrawLine(a, b, foam, Math.Max(1, canvas.X.Length()));
+            drawn++;
+        }
     }
 
     private void Glow(Rect2 rectangle, Color color) => DrawTextureRect(_glow, rectangle, false, color);

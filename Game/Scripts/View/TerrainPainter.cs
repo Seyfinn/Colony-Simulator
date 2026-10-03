@@ -16,6 +16,17 @@ public static class TerrainPainter
     private static readonly Rgb Rock = new(153, 165, 152), RockShade = new(112, 130, 123);
     private static readonly Rgb Rust = new(178, 111, 64), OreLight = new(221, 164, 100);
     private static readonly Rgb Lake = new(91, 151, 157), Depth = new(61, 114, 136), Foam = new(193, 216, 194);
+    private readonly record struct GrassPalette(Rgb Shade, Rgb Main, Rgb Light);
+    private static GrassPalette Palette(WoodlandBiome biome) => biome switch
+    {
+        WoodlandBiome.Dryland => new(new(137, 137, 83), new(170, 164, 104), new(193, 181, 119)),
+        WoodlandBiome.CoolForest => new(new(73, 112, 91), new(97, 134, 103), new(123, 153, 117)),
+        WoodlandBiome.Highland => new(new(112, 134, 119), new(138, 154, 132), new(165, 172, 148)),
+        WoodlandBiome.WetBank => new(new(69, 119, 95), new(94, 146, 108), new(124, 165, 123)),
+        _ => new(Moss, Meadow, SunlitGrass),
+    };
+    private static GrassPalette Blend(GrassPalette a, GrassPalette b, float t) =>
+        new(Blend(a.Shade, b.Shade, t), Blend(a.Main, b.Main, t), Blend(a.Light, b.Light, t));
 
     public static byte[] Paint(LocalMap map, int tileX0, int tileY0, int tilesWide, int tilesHigh)
     {
@@ -34,15 +45,21 @@ public static class TerrainPainter
     private static void PaintTile(LocalMap map, int x, int y, byte[] pixels, int stride, int ox, int oy)
     {
         int height = map.GetElevation(x, y);
-        // Une rivière se dessine comme de l'eau (rives, pas de falaise) ; seule sa teinte, plus claire, change.
-        bool river = map.GetSurface(x, y) == Surface.River; // rivière ou canal en eau
-        bool ditch = map.IsCanal(x, y) && !map.IsCanalWet(x, y); // fossé creusé, encore à sec
-        Surface surface = Structural(map.GetSurface(x, y));
+        bool canal = map.IsCanal(x, y), wet = canal && map.IsCanalWet(x, y);
+        bool river = !canal && map.GetSurface(x, y) == Surface.River;
+        bool flooded = map.IsFlooded(x, y);
+        Surface surface = VisualSurface(map, x, y);
+        WoodlandBiome biome = BiomeVisuals.At(map, x, y);
+        GrassPalette palette = Palette(biome);
+        GrassPalette pn = Palette(BiomeVisuals.At(map, x, y - 1)), ps = Palette(BiomeVisuals.At(map, x, y + 1));
+        GrassPalette pw = Palette(BiomeVisuals.At(map, x - 1, y)), pe = Palette(BiomeVisuals.At(map, x + 1, y));
+        int connections = canal ? WaterGeometry.Connections(map, x, y) : 0;
+        WaterGeometry.Stream[] streams = surface != Surface.Water && !canal ? WaterGeometry.Streams(map, x, y) : [];
         int north = Elevation(map, x, y - 1, height), south = Elevation(map, x, y + 1, height);
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
         Surface n = Neighbor(map, x, y - 1, surface), s = Neighbor(map, x, y + 1, surface);
         Surface w = Neighbor(map, x - 1, y, surface), e = Neighbor(map, x + 1, y, surface);
-        int cliff = surface != Surface.Water ? Math.Min(Math.Max(0, north - height), 3) * StratumHeight : 0;
+        int cliff = surface != Surface.Water && !river ? Math.Min(Math.Max(0, north - height), 3) * StratumHeight : 0;
         float ambient = 0.86f + height * 0.016f;
         for (int py = 0; py < TileSize; py++)
         for (int px = 0; px < TileSize; px++)
@@ -64,7 +81,14 @@ public static class TerrainPainter
             }
             else
             {
-                color = river ? RiverPixel(wx, wy) : ditch ? DitchPixel(wx, wy) : GroundPixel(surface, wx, wy, height);
+                // Lisières fondues sur six pixels, même lorsque les milieux voisins ont des teintes très différentes.
+                GrassPalette grass = palette;
+                if (py < 6) grass = Blend(grass, pn, (6 - py) / 12f);
+                else if (py > 25) grass = Blend(grass, ps, (py - 25) / 12f);
+                if (px < 6) grass = Blend(grass, pw, (6 - px) / 12f);
+                else if (px > 25) grass = Blend(grass, pe, (px - 25) / 12f);
+                color = GroundPixel(surface, wx, wy, height, biome, grass);
+                if (flooded) color = Blend(color, Depth, 0.22f);
                 int edge = 2 + (int)(Noise.Value2D(wx / 9f, wy / 9f, 51) * 4);
                 int distance = TileSize;
                 Surface adjacent = surface;
@@ -75,15 +99,33 @@ public static class TerrainPainter
                 if (distance < edge)
                 {
                     if (surface == Surface.Water && adjacent != Surface.Water)
-                        color = distance == 0 ? Foam : Blend(Lake, Foam, 0.22f);
+                        color = distance == 0 ? Blend(color, Foam, 0.65f) : Blend(color, Foam, 0.22f);
                     else if (surface != Surface.Water && adjacent == Surface.Water)
                         color = surface == Surface.Sand ? WetSand : Blend(color, Loam, 0.52f);
                     else if (surface == Surface.Grass && adjacent is Surface.Dirt or Surface.Sand)
-                        color = Blend(GroundPixel(adjacent, wx, wy, height), color, distance / (float)edge);
+                        color = Blend(GroundPixel(adjacent, wx, wy, height, biome, grass), color, distance / (float)edge);
                     else if (surface is Surface.Stone or Surface.IronOre && adjacent == Surface.Grass)
                         color = Blend(color, Moss, (1 - distance / (float)edge) * 0.3f);
                 }
-                float shade = ambient;
+                bool streamWater = false;
+                if (streams.Length > 0)
+                {
+                    var nearest = WaterGeometry.Nearest(streams, px, py);
+                    float width = 10.5f + (Noise.Value2D(wx / 15f, wy / 15f, 191) - 0.5f) * 3;
+                    if (nearest.Distance < width)
+                    {
+                        var current = nearest.Stream;
+                        int flowX = Math.Sign(current.Dx), flowY = Math.Sign(current.Dy);
+                        if (flowX == 0 && flowY == 0) flowY = 1;
+                        color = RiverPixel(wx, wy, flowX, flowY, current.Flow);
+                        if (nearest.Distance > width - 2) color = Blend(color, Foam, 0.12f);
+                        streamWater = true;
+                    }
+                    else if (nearest.Distance < width + 3)
+                        color = Blend(color, Blend(Loam, Moss, 0.35f), (width + 3 - nearest.Distance) / 4f);
+                }
+                if (canal) color = CanalPixel(color, wx, wy, px, py, connections, wet);
+                float shade = surface == Surface.Water || streamWater ? 1 : ambient;
                 int foot = py - cliff;
                 if (cliff > 0 && foot < 5) shade *= 0.74f + foot * 0.05f;
                 if (west > height && px < 3) shade *= 0.72f + px * 0.08f;
@@ -100,7 +142,7 @@ public static class TerrainPainter
         }
     }
 
-    private static Rgb GroundPixel(Surface surface, int x, int y, int elevation)
+    private static Rgb GroundPixel(Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass)
     {
         float patch = Noise.Value2D(x / 42f, y / 42f, 47);
         float speck = Noise.Hash01(x / 2, y / 2, 53, 0);
@@ -108,10 +150,12 @@ public static class TerrainPainter
         switch (surface)
         {
             case Surface.Grass:
-                color = patch < 0.5f ? Blend(Moss, Meadow, 0.35f + patch * 1.3f) : Blend(Meadow, SunlitGrass, (patch - 0.5f) * 1.3f);
+                color = patch < 0.5f ? Blend(grass.Shade, grass.Main, 0.35f + patch * 1.3f) : Blend(grass.Main, grass.Light, (patch - 0.5f) * 1.3f);
                 int tuft = (int)(Noise.Hash01(x / 11, y / 9, 55, 0) * 100);
                 if (tuft > 85 && x % 11 is 4 or 6 && y % 9 is 3 or 4) color = Tint(color, 1.14f);
-                if (tuft == 99 && x % 11 == 5 && y % 9 == 2) color = new Rgb(222, 204, 152);
+                if (tuft == 99 && x % 11 == 5 && y % 9 == 2) color = biome == WoodlandBiome.CoolForest ? new(166, 139, 100) : new(234, 214, 164);
+                if (biome == WoodlandBiome.Dryland && patch < 0.28f) color = Blend(color, Clay, (0.28f - patch) * 1.2f);
+                if (biome == WoodlandBiome.CoolForest && tuft > 82 && x % 11 is 3 or 4 && y % 9 == 6) color = new(148, 116, 73);
                 break;
             case Surface.Dirt:
                 color = Blend(Loam, Clay, 0.45f + patch * 0.4f);
@@ -123,9 +167,15 @@ public static class TerrainPainter
                 break;
             case Surface.Stone:
             case Surface.IronOre:
-                return RockPixel(x, y, surface == Surface.IronOre);
+                color = RockPixel(x, y, surface == Surface.IronOre);
+                if (biome == WoodlandBiome.Highland)
+                {
+                    if (surface != Surface.IronOre) color = Blend(color, new Rgb(132, 157, 162), 0.25f);
+                    if (patch > 0.65f && speck > 0.82f && surface != Surface.IronOre) color = Blend(color, new Rgb(185, 190, 142), 0.65f);
+                }
+                return color;
             default:
-                color = Blend(Depth, Lake, elevation <= 1 ? 0.15f : 0.82f);
+                color = Blend(Depth, Lake, elevation <= 1 ? 0.25f : 0.8f);
                 int ripple = (y + (int)(Noise.Value2D(x / 25f, y / 17f, 59) * 5)) % 12;
                 if (ripple == 0 && Noise.Hash01(x / 9, y / 12, 61, 0) > 0.72f) color = Blend(color, Foam, 0.18f);
                 return color;
@@ -150,22 +200,43 @@ public static class TerrainPainter
     }
 
     private static int Elevation(LocalMap map, int x, int y, int fallback) => map.InBounds(x, y) ? map.GetElevation(x, y) : fallback;
-    private static Surface Neighbor(LocalMap map, int x, int y, Surface fallback) => map.InBounds(x, y) ? Structural(map.GetSurface(x, y)) : fallback;
+    private static Surface Neighbor(LocalMap map, int x, int y, Surface fallback) => map.InBounds(x, y) ? VisualSurface(map, x, y) : fallback;
+    private static Surface VisualSurface(LocalMap map, int x, int y) => map.IsCanal(x, y) || (map.IsRiver(x, y) && !map.IsFlooded(x, y)) ? map.GetSoil(x, y) switch
+    {
+        SoilType.Dirt => Surface.Dirt, SoilType.Sand => Surface.Sand, _ => Surface.Grass,
+    } : Structural(map.GetSurface(x, y));
 
     /// <summary>Pour les bords et les falaises, la rivière compte comme de l'eau.</summary>
     private static Surface Structural(Surface surface) => surface == Surface.River ? Surface.Water : surface;
 
-    /// <summary>Fossé à sec : de la terre brune, plus sombre que le sol alentour.</summary>
-    private static Rgb DitchPixel(int x, int y) =>
-        Tint(Blend(Loam, Clay, 0.2f + 0.2f * Noise.Value2D(x / 14f, y / 14f, 73)), 0.78f);
-
-    /// <summary>Eau peu profonde, claire, avec de petites rides dans le sens du courant (en attendant les vraies illustrations).</summary>
-    private static Rgb RiverPixel(int x, int y)
+    private static Rgb CanalPixel(Rgb ground, int x, int y, int px, int py, int connections, bool wet)
     {
-        Rgb color = Blend(Lake, Foam, 0.18f);
-        int ripple = (x + (int)(Noise.Value2D(x / 17f, y / 25f, 69) * 6)) % 10;
-        if (ripple == 0 && Noise.Hash01(x / 12, y / 9, 71, 0) > 0.7f)
-            color = Blend(color, Foam, 0.3f);
+        int distance = WaterGeometry.Distance(px, py, connections);
+        if (distance > 8) return ground;
+        if (distance >= 6)
+        {
+            Rgb earth = Blend(Loam, Clay, 0.45f);
+            if (distance == 8) return Blend(ground, earth, 0.6f);
+            if (distance == 7) return Tint(earth, 1.12f);
+            return Tint(earth, 0.7f);
+        }
+        if (!wet) return Tint(Blend(Loam, Clay, 0.18f + 0.15f * Noise.Value2D(x / 14f, y / 14f, 73)), 0.76f);
+        Rgb water = Blend(Depth, Lake, 0.6f + distance * 0.065f);
+        if (distance == 5) water = Blend(water, Foam, 0.23f);
+        if (py % 11 == 0 && px % 7 < 4) water = Blend(water, Foam, 0.18f);
+        return water;
+    }
+
+    /// <summary>Rides orientées par le vrai courant ; le débit réduit laisse une eau plus calme.</summary>
+    private static Rgb RiverPixel(int x, int y, int flowX, int flowY, float flow)
+    {
+        float depth = Noise.Value2D(x / 35f, y / 37f, 69);
+        Rgb color = Blend(new Rgb(79, 141, 145), new Rgb(123, 177, 161), 0.3f + depth * 0.6f);
+        int along = x * flowX + y * flowY, across = y * flowX - x * flowY;
+        int ripple = Math.Abs(along + (int)(Noise.Value2D(x / 17f, y / 25f, 69) * 6)) % 13;
+        if (ripple == 0 && Noise.Hash01(across / 7, along / 13, 71, 0) > 0.68f)
+            color = Blend(color, Foam, 0.14f + flow * 0.24f);
+        if (depth > 0.8f && Noise.Hash01(x / 3, y / 3, 73, 0) > 0.93f) color = Blend(color, new Rgb(166, 181, 141), 0.25f);
         return color;
     }
     private static Rgb Blend(Rgb a, Rgb b, float t) => new((byte)(a.R + (b.R - a.R) * t), (byte)(a.G + (b.G - a.G) * t), (byte)(a.B + (b.B - a.B) * t));
