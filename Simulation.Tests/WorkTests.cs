@@ -26,9 +26,15 @@ public class WorkTests(ITestOutputHelper output)
         }
 
         // La carrière n'est exploitée qu'une fois la survie et le logement assurés : on laisse 12 jours.
+        // On suit le plus long jeûne : on se réveille parfois affamé, mais personne ne doit rester un jour sans manger.
         int elevationBefore = ElevationAroundQuarry();
+        var watch = new StarvationWatch();
         for (long i = 0; i < 12L * TimeConstants.TicksPerDay; i++)
+        {
             world.Step();
+            if (i % TimeConstants.TicksPerDay == 0)
+                watch.Observe(colony);
+        }
 
         int layersMined = elevationBefore - ElevationAroundQuarry();
         int stumps = 0;
@@ -45,7 +51,7 @@ public class WorkTests(ITestOutputHelper output)
         Assert.True(stumps > 5, "La colonie devrait avoir coupé du bois.");
         Assert.True(layersMined > 3, "La carrière devrait s'être creusée.");
         Assert.True(colony.Stock.Get(ResourceType.Stone) + colony.Stock.Get(ResourceType.IronOre) > 5);
-        Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.1f, $"{c.Name} meurt de faim."));
+        Assert.Null(watch.Victim);
     }
 
     [Fact]

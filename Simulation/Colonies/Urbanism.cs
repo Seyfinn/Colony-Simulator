@@ -12,7 +12,41 @@ public static class Urbanism
     private const int MaxDistanceFromFire = 14;
 
     /// <summary>Renvoie la case en haut à gauche d'un emplacement libre pour une hutte de 2 × 2, ou null s'il n'y en a pas.</summary>
-    public static (int X, int Y)? FindHutSite(LocalMap map, Colony colony)
+    public static (int X, int Y)? FindHutSite(LocalMap map, Colony colony) => FindSite(map, colony, MinDistanceFromFire);
+
+    /// <summary>Un atelier se tient un peu plus loin du feu que les huttes : fumée et étincelles.</summary>
+    public static (int X, int Y)? FindWorkshopSite(LocalMap map, Colony colony) => FindSite(map, colony, WorkshopMinDistance);
+
+    private const int WorkshopMinDistance = 5;
+
+    /// <summary>
+    /// Un moulin à eau se pose au bord d'une rivière, d'un lac de retenue ou d'un canal en eau, sur un terrain plat :
+    /// le plus près possible du camp. Null s'il n'y a pas d'eau vive à portée.
+    /// </summary>
+    public static (int X, int Y)? FindMillSite(LocalMap map, Colony colony)
+    {
+        (int X, int Y)? best = null;
+        float bestDistance = float.MaxValue;
+        int radius = FoodChain.MillSearchRadius;
+        for (int dy = -radius; dy <= radius; dy++)
+        for (int dx = -radius; dx <= radius; dx++)
+        {
+            int x = colony.CampX + dx, y = colony.CampY + dy;
+            if (!map.InBounds(x, y) || !IsBuildable(map, colony, x, y))
+                continue;
+            float distance = MathF.Sqrt((dx + 0.5f) * (dx + 0.5f) + (dy + 0.5f) * (dy + 0.5f));
+            if (distance < WorkshopMinDistance || distance >= bestDistance)
+                continue;
+            var probe = new Building(BuildingType.Mill, x, y);
+            if (Hydrology.MillFlow(map, probe) <= 0f)
+                continue;
+            bestDistance = distance;
+            best = (x, y);
+        }
+        return best;
+    }
+
+    private static (int X, int Y)? FindSite(LocalMap map, Colony colony, int minDistance)
     {
         (int X, int Y)? best = null;
         float bestScore = float.MaxValue;
@@ -26,7 +60,7 @@ public static class Urbanism
 
             // Au plus près du feu, sans empiéter sur le cercle où l'on mange et se détend.
             float distance = MathF.Sqrt((dx + 0.5f) * (dx + 0.5f) + (dy + 0.5f) * (dy + 0.5f));
-            if (distance < MinDistanceFromFire)
+            if (distance < minDistance)
                 continue;
             if (distance < bestScore)
             {
@@ -43,7 +77,8 @@ public static class Urbanism
         for (int ty = y; ty < y + 2; ty++)
         for (int tx = x; tx < x + 2; tx++)
         {
-            if (!map.IsWalkable(tx, ty) || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
+            if (!map.IsWalkable(tx, ty) || map.IsWaterway(tx, ty) || colony.CanalTiles.Contains((tx, ty))
+                || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
                 return false;
             if (map.GetFlora(tx, ty) is FloraType.Tree or FloraType.Bush)
                 return false;
@@ -92,7 +127,7 @@ public static class Urbanism
 
     private static bool IsGraveTile(LocalMap map, Colony colony, int x, int y)
     {
-        if (!map.InBounds(x, y) || !map.IsWalkable(x, y) || map.IsMountain(x, y) || map.GetFlora(x, y) != FloraType.None)
+        if (!map.InBounds(x, y) || !map.IsWalkable(x, y) || map.IsWaterway(x, y) || colony.CanalTiles.Contains((x, y)) || map.IsMountain(x, y) || map.GetFlora(x, y) != FloraType.None)
             return false;
         foreach (Grave grave in colony.Graves)
             if (Math.Max(Math.Abs(grave.X - x), Math.Abs(grave.Y - y)) < 2)
@@ -107,12 +142,25 @@ public static class Urbanism
     }
 
     /// <summary>Ouvre un chantier : on dégage le terrain (souches comprises) et on pose les fondations.</summary>
-    public static Building PlanHut(LocalMap map, Colony colony, int x, int y)
+    public static Building PlanHut(LocalMap map, Colony colony, int x, int y) => PlanBuilding(map, colony, BuildingType.Hut, x, y);
+
+    /// <summary>Outil de développement : pose tout de suite un bâtiment achevé sur le meilleur emplacement libre.</summary>
+    public static Building? BuildInstantly(LocalMap map, Colony colony, BuildingType type)
     {
-        var hut = new Building(BuildingType.Hut, x, y);
-        foreach ((int tx, int ty) in hut.Tiles)
+        (int X, int Y)? site = type == BuildingType.Mill ? FindMillSite(map, colony) : FindWorkshopSite(map, colony);
+        if (site is not { } s)
+            return null;
+        Building building = PlanBuilding(map, colony, type, s.X, s.Y);
+        building.Progress = 1f;
+        return building;
+    }
+
+    public static Building PlanBuilding(LocalMap map, Colony colony, BuildingType type, int x, int y)
+    {
+        var building = new Building(type, x, y);
+        foreach ((int tx, int ty) in building.Tiles)
             map.ClearFlora(tx, ty);
-        colony.Buildings.Add(hut);
-        return hut;
+        colony.Buildings.Add(building);
+        return building;
     }
 }

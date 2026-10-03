@@ -23,6 +23,10 @@ public enum ActivityKind
     Sow,
     /// <summary>Moissonner une parcelle mûre.</summary>
     Harvest,
+    /// <summary>Travailler dans un atelier : charbonnière, bas fourneau ou forge.</summary>
+    Craft,
+    /// <summary>Creuser une case de canal d'irrigation.</summary>
+    Dig,
     /// <summary>Aller bavarder avec un autre colon.</summary>
     Chat,
     /// <summary>Un voyageur marche jusqu'au camp pour se joindre à la colonie.</summary>
@@ -61,7 +65,17 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     public long CommittedAtTicks { get; set; }
 
     /// <summary>Activité qui produit une ressource : on mesure son coût en travail.</summary>
-    public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest;
+    public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest
+            or ActivityKind.Craft;
+
+    /// <summary>Pour un repas : ce qu'il redonne à celui qui mange (selon qu'on a pris du pain, du grain ou des baies).</summary>
+    public float MealValue { get; set; } = Stockpile.GrainMealValue;
+
+    /// <summary>Pour une fabrication : les matières sont prises au stock, le produit n'est pas encore sorti.</summary>
+    public bool InputsTaken { get; set; }
+
+    /// <summary>Pour une fabrication : le coût en heures de travail des matières premières consommées.</summary>
+    public double InputLaborHours { get; set; }
 
     /// <summary>Vrai une fois que le colon est arrivé et a commencé l'action.</summary>
     public bool Started { get; set; }
@@ -73,7 +87,8 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Fish => SkillType.Fishing,
         ActivityKind.Chop => SkillType.Woodcutting,
         ActivityKind.Mine => SkillType.Mining,
-        ActivityKind.Build => SkillType.Construction,
+        ActivityKind.Build or ActivityKind.Dig => SkillType.Construction,
+        ActivityKind.Craft => Building is { } workshop ? Crafting.SkillFor(workshop.Type) : SkillType.Smithing,
         ActivityKind.Sow or ActivityKind.Harvest => SkillType.Farming,
         _ => null,
     };
@@ -81,5 +96,5 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     /// <summary>Cette action réserve-t-elle sa case cible (pour éviter que deux colons visent le même arbre) ?</summary>
     public bool ReservesTarget =>
         Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine
-            or ActivityKind.Sow or ActivityKind.Harvest;
+            or ActivityKind.Sow or ActivityKind.Harvest or ActivityKind.Dig;
 }

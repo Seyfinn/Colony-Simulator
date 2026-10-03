@@ -1,30 +1,32 @@
+using GodColony.Simulation.Colonies;
 using GodColony.Simulation.Map;
 
 namespace GodColony.Simulation.Generation;
 
 /// <summary>
-/// Génère une carte locale tempérée : lacs, plaines en terrasses, forêts et montagnes.
+/// Génère une carte locale tempérée : lacs, rivières, plaines en terrasses, forêts et montagnes.
 /// </summary>
 public static class MapGenerator
 {
-    // Proportions visées pour chaque grande zone de la carte.
-    private const float WaterShare = 0.08f;
-    private const float MountainShare = 0.22f;
-
-    public static LocalMap Generate(int width, int height, int seed)
+    public static LocalMap Generate(int width, int height, int seed, MapStyle? style = null)
     {
+        style ??= MapStyle.Temperate;
         var map = new LocalMap(width, height, seed);
-        int[] elevation = ComputeElevation(width, height, seed);
+        int[] elevation = ComputeElevation(width, height, seed, style);
 
         for (int y = 0; y < height; y++)
         for (int x = 0; x < width; x++)
         {
             int e = elevation[y * width + x];
             SoilType soil = ChooseSoil(x, y, e, elevation, width, height, seed);
-            (FloraType flora, float growth) = ChooseFlora(x, y, e, soil, seed);
+            (FloraType flora, float growth) = ChooseFlora(x, y, e, soil, seed, style);
             map.SetGenerated(x, y, e, soil, flora, growth);
         }
 
+        foreach ((int x, int y, int downX, int downY) in Rivers.Generate(elevation, width, height, seed))
+            map.SetRiver(x, y, downX, downY);
+        map.ComputeBanks();
+        map.SoilRichness = style.SoilRichness;
         return map;
     }
 
@@ -33,7 +35,7 @@ public static class MapGenerator
     /// les 8 % les plus bas deviennent de l'eau, les 22 % les plus hauts de la montagne,
     /// le reste des plaines en terrasses. Toutes les graines donnent ainsi des cartes équilibrées.
     /// </summary>
-    private static int[] ComputeElevation(int width, int height, int seed)
+    private static int[] ComputeElevation(int width, int height, int seed, MapStyle style)
     {
         int n = width * height;
         var raw = new float[n];
@@ -49,8 +51,8 @@ public static class MapGenerator
         for (int i = 0; i < n; i++) order[i] = i;
         Array.Sort(order, (a, b) => raw[a].CompareTo(raw[b]));
 
-        int waterCount = (int)(n * WaterShare);
-        int mountainStart = (int)(n * (1f - MountainShare));
+        int waterCount = (int)(n * style.WaterShare);
+        int mountainStart = (int)(n * (1f - style.MountainShare));
         int plainLow = LocalMap.WaterLevel + 1;
         int plainHigh = LocalMap.MountainElevation - 1;
 
@@ -95,14 +97,14 @@ public static class MapGenerator
         return false;
     }
 
-    private static (FloraType, float) ChooseFlora(int x, int y, int e, SoilType soil, int seed)
+    private static (FloraType, float) ChooseFlora(int x, int y, int e, SoilType soil, int seed, MapStyle style)
     {
         if (e <= LocalMap.WaterLevel || soil == SoilType.Sand)
             return (FloraType.None, 0f);
 
         float roll = Noise.Hash01(x, y, 1, seed);
         float growth = 0.4f + 0.6f * Noise.Hash01(x, y, 2, seed);
-        float forest = Noise.Fractal2D(x / 18f, y / 18f, seed + 31, 4);
+        float forest = Noise.Fractal2D(x / 18f, y / 18f, seed + 31, 4) + style.ForestBias;
 
         if (e >= LocalMap.MountainElevation)
             return e <= LocalMap.MountainElevation + 1 && roll < 0.04f ? (FloraType.Tree, growth) : (FloraType.None, 0f);

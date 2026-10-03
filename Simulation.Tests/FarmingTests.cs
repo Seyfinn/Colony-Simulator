@@ -102,21 +102,20 @@ public class FarmingTests(ITestOutputHelper output)
     {
         WorldState world = ClosedColony(colonists);
         Colony colony = world.Colonies[0];
-        float worstFood = 1f;
-        int coldNights = 0;
+        var watch = new StarvationWatch();
 
         for (int day = 1; day <= 40; day++)
         {
             RunDays(world, 1);
-            worstFood = Math.Min(worstFood, colony.Members.Min(m => m.Needs.Food));
+            watch.Observe(colony);
             if (day % 5 == 0)
                 output.WriteLine($"J{day}: colons {colony.Members.Count}, nourriture {colony.Stock.Get(ResourceType.Food)}, " +
                                  $"céréales {colony.Stock.Get(ResourceType.Grain)}, parcelles {Farming.Plots(colony).Count()}, " +
                                  $"faim minimale {colony.Members.Min(m => m.Needs.Food):P0}, humeur {colony.AverageMood:P0}");
         }
-        output.WriteLine($"Pire faim sur deux ans : {worstFood:P0}");
+
         Assert.Equal(colonists, colony.Members.Count);
-        Assert.True(worstFood > 0.05f, "Personne ne doit frôler la famine.");
+        Assert.Null(watch.Victim);
     }
 
     [Fact]

@@ -1,6 +1,5 @@
 using Godot;
 using GodColony.Simulation.Map;
-using Noise = GodColony.Simulation.Generation.Noise;
 
 namespace GodColony.View;
 
@@ -60,31 +59,17 @@ public partial class ChunkView : Node2D
         DrawTexture(_texture, Vector2.Zero);
 
         // Ligne par ligne, du nord au sud : les arbres du bas passent devant ceux du haut (vue 3/4).
+        // Les colons et les bâtiments, eux, sont triés avec la végétation par la vue des colons.
         const int tile = TerrainPainter.TileSize;
         for (int ty = 0; ty < Size; ty++)
         for (int tx = 0; tx < Size; tx++)
         {
             int x = _tileX0 + tx, y = _tileY0 + ty;
-            if (!_map.InBounds(x, y))
-                continue;
-            FloraType flora = _map.GetFlora(x, y);
-            if (flora == FloraType.None)
-                continue;
-
-            Texture2D sprite = flora switch
+            if (_map.InBounds(x, y))
             {
-                FloraType.Tree => SpriteFactory.Tree,
-                FloraType.Stump => SpriteFactory.Stump,
-                _ => _map.GetBerries(x, y) > 0 ? SpriteFactory.Bush : SpriteFactory.BushEmpty,
-            };
-            float scale = flora == FloraType.Stump ? 1f : 0.3f + 0.7f * _map.GetFloraGrowth(x, y);
-            Vector2 size = sprite.GetSize() * scale;
-            // Le pied de la plante est posé au bas de la case, légèrement décalé pour éviter un effet de grille.
-            var jitter = new Vector2(
-                (Noise.Hash01(x, y, 3, 0) - 0.5f) * 8f,
-                (Noise.Hash01(x, y, 4, 0) - 0.5f) * 4f);
-            var bottomCenter = new Vector2(tx * tile + tile / 2f, ty * tile + tile - 3) + jitter;
-            DrawTextureRect(sprite, new Rect2(bottomCenter - new Vector2(size.X / 2f, size.Y), size), false);
+                EnvironmentDetails.Draw(this, _map, x, y, new Vector2(tx * tile, ty * tile));
+                FloraPainter.Draw(this, _map, x, y, new Vector2(tx * tile, ty * tile), shadow: true);
+            }
         }
     }
 }

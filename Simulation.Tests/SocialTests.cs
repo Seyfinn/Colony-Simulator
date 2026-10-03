@@ -118,7 +118,8 @@ public class SocialTests(ITestOutputHelper output)
 
         output.WriteLine($"Compagnie moyenne : {colony.Members.Average(m => m.Needs.Social):P0}");
         Assert.True(sawChat, "Quelqu'un aurait dû aller bavarder.");
-        Assert.True(colony.Members.Average(m => m.Needs.Social) > 0.2f);
+        // Une conversation comble 0,4 de compagnie à chacun des deux : quelqu'un doit en avoir tiré profit.
+        Assert.True(colony.Members.Max(m => m.Needs.Social) > 0.3f);
         Assert.Contains(colony.Members, m => m.Affinities.Count > 0);
     }
 

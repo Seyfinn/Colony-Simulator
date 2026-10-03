@@ -58,7 +58,12 @@ public class BrainTests(ITestOutputHelper output)
     {
         (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 1000);
         HouseEveryone(world, colony);
+        // Une colonie prospère garde des lits d'avance : on lui en donne, pour qu'aucun chantier ne vienne troubler le test.
+        (int x, int y) = Urbanism.FindHutSite(world.Map, colony)!.Value;
+        Urbanism.PlanHut(world.Map, colony, x, y).Progress = 1f;
         colony.Fields.Clear(); // les champs réclameraient des bras pour les semailles : on teste ici la pyramide seule
+        colony.Stock.Add(ResourceType.Tools, 100); // la colonie est équipée : ni fer à chercher, ni outils à forger
+        colony.IronSeen = true;
         ThinkSeveralHours(colony, world, world.Clock);
 
         Assert.True(colony.WorkShares[WorkSector.Free] > 0.9f);
@@ -119,10 +124,13 @@ public class BrainTests(ITestOutputHelper output)
         var world = new WorldState(12345, startingColonists: 20, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         int coldNightsWithoutFire = 0;
+        var watch = new StarvationWatch();
 
         for (long i = 0; i < TimeConstants.TicksPerYear; i++)
         {
             world.Step();
+            if (i % TimeConstants.TicksPerDay == 0)
+                watch.Observe(colony);
             if (world.Clock.Hour == 21 && world.Clock.Minute == 0 && ColonyBrain.IsColdSeason(world.Clock.Season) && !colony.FireLit)
                 coldNightsWithoutFire++;
         }
@@ -137,9 +145,9 @@ public class BrainTests(ITestOutputHelper output)
 
         output.WriteLine($"Huttes : {colony.Buildings.Count(b => b.IsComplete)} achevées, {colony.ConstructionSites.Count()} en chantier, {colony.Homeless} colons dehors");
 
-        Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.05f, $"{c.Name} meurt de faim."));
+        Assert.Null(watch.Victim);
         Assert.Equal(0, coldNightsWithoutFire);
-        Assert.True(colony.Stock.Get(ResourceType.Stone) > 0, "La carrière devrait avoir été exploitée à un moment.");
+        Assert.True(colony.Labor.TotalProduced(ResourceType.Stone) > 0, "La carrière devrait avoir été exploitée à un moment.");
         Assert.True(colony.Buildings.Count(b => b.IsComplete) >= 4, "La colonie devrait s'être bâti des huttes.");
         Assert.True(colony.Homeless <= 4, "Presque tout le monde devrait dormir à l'abri au bout d'un an.");
     }

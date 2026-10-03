@@ -15,11 +15,11 @@ public sealed class Personality
 
     public static Personality Neutral => new();
 
-    public static Personality Random(Random random)
+    public static Personality Random(Random random, Species? species = null)
     {
         var personality = new Personality();
         foreach (Axis axis in All)
-            personality._value[(int)axis] = random.NextSingle() + random.NextSingle() - 1f;
+            personality._value[(int)axis] = Math.Clamp(random.NextSingle() + random.NextSingle() - 1f + (species?.Tendency(axis) ?? 0f), -1f, 1f);
         return personality;
     }
 

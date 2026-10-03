@@ -12,6 +12,14 @@ public sealed class Colony
 
     public string Name { get; }
 
+    /// <summary>L'espèce qui peuple la colonie (celle des fondateurs et des voyageurs).</summary>
+    public Species Species { get; internal set; } = Species.Human;
+
+    /// <summary>La carte locale de la colonie : chaque colonie a la sienne, façonnée par son environnement.</summary>
+    public GodColony.Simulation.Map.LocalMap Map { get; internal set; } = null!;
+
+    public GodColony.Simulation.Pathfinding.Pathfinder Pathfinder { get; internal set; } = null!;
+
     /// <summary>L'horloge du monde, pour calculer les âges.</summary>
     internal GodColony.Simulation.Time.GameClock Clock { get; set; } = new(0);
 
@@ -47,11 +55,72 @@ public sealed class Colony
         [WorkSector.Wood] = 0.3f,
         [WorkSector.Stone] = 0.2f,
         [WorkSector.Construction] = 0f,
+        [WorkSector.Craft] = 0f,
         [WorkSector.Free] = 0f,
     };
 
     /// <summary>Les bâtiments de la colonie, achevés ou en chantier.</summary>
     public List<Building> Buildings { get; } = [];
+
+    /// <summary>
+    /// Ce que la colonie fabriquerait volontiers en plus pour ses voisines (des outils, par exemple) : c'est le commerce
+    /// qui oriente sa production, donc sa spécialisation.
+    /// </summary>
+    public Dictionary<ResourceType, int> ExportInterest { get; } = [];
+
+    /// <summary>Les derniers voyages de caravane, envoyés ou reçus, du plus ancien au plus récent.</summary>
+    public List<TradeRecord> Trades { get; } = [];
+
+    /// <summary>Travail épargné au total grâce au commerce, en heures (somme des gains attendus des voyages réussis).</summary>
+    public double LifetimeTradeGainHours { get; internal set; }
+
+    /// <summary>Dernier départ d'une de ses caravanes.</summary>
+    internal long LastCaravanTicks { get; set; } = long.MinValue / 2;
+
+    /// <summary>La colonie située en aval, sur le même fleuve : ce que celle-ci retient lui manque (null s'il n'y en a pas).</summary>
+    public Colony? Downstream { get; internal set; }
+
+    /// <summary>
+    /// La rancune envers d'autres colonies, de 0 (rien) à 3 : un barrage qui assèche notre rivière en fait naître.
+    /// Elle s'estompe lentement et rend les échanges moins attrayants.
+    /// </summary>
+    public Dictionary<Colony, float> Grudges { get; } = [];
+
+    public float GrudgeAgainst(Colony other) => Grudges.GetValueOrDefault(other);
+
+    /// <summary>Les décisions que la colonie soumet au joueur.</summary>
+    public PrayerBook Prayers => _prayers ??= new PrayerBook(this);
+    private PrayerBook? _prayers;
+
+    /// <summary>Les canaux d'irrigation, achevés ou en chantier.</summary>
+    public List<Canal> Canals { get; } = [];
+
+    /// <summary>Toutes les cases de canal prévues (creusées ou non) : on n'y bâtit rien et on n'y sème pas.</summary>
+    internal HashSet<(int X, int Y)> CanalTiles { get; } = [];
+
+    /// <summary>Les canaux qu'il reste à creuser.</summary>
+    public IEnumerable<Canal> CanalsInProgress => Canals.Where(c => !c.IsComplete);
+
+    /// <summary>Les ateliers achevés d'un type donné.</summary>
+    public IEnumerable<Building> Workshops(BuildingType type) => Buildings.Where(b => b.Type == type && b.IsComplete);
+
+    /// <summary>
+    /// Des postes de mineur où aucun chemin n'a mené aujourd'hui (roche isolée sur un plateau) : on passe aux suivants
+    /// au lieu de rester bloqué sur les plus proches. Vidé chaque jour, car la carrière change.
+    /// </summary>
+    internal HashSet<(int X, int Y)> UnreachableStands { get; } = [];
+
+    /// <summary>Dernière fois que la carrière a été déplacée (ou jugée épuisée).</summary>
+    internal long LastQuarryMoveTicks { get; set; } = long.MinValue / 2;
+
+    /// <summary>Un filon de fer a été aperçu à la carrière : la colonie sait qu'il y a du minerai à portée.</summary>
+    public bool IronSeen { get; internal set; }
+
+    /// <summary>Les produits dont la colonie a déjà annoncé la première fabrication.</summary>
+    internal HashSet<ResourceType> AnnouncedProducts { get; } = [];
+
+    /// <summary>Usure des outils : à chaque fois qu'elle atteint 1, un outil casse.</summary>
+    internal float ToolWear { get; set; }
 
     /// <summary>Les champs de la colonie.</summary>
     public List<Field> Fields { get; } = [];
@@ -89,7 +158,7 @@ public sealed class Colony
     /// <summary>Les places libres des huttes achevées vont aux colons qui dormaient dehors.</summary>
     internal void FillVacancies()
     {
-        foreach (Building building in Buildings.Where(b => b.IsComplete))
+        foreach (Building building in Buildings.Where(b => b.IsComplete && b.IsHut))
         foreach (Colonist colonist in Members.Where(m => m.Home is null).Take(Building.HutCapacity - building.Residents.Count).ToList())
         {
             colonist.Home = building;

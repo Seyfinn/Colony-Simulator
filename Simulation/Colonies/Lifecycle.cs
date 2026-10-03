@@ -13,8 +13,8 @@ public sealed record Grave(string FullName, Sex Sex, float AgeYears, string Caus
 public static class Lifecycle
 {
     // Couples
-    public const float CoupleAffinity = 60f;
-    public const float CoupleCompatibility = 0.5f;
+    public const float CoupleAffinity = 45f;
+    public const float CoupleCompatibility = 0.4f;
 
     // Naissances
     public const float PregnancyDays = 5f;
@@ -86,8 +86,22 @@ public static class Lifecycle
         GiveBirths(world, colony);
         Conceive(world, colony);
         foreach (Colonist colonist in colony.Members.ToList())
-            if (world.Random.NextSingle() < OldAgeDeathChance(colonist.AgeYears))
+            if (world.Random.NextSingle() < OldAgeDeathChance(colonist.EquivalentAge))
                 Die(world, colonist, "vieillesse");
+    }
+
+    /// <summary>
+    /// Le sexe d'un nouveau-né ou d'un voyageur : un tirage au sort, légèrement penché en faveur du sexe le moins
+    /// représenté dans la colonie. Sans cela, le hasard finit par laisser beaucoup de femmes sans conjoint (ou l'inverse),
+    /// et comme on ne forme de couples qu'entre un homme et une femme, la colonie cesserait de grandir.
+    /// </summary>
+    public static Sex ChooseSex(Colony colony, Random random)
+    {
+        var everyone = colony.Members.Concat(colony.Transients).ToList();
+        int females = everyone.Count(m => m.Sex == Sex.Female), males = everyone.Count - females;
+        float tilt = 0.4f * (males - females) / Math.Max(6, everyone.Count);
+        float chanceOfGirl = Math.Clamp(0.5f + tilt, 0.2f, 0.8f);
+        return random.NextSingle() < chanceOfGirl ? Sex.Female : Sex.Male;
     }
 
     // --- Couples ---
@@ -153,7 +167,7 @@ public static class Lifecycle
         {
             if (!CanConceive(woman, due))
                 continue;
-            if (world.Random.NextSingle() >= ConceptionChancePerDay * prosperity)
+            if (world.Random.NextSingle() >= ConceptionChancePerDay * prosperity * woman.Species.Fertility)
                 continue;
             woman.PregnantUntilTicks = due;
             woman.PregnancyFather = woman.Partner;
@@ -167,10 +181,10 @@ public static class Lifecycle
     /// </summary>
     public static bool CanConceive(Colonist woman, long dueTicks) =>
         woman.Stage == LifeStage.Adult
-        && woman.AgeYears <= FertileUntilAge
+        && woman.EquivalentAge <= FertileUntilAge
         && woman.Partner is { Stage: LifeStage.Adult }
         && woman.PregnantUntilTicks is null
-        && dueTicks - woman.LastBirthTicks >= (long)(MinBirthIntervalYears * TimeConstants.TicksPerYear);
+        && dueTicks - woman.LastBirthTicks >= (long)(MinBirthIntervalYears * woman.Species.LifespanScale * TimeConstants.TicksPerYear);
 
     private static void GiveBirths(WorldState world, Colony colony)
     {
@@ -184,7 +198,7 @@ public static class Lifecycle
     {
         Colony colony = mother.Colony;
         Colonist? father = mother.PregnancyFather;
-        Sex sex = world.Random.Next(2) == 0 ? Sex.Female : Sex.Male;
+        Sex sex = ChooseSex(colony, world.Random);
         string name = Names.Pick(sex, world.Random, colony.Members.Concat(colony.Transients).Select(m => m.Name));
         Skills fatherSkills = father?.Skills ?? mother.Skills;
         Personality fatherPersonality = father?.Personality ?? mother.Personality;
@@ -195,6 +209,7 @@ public static class Lifecycle
             Mother = mother,
             Father = father,
             Surname = father?.Surname ?? mother.Surname,
+            Species = mother.Species,
             BirthTicks = world.Clock.Ticks,
             Personality = Personality.Inherit(world.Random, mother.Personality, fatherPersonality),
         };
@@ -254,7 +269,7 @@ public static class Lifecycle
         colonist.PregnancyFather = null;
         colonist.Partner = null;
 
-        (int x, int y) = Urbanism.FindGraveSite(world.Map, colony) ?? (-1, -1);
+        (int x, int y) = Urbanism.FindGraveSite(colony.Map, colony) ?? (-1, -1);
         colony.Graves.Add(new Grave(colonist.FullName, colonist.Sex, age, cause, world.Clock.Ticks, x, y));
 
         bool female = colonist.Sex == Sex.Female;

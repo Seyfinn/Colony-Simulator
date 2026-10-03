@@ -12,6 +12,16 @@ public static class Farming
     /// <summary>Céréales rapportées par une parcelle mûre.</summary>
     public const int PlotYield = 4;
 
+    /// <summary>Céréales de plus pour une parcelle sur une berge fertile (à moins de deux cases de l'eau).</summary>
+    public const int BankBonus = 1;
+
+    /// <summary>Ce que rapporte la parcelle de cette case : plus sur les berges.</summary>
+    public static int YieldAt(LocalMap map, int x, int y) =>
+        (int)MathF.Round(PlotYield * map.SoilRichness) + (map.IsFertileBank(x, y) ? BankBonus : 0) + (map.IsIrrigated(x, y) ? IrrigationBonus : 0);
+
+    /// <summary>Céréales de plus pour une parcelle qu'un canal irrigue.</summary>
+    public const int IrrigationBonus = 2;
+
     /// <summary>Jours de pousse entre le semis et la maturité (la pousse s'arrête en hiver).</summary>
     public const float GrowthDays = 7f;
 
@@ -28,6 +38,9 @@ public static class Farming
     private const int MaxDistanceFromFire = 16;
     private const float TreePenalty = 1.5f;
     private const float BushPenalty = 2.5f;
+
+    /// <summary>Une berge fertile compte comme du défrichage en moins : on préfère cultiver près de l'eau.</summary>
+    private const float BankPreference = 0.35f;
 
     public static IEnumerable<FieldPlot> Plots(Colony colony) => colony.Fields.SelectMany(f => f.Plots);
 
@@ -81,10 +94,13 @@ public static class Farming
         for (int ty = y; ty < y + Field.Size; ty++)
         for (int tx = x; tx < x + Field.Size; tx++)
         {
-            if (!map.IsWalkable(tx, ty) || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
+            if (!map.IsWalkable(tx, ty) || map.IsWaterway(tx, ty) || colony.CanalTiles.Contains((tx, ty))
+                || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
                 return null;
             if (map.GetSoil(tx, ty) == SoilType.Sand)
                 return null;
+            if (map.IsFertileBank(tx, ty))
+                clearing -= BankPreference;
             clearing += map.GetFlora(tx, ty) switch
             {
                 FloraType.Tree => TreePenalty,

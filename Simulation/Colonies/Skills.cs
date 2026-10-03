@@ -1,6 +1,6 @@
 namespace GodColony.Simulation.Colonies;
 
-public enum SkillType { Foraging, Fishing, Woodcutting, Mining, Construction, Farming }
+public enum SkillType { Foraging, Fishing, Woodcutting, Mining, Construction, Farming, Smithing, Cooking }
 
 /// <summary>
 /// Les compétences d'un colon, de 0 à 20. Elles progressent par la pratique, plus ou moins vite
@@ -15,12 +15,14 @@ public sealed class Skills
     private readonly float[] _talent = new float[All.Length];
 
     /// <summary>Niveau de départ et talent tirés au hasard : chacun a ses points forts.</summary>
-    public static Skills Random(Random random)
+    public static Skills Random(Random random, Species? species = null)
     {
         var skills = new Skills();
         foreach (SkillType skill in All)
         {
-            skills._talent[(int)skill] = 0.5f + random.NextSingle();
+            // Les talents de l'espèce déplacent le tirage : un nain est plus souvent doué pour la mine.
+            float bias = species?.Talent(skill) ?? 1f;
+            skills._talent[(int)skill] = Math.Clamp((0.5f + random.NextSingle()) * bias, 0.5f, 1.5f);
             skills._level[(int)skill] = random.NextSingle() * 6f;
         }
         return skills;
@@ -42,9 +44,9 @@ public sealed class Skills
     }
 
     /// <summary>Un voyageur expérimenté : un métier déjà maîtrisé (niveau 8 à 12), le reste tiré au hasard.</summary>
-    public static Skills Veteran(Random random, SkillType specialty)
+    public static Skills Veteran(Random random, SkillType specialty, Species? species = null)
     {
-        Skills skills = Random(random);
+        Skills skills = Random(random, species);
         skills._level[(int)specialty] = 8f + 4f * random.NextSingle();
         skills._talent[(int)specialty] = MathF.Max(skills._talent[(int)specialty], 1f);
         return skills;
@@ -61,6 +63,8 @@ public sealed class Skills
             SkillType.Woodcutting => f ? "bûcheronne" : "bûcheron",
             SkillType.Mining => f ? "mineuse" : "mineur",
             SkillType.Farming => f ? "agricultrice" : "agriculteur",
+            SkillType.Smithing => f ? "forgeronne" : "forgeron",
+            SkillType.Cooking => f ? "boulangère" : "boulanger",
             _ => f ? "bâtisseuse" : "bâtisseur",
         };
     }
