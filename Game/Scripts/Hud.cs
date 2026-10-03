@@ -108,7 +108,8 @@ public partial class Hud : CanvasLayer
         _rest.Set(colonist.Needs.Rest);
         _leisure.Set(colonist.Needs.Leisure);
         _mood.Set(colonist.Needs.Mood);
-        _colonistSector.Text = $"Affecté à : {SectorName(colonist.Sector)}";
+        _colonistSector.Text = $"Affecté à : {SectorName(colonist.Sector)}\n" +
+                               (colonist.Home is null ? "Dort à la belle étoile" : "Dort dans une hutte");
 
         // Niveau et talent : « ★ » = très doué (apprend vite), « · » = peu doué.
         var lines = new System.Text.StringBuilder("Compétences\n");
@@ -126,6 +127,7 @@ public partial class Hud : CanvasLayer
         WorkSector.Food => "nourriture",
         WorkSector.Wood => "bois",
         WorkSector.Stone => "pierre",
+        WorkSector.Construction => "construction",
         _ => "temps libre",
     };
 
@@ -155,6 +157,9 @@ public partial class Hud : CanvasLayer
             ActivityKind.Chop => there ? "Abat un arbre" : "Part couper du bois",
             ActivityKind.Mine => there ? "Taille la roche" : "Part à la carrière",
             ActivityKind.Deliver => "Rapporte sa récolte au camp",
+            ActivityKind.FetchMaterials => "Va chercher du bois pour le chantier",
+            ActivityKind.SupplySite => "Apporte du bois au chantier",
+            ActivityKind.Build => there ? "Bâtit une hutte" : "Part sur le chantier",
             _ => "Se promène",
         };
     }

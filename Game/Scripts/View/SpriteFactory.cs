@@ -19,6 +19,35 @@ public static class SpriteFactory
     /// <summary>Arbre de 16 × 24 pixels : le tronc touche le bas de la case, le feuillage déborde au-dessus.</summary>
     public static ImageTexture Tree => _tree ??= BuildTree();
 
+    private static ImageTexture? _hut;
+
+    /// <summary>Hutte de 32 × 40 pixels (2 × 2 cases, le toit déborde vers le haut en vue 3/4).</summary>
+    public static ImageTexture Hut => _hut ??= BuildHut();
+
+    private static ImageTexture BuildHut()
+    {
+        var image = Image.CreateEmpty(32, 40, false, Image.Format.Rgba8);
+        Color wall = Color.Color8(140, 98, 58), wallDark = Color.Color8(104, 70, 40), door = Color.Color8(60, 40, 24);
+        Color thatch = Color.Color8(196, 164, 88), thatchDark = Color.Color8(156, 126, 62);
+
+        // Murs de planches, avec une porte au milieu.
+        for (int y = 22; y < 40; y++)
+        for (int x = 2; x < 30; x++)
+            image.SetPixel(x, y, x % 5 == 0 ? wallDark : wall);
+        for (int y = 29; y < 40; y++)
+        for (int x = 13; x < 19; x++)
+            image.SetPixel(x, y, door);
+
+        // Toit de chaume en pente, qui déborde des murs.
+        for (int y = 0; y < 24; y++)
+        {
+            int half = 4 + y * 12 / 23;
+            for (int x = 16 - half; x < 16 + half; x++)
+                image.SetPixel(x, y, (x + y) % 4 == 0 ? thatchDark : thatch);
+        }
+        return ImageTexture.CreateFromImage(image);
+    }
+
     private static ImageTexture? _stump;
 
     /// <summary>Souche de 8 × 6 pixels laissée par un arbre abattu.</summary>

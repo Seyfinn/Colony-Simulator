@@ -34,7 +34,7 @@ public sealed class WorldState
         Pathfinder = new Pathfinder(Map);
         Colonies.Add(ColonyFounder.Found(Map, Random, "Première colonie", StartingColonists, () => _nextColonistId++));
         foreach (Colony colony in Colonies)
-            ColonyBrain.Think(colony, Clock);
+            ColonyBrain.Think(colony, Map, Clock);
     }
 
     /// <summary>Avance la simulation d'un tick.</summary>
@@ -50,7 +50,7 @@ public sealed class WorldState
         {
             foreach (Colony colony in Colonies)
             {
-                ColonyBrain.Think(colony, Clock);
+                ColonyBrain.Think(colony, Map, Clock);
                 if (Clock.Hour == FireLightingHour)
                     ColonyBrain.LightFire(colony, Clock);
             }

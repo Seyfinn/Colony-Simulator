@@ -4,12 +4,12 @@ namespace GodColony.Simulation.Colonies;
 /// Les grands secteurs de travail entre lesquels la colonie répartit sa main-d'œuvre.
 /// « Libre » regroupe ceux dont la colonie n'a pas besoin pour l'instant : ils se reposent.
 /// </summary>
-public enum WorkSector { Food, Wood, Stone, Free }
+public enum WorkSector { Food, Wood, Stone, Construction, Free }
 
 public static class WorkSectors
 {
     /// <summary>Les secteurs où l'on travaille vraiment (tous sauf « libre »).</summary>
-    public static readonly WorkSector[] Productive = [WorkSector.Food, WorkSector.Wood, WorkSector.Stone];
+    public static readonly WorkSector[] Productive = [WorkSector.Food, WorkSector.Wood, WorkSector.Stone, WorkSector.Construction];
 
     public static readonly WorkSector[] All = Enum.GetValues<WorkSector>();
 
@@ -19,6 +19,7 @@ public static class WorkSectors
         WorkSector.Food => [SkillType.Foraging, SkillType.Fishing],
         WorkSector.Wood => [SkillType.Woodcutting],
         WorkSector.Stone => [SkillType.Mining],
+        WorkSector.Construction => [SkillType.Construction],
         _ => [],
     };
 

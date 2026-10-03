@@ -16,23 +16,37 @@ public class BrainTests(ITestOutputHelper output)
         return (world, colony);
     }
 
+    /// <summary>Bâtit instantanément assez de huttes pour loger tout le monde.</summary>
+    private static void HouseEveryone(WorldState world, Colony colony)
+    {
+        foreach (Building site in colony.ConstructionSites.ToList())
+            colony.Buildings.Remove(site);
+        while (colony.Homeless > 0)
+        {
+            (int x, int y) = Urbanism.FindHutSite(world.Map, colony)!.Value;
+            Building hut = Urbanism.PlanHut(world.Map, colony, x, y);
+            hut.Progress = 1f;
+            colony.MoveIn(hut);
+        }
+    }
+
     private static void Set(Colony colony, ResourceType type, int amount)
     {
         colony.Stock.TryTake(type, colony.Stock.Get(type));
         colony.Stock.Add(type, amount);
     }
 
-    private static void ThinkSeveralHours(Colony colony, GameClock clock)
+    private static void ThinkSeveralHours(Colony colony, WorldState world, GameClock clock)
     {
         for (int i = 0; i < 8; i++)
-            ColonyBrain.Think(colony, clock);
+            ColonyBrain.Think(colony, world.Map, clock);
     }
 
     [Fact]
     public void En_cas_de_famine_tout_le_monde_part_chercher_a_manger_et_la_carriere_attend()
     {
         (WorldState world, Colony colony) = ColonyWith(food: 0, wood: 200, stone: 0);
-        ThinkSeveralHours(colony, world.Clock);
+        ThinkSeveralHours(colony, world, world.Clock);
 
         Assert.True(colony.WorkShares[WorkSector.Food] > 0.6f);
         Assert.True(colony.WorkShares[WorkSector.Stone] < 0.01f, "Pas de carrière tant que la survie n'est pas assurée.");
@@ -43,7 +57,8 @@ public class BrainTests(ITestOutputHelper output)
     public void Dans_l_abondance_la_colonie_prend_du_temps_libre()
     {
         (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 1000);
-        ThinkSeveralHours(colony, world.Clock);
+        HouseEveryone(world, colony);
+        ThinkSeveralHours(colony, world, world.Clock);
 
         Assert.True(colony.WorkShares[WorkSector.Free] > 0.9f);
         Assert.True(colony.Members.Count(m => m.Sector == WorkSector.Free) >= 18);
@@ -54,20 +69,32 @@ public class BrainTests(ITestOutputHelper output)
     public void Quand_la_survie_est_assuree_la_colonie_ouvre_la_carriere()
     {
         (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 0);
-        ThinkSeveralHours(colony, world.Clock);
+        HouseEveryone(world, colony);
+        ThinkSeveralHours(colony, world, world.Clock);
 
         Assert.True(colony.WorkShares[WorkSector.Stone] > 0.3f);
         Assert.Contains(colony.Thoughts, t => t.Text.Contains("carrière"));
     }
 
     [Fact]
+    public void Tant_que_des_colons_dorment_dehors_la_carriere_attend_et_on_construit()
+    {
+        (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 0);
+        ThinkSeveralHours(colony, world, world.Clock);
+
+        Assert.True(colony.WorkShares[WorkSector.Construction] > 0.2f);
+        Assert.True(colony.WorkShares[WorkSector.Stone] < 0.01f);
+        Assert.NotEmpty(colony.ConstructionSites);
+    }
+
+    [Fact]
     public void En_automne_la_colonie_anticipe_l_hiver_en_coupant_du_bois()
     {
-        (WorldState _, Colony colony) = ColonyWith(food: 1000, wood: 30, stone: 1000);
+        (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 30, stone: 1000);
         var autumn = new GameClock(TimeConstants.TicksPerDay * 10 + TimeConstants.TicksPerDay / 2);
         Assert.Equal(Season.Automne, autumn.Season);
 
-        ThinkSeveralHours(colony, autumn);
+        ThinkSeveralHours(colony, world, autumn);
 
         output.WriteLine(string.Join("\n", colony.Thoughts.Select(t => t.Text)));
         Assert.True(colony.WorkShares[WorkSector.Wood] > 0.2f);
@@ -107,8 +134,12 @@ public class BrainTests(ITestOutputHelper output)
         foreach (Thought thought in colony.Thoughts)
             output.WriteLine($"  [jour {thought.Ticks / TimeConstants.TicksPerDay}] {thought.Text}");
 
+        output.WriteLine($"Huttes : {colony.Buildings.Count(b => b.IsComplete)} achevées, {colony.ConstructionSites.Count()} en chantier, {colony.Homeless} colons dehors");
+
         Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.05f, $"{c.Name} meurt de faim."));
         Assert.Equal(0, coldNightsWithoutFire);
         Assert.True(colony.Stock.Get(ResourceType.Stone) > 0, "La carrière devrait avoir été exploitée à un moment.");
+        Assert.True(colony.Buildings.Count(b => b.IsComplete) >= 4, "La colonie devrait s'être bâti des huttes.");
+        Assert.True(colony.Homeless <= 4, "Presque tout le monde devrait dormir à l'abri au bout d'un an.");
     }
 }

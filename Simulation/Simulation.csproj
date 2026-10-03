@@ -10,4 +10,9 @@
     <AssemblyName>GodColony.Simulation</AssemblyName>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Les tests peuvent préparer des situations précises (une hutte déjà bâtie, par exemple). -->
+    <InternalsVisibleTo Include="Simulation.Tests" />
+  </ItemGroup>
+
 </Project>

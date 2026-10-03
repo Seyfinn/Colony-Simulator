@@ -25,8 +25,9 @@ public class WorkTests(ITestOutputHelper output)
             return sum;
         }
 
+        // La carrière n'est exploitée qu'une fois la survie et le logement assurés : on laisse 12 jours.
         int elevationBefore = ElevationAroundQuarry();
-        for (long i = 0; i < 6L * TimeConstants.TicksPerDay; i++)
+        for (long i = 0; i < 12L * TimeConstants.TicksPerDay; i++)
             world.Step();
 
         int layersMined = elevationBefore - ElevationAroundQuarry();

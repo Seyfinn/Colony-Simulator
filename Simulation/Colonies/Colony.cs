@@ -31,8 +31,27 @@ public sealed class Colony
         [WorkSector.Food] = 0.5f,
         [WorkSector.Wood] = 0.3f,
         [WorkSector.Stone] = 0.2f,
+        [WorkSector.Construction] = 0f,
         [WorkSector.Free] = 0f,
     };
+
+    /// <summary>Les bâtiments de la colonie, achevés ou en chantier.</summary>
+    public List<Building> Buildings { get; } = [];
+
+    public IEnumerable<Building> ConstructionSites => Buildings.Where(b => !b.IsComplete);
+
+    /// <summary>Colons qui n'ont pas de hutte et dorment à la belle étoile.</summary>
+    public int Homeless => Members.Count(m => m.Home is null);
+
+    /// <summary>Une hutte vient d'être achevée : on y installe des colons qui dormaient dehors.</summary>
+    internal void MoveIn(Building building)
+    {
+        foreach (Colonist colonist in Members.Where(m => m.Home is null).Take(Building.HutCapacity).ToList())
+        {
+            colonist.Home = building;
+            building.Residents.Add(colonist);
+        }
+    }
 
     /// <summary>Dernières mesures du cerveau de la colonie (null avant sa première réflexion).</summary>
     public ColonySensors? Sensors { get; internal set; }
@@ -49,9 +68,9 @@ public sealed class Colony
     /// <summary>Cases déjà prises en charge par un colon (un buisson qu'il va cueillir, par exemple).</summary>
     internal HashSet<(int X, int Y)> Reserved { get; } = [];
 
-    /// <summary>Chaque colon a sa place pour dormir autour du feu.</summary>
+    /// <summary>Chaque colon a sa place pour dormir : dans sa hutte s'il en a une, sinon autour du feu.</summary>
     public (int X, int Y) SleepSpot(Colonist colonist) =>
-        GatherSpots[(1 + Members.IndexOf(colonist)) % GatherSpots.Count];
+        colonist.Home is { } home ? home.BedOf(colonist) : GatherSpots[(1 + Members.IndexOf(colonist)) % GatherSpots.Count];
 
     public float AverageMood => Members.Count == 0 ? 0f : Members.Average(m => m.Needs.Mood);
 

@@ -35,6 +35,12 @@ public static class ColonistAI
     private const float RelaxRecoveryPerHour = 0.3f;
 
     private const float ColdSleepFactor = 0.6f;
+    private const float ShelterSleepFactor = 1.2f;
+
+    // Construction : on porte au plus 6 unités de bois par voyage, et chaque séance de travail fait avancer le chantier.
+    private const int CarryCapacity = 6;
+    private const float FetchSeconds = 0.5f;
+    private const float BuildActionSeconds = 3f;
     private const float MealValue = 0.6f;
     private const float BerryValue = 0.2f;
 
@@ -77,10 +83,11 @@ public static class ColonistAI
         const float hour = 1f / TimeConstants.TicksPerHour;
         needs.Food -= HungerPerHour * hour;
 
-        // Sans feu pendant la saison froide, le sommeil répare mal.
-        bool cold = ColonyBrain.IsColdSeason(world.Clock.Season) && !colonist.Colony.FireLit;
+        // On dort mieux à l'abri d'une hutte ; dehors, sans feu pendant la saison froide, le sommeil répare mal.
+        bool sheltered = colonist.IsSleepingAtHome;
+        bool cold = !sheltered && ColonyBrain.IsColdSeason(world.Clock.Season) && !colonist.Colony.FireLit;
         if (colonist.IsSleeping)
-            needs.Rest += SleepRecoveryPerHour * (cold ? ColdSleepFactor : 1f) * hour;
+            needs.Rest += SleepRecoveryPerHour * (sheltered ? ShelterSleepFactor : cold ? ColdSleepFactor : 1f) * hour;
         else
             needs.Rest -= FatiguePerHour * hour;
 
@@ -121,7 +128,13 @@ public static class ColonistAI
             return;
         }
 
-        if (colonist.Carrying is not null && StartNearCamp(colonist, world, ActivityKind.Deliver, DeliverSeconds))
+        // Ce qu'on porte va d'abord à destination : au chantier s'il est encore ouvert, sinon au stock.
+        if (colonist.CarryingTo is { IsComplete: true })
+            colonist.CarryingTo = null;
+        if (colonist.CarryingTo is { } site && TrySupplySite(colonist, world, site))
+            return;
+        if (colonist.Carrying is not null && colonist.CarryingTo is null
+            && StartNearCamp(colonist, world, ActivityKind.Deliver, DeliverSeconds))
             return;
 
         if ((needs.Leisure < 0.3f || (clock.IsEvening && needs.Leisure < 0.8f))
@@ -160,7 +173,8 @@ public static class ColonistAI
             {
                 WorkSector.Food => TryGatherFood(colonist, world),
                 WorkSector.Wood => TryChop(colonist, world),
-                _ => TryMine(colonist, world),
+                WorkSector.Stone => TryMine(colonist, world),
+                _ => TryConstruct(colonist, world),
             };
             if (started)
                 return true;
@@ -244,6 +258,37 @@ public static class ColonistAI
                 candidates.Add((x, y, dx * dx + dy * dy));
         }
         return candidates.OrderBy(c => c.Distance).Select(c => (c.X, c.Y));
+    }
+
+    /// <summary>
+    /// Travaille sur le chantier le plus proche : s'il manque du bois, on va le chercher au stock ;
+    /// sinon, on bâtit.
+    /// </summary>
+    private static bool TryConstruct(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        Building? site = colony.ConstructionSites
+            .OrderBy(b => Math.Abs(b.X - colonist.TileX) + Math.Abs(b.Y - colonist.TileY))
+            .FirstOrDefault(b => b.HasAllMaterials || (b.WoodStillToBring > 0 && colony.Stock.Get(ResourceType.Wood) > 0));
+        if (site is null)
+            return false;
+
+        if (!site.HasAllMaterials)
+        {
+            IReadOnlyList<(int X, int Y)> spots = colony.GatherSpots;
+            (int x, int y) = spots[world.Random.Next(Math.Min(12, spots.Count))];
+            return TryStart(colonist, world, new Activity(ActivityKind.FetchMaterials, x, y, Ticks(FetchSeconds)) { Building = site });
+        }
+
+        (int bx, int by) = site.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        float seconds = BuildActionSeconds / colonist.Skills.WorkSpeed(SkillType.Construction);
+        return TryStart(colonist, world, new Activity(ActivityKind.Build, bx, by, Ticks(seconds)) { Building = site });
+    }
+
+    private static bool TrySupplySite(Colonist colonist, WorldState world, Building site)
+    {
+        (int bx, int by) = site.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        return TryStart(colonist, world, new Activity(ActivityKind.SupplySite, bx, by, Ticks(DeliverSeconds)) { Building = site });
     }
 
     private static bool TryChop(Colonist colonist, WorldState world)
@@ -378,19 +423,19 @@ public static class ColonistAI
         Activity activity = colonist.Activity!;
         if (!activity.Started)
         {
+            // Quiconque revient au camp y dépose ce qu'il rapporte (sauf les matériaux destinés à un chantier).
+            if (colonist.Carrying is { } load && colonist.CarryingTo is null && IsAtCamp(colonist))
+            {
+                colonist.Colony.Stock.Add(load.Type, load.Amount);
+                colonist.Carrying = null;
+            }
+
             if (!CanBegin(colonist, world, activity))
             {
                 Cancel(colonist);
                 return;
             }
             activity.Started = true;
-
-            // Quiconque revient au camp y dépose ce qu'il rapporte.
-            if (colonist.Carrying is { } load && IsAtCamp(colonist))
-            {
-                colonist.Colony.Stock.Add(load.Type, load.Amount);
-                colonist.Carrying = null;
-            }
         }
 
         activity.ElapsedTicks++;
@@ -415,8 +460,25 @@ public static class ColonistAI
         ActivityKind.Fish => world.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Chop => world.Map.CanChop(activity.TargetX, activity.TargetY),
         ActivityKind.Mine => WorkSites.CanMineFrom(world.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
+        ActivityKind.FetchMaterials => TakeMaterials(colonist, activity.Building!),
+        ActivityKind.SupplySite => activity.Building is { IsComplete: false } site && colonist.CarryingTo == site,
+        ActivityKind.Build => activity.Building is { IsComplete: false, HasAllMaterials: true },
         _ => true,
     };
+
+    /// <summary>Prend au stock le bois qui manque encore au chantier, dans la limite de ce qu'on peut porter.</summary>
+    private static bool TakeMaterials(Colonist colonist, Building site)
+    {
+        if (site.IsComplete || colonist.Carrying is not null)
+            return false;
+        int amount = Math.Min(CarryCapacity, Math.Min(site.WoodStillToBring, colonist.Colony.Stock.Get(ResourceType.Wood)));
+        if (amount <= 0 || !colonist.Colony.Stock.TryTake(ResourceType.Wood, amount))
+            return false;
+        colonist.Carrying = (ResourceType.Wood, amount);
+        colonist.CarryingTo = site;
+        site.WoodInTransit += amount;
+        return true;
+    }
 
     private static void Finish(Colonist colonist, WorldState world, Activity activity)
     {
@@ -435,6 +497,17 @@ public static class ColonistAI
             }
             case ActivityKind.ForageToEat:
                 colonist.Needs.Food += BerryValue * map.HarvestBerries(activity.TargetX, activity.TargetY);
+                break;
+            case ActivityKind.SupplySite when colonist.Carrying is { } load && activity.Building is { } site:
+                site.WoodDelivered += load.Amount;
+                site.WoodInTransit -= load.Amount;
+                colonist.Carrying = null;
+                colonist.CarryingTo = null;
+                break;
+            case ActivityKind.Build when activity.Building is { IsComplete: false } site:
+                site.Progress = MathF.Min(1f, site.Progress + BuildActionSeconds / Building.HutWorkSeconds);
+                if (site.IsComplete)
+                    ColonyBrain.OnBuildingComplete(colonist.Colony, site, world.Clock);
                 break;
             case ActivityKind.Fish when map.CatchFish(activity.TargetX, activity.TargetY):
                 colonist.Carrying = (ResourceType.Food, FoodPerFish);

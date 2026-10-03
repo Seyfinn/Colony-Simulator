@@ -61,12 +61,44 @@ public partial class ColonistsView : Node2D
     {
         foreach (Colony colony in _world.Colonies)
         {
-            ImageTexture fire = SpriteFactory.Campfire[(int)(_time * 6) % 2];
-            DrawTexture(fire, new Vector2(colony.CampX * Tile + 2, colony.CampY * Tile + 2));
+            foreach (Building building in colony.Buildings)
+                DrawBuilding(building);
 
+            if (colony.FireLit || !Simulation.Colonies.ColonyBrain.IsColdSeason(_world.Clock.Season))
+            {
+                ImageTexture fire = SpriteFactory.Campfire[(int)(_time * 6) % 2];
+                DrawTexture(fire, new Vector2(colony.CampX * Tile + 2, colony.CampY * Tile + 2));
+            }
+
+            // Ceux qui dorment dans leur hutte sont à l'intérieur : on ne les voit pas.
             foreach (Colonist colonist in colony.Members)
-                DrawColonist(colonist);
+                if (!colonist.IsSleepingAtHome)
+                    DrawColonist(colonist);
         }
+    }
+
+    private void DrawBuilding(Building building)
+    {
+        var origin = new Vector2(building.X, building.Y) * Tile;
+        var footprint = new Rect2(origin, new Vector2(building.Width, building.Height) * Tile);
+
+        if (building.IsComplete)
+        {
+            DrawTexture(SpriteFactory.Hut, origin + new Vector2(0, footprint.Size.Y - 40));
+            return;
+        }
+
+        // Chantier : fondations, tas de bois livré, poteaux qui montent avec l'avancement.
+        DrawRect(footprint, new Color(0.45f, 0.33f, 0.2f, 0.55f));
+        DrawRect(footprint, new Color(0.3f, 0.2f, 0.1f), false, 1f);
+        int logs = building.WoodDelivered / 2;
+        for (int i = 0; i < logs; i++)
+            DrawRect(new Rect2(origin + new Vector2(2 + i % 3 * 4, footprint.Size.Y - 4 - i / 3 * 2), new Vector2(4, 2)), new Color(0.55f, 0.36f, 0.2f));
+        float postHeight = 4 + 18 * building.Progress;
+        foreach (float x in new[] { 3f, footprint.Size.X - 5f })
+            DrawRect(new Rect2(origin + new Vector2(x, footprint.Size.Y - postHeight), new Vector2(2, postHeight)), new Color(0.5f, 0.32f, 0.18f));
+        if (building.Progress > 0.5f)
+            DrawRect(new Rect2(origin + new Vector2(3, footprint.Size.Y - postHeight), new Vector2(footprint.Size.X - 6, 2)), new Color(0.5f, 0.32f, 0.18f));
     }
 
     private void DrawColonist(Colonist colonist)

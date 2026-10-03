@@ -40,8 +40,16 @@ public sealed class Colonist
     public Activity? Activity { get; internal set; }
     public bool IsSleeping => Activity is { Kind: ActivityKind.Sleep, Started: true };
 
-    /// <summary>Ce que le colon transporte vers le stock (null s'il a les mains vides).</summary>
+    /// <summary>Ce que le colon transporte (null s'il a les mains vides).</summary>
     public (ResourceType Type, int Amount)? Carrying { get; internal set; }
+
+    /// <summary>Le chantier auquel est destiné ce qu'il transporte ; null s'il le rapporte au stock.</summary>
+    public Building? CarryingTo { get; internal set; }
+
+    /// <summary>La hutte où il dort, s'il en a une.</summary>
+    public Building? Home { get; internal set; }
+
+    public bool IsSleepingAtHome => IsSleeping && Home is { } home && home.Contains(TileX, TileY);
 
     /// <summary>Distance parcourue, utilisée pour animer la marche.</summary>
     public float DistanceWalked { get; internal set; }

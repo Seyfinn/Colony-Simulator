@@ -14,6 +14,11 @@ public enum ActivityKind
     Chop,
     Mine,
     Deliver,
+    /// <summary>Prendre au stock les matériaux d'un chantier.</summary>
+    FetchMaterials,
+    /// <summary>Apporter les matériaux sur le chantier.</summary>
+    SupplySite,
+    Build,
 }
 
 /// <summary>
@@ -31,6 +36,9 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     public int StandX { get; init; } = targetX;
     public int StandY { get; init; } = targetY;
 
+    /// <summary>Le chantier concerné, pour les activités de construction.</summary>
+    public Building? Building { get; init; }
+
     /// <summary>Durée de l'action une fois sur place, en ticks (le sommeil, lui, dure jusqu'à être reposé).</summary>
     public float DurationTicks { get; } = durationTicks;
 
@@ -46,6 +54,7 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Fish => SkillType.Fishing,
         ActivityKind.Chop => SkillType.Woodcutting,
         ActivityKind.Mine => SkillType.Mining,
+        ActivityKind.Build => SkillType.Construction,
         _ => null,
     };
 
