@@ -92,8 +92,16 @@ public partial class ColonistsView : Node2D
         int frame = (int)(colonist.DistanceWalked * 3f) % 2;
         DrawTexture(frames[frame], feet - new Vector2(4, 12));
 
-        // Une petite touche rouge : il rapporte des baies.
-        if (colonist.Carrying is not null)
-            DrawRect(new Rect2(feet + new Vector2(3, -6), new Vector2(2, 2)), new Color(0.8f, 0.15f, 0.2f));
+        // Ce qu'il rapporte au camp, en petit sous le bras.
+        if (colonist.Carrying is { } load)
+            DrawRect(new Rect2(feet + new Vector2(3, -7), new Vector2(3, 3)), CarryColor(load.Type));
     }
+
+    private static Color CarryColor(ResourceType type) => type switch
+    {
+        ResourceType.Food => new Color(0.8f, 0.15f, 0.2f),
+        ResourceType.Wood => new Color(0.55f, 0.36f, 0.2f),
+        ResourceType.Stone => new Color(0.6f, 0.6f, 0.6f),
+        _ => new Color(0.7f, 0.35f, 0.2f),
+    };
 }

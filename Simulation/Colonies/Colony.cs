@@ -19,8 +19,19 @@ public sealed class Colony
     /// <summary>Cases accessibles autour du feu, des plus proches aux plus lointaines.</summary>
     public IReadOnlyList<(int X, int Y)> GatherSpots { get; }
 
+    /// <summary>Le point de la montagne où la colonie a ouvert sa carrière (null s'il n'y a pas de roche accessible).</summary>
+    public (int X, int Y)? Quarry { get; internal set; }
+
     public List<Colonist> Members { get; } = [];
     public Stockpile Stock { get; } = new();
+
+    /// <summary>Part de la main-d'œuvre consacrée à chaque secteur (la somme vaut 1).</summary>
+    public Dictionary<WorkSector, float> WorkShares { get; } = new()
+    {
+        [WorkSector.Food] = 0.5f,
+        [WorkSector.Wood] = 0.3f,
+        [WorkSector.Stone] = 0.2f,
+    };
 
     /// <summary>Cases déjà prises en charge par un colon (un buisson qu'il va cueillir, par exemple).</summary>
     internal HashSet<(int X, int Y)> Reserved { get; } = [];
@@ -30,4 +41,40 @@ public sealed class Colony
         GatherSpots[(1 + Members.IndexOf(colonist)) % GatherSpots.Count];
 
     public float AverageMood => Members.Count == 0 ? 0f : Members.Average(m => m.Needs.Mood);
+
+    /// <summary>
+    /// Affecte chaque colon à un secteur selon les parts voulues, en confiant chaque poste au plus compétent.
+    /// Un colon garde de préférence son secteur actuel, pour éviter qu'il change de métier sans arrêt.
+    /// </summary>
+    public void AssignSectors()
+    {
+        Dictionary<WorkSector, int> quotas = ComputeQuotas(Members.Count);
+        var candidates =
+            from colonist in Members
+            from sector in WorkSectors.All
+            let fit = colonist.Skills.Level(sector.Skill()) + colonist.Skills.Talent(sector.Skill()) * 4f
+                      + (colonist.Sector == sector ? 3f : 0f)
+            orderby fit descending
+            select (colonist, sector);
+
+        var assigned = new HashSet<Colonist>();
+        foreach ((Colonist colonist, WorkSector sector) in candidates.ToList())
+        {
+            if (assigned.Contains(colonist) || quotas[sector] <= 0)
+                continue;
+            colonist.Sector = sector;
+            quotas[sector]--;
+            assigned.Add(colonist);
+        }
+    }
+
+    /// <summary>Nombre de colons par secteur ; les restes d'arrondi vont aux secteurs les plus proches du chiffre suivant.</summary>
+    private Dictionary<WorkSector, int> ComputeQuotas(int workers)
+    {
+        var quotas = WorkSectors.All.ToDictionary(s => s, s => (int)(WorkShares[s] * workers));
+        int remaining = workers - quotas.Values.Sum();
+        foreach (WorkSector sector in WorkSectors.All.OrderByDescending(s => WorkShares[s] * workers % 1f).Take(remaining))
+            quotas[sector]++;
+        return quotas;
+    }
 }

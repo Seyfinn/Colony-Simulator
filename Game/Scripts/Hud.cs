@@ -13,6 +13,8 @@ public partial class Hud : CanvasLayer
     private PanelContainer _colonistPanel = null!;
     private Label _colonistName = null!;
     private Label _colonistActivity = null!;
+    private Label _colonistSector = null!;
+    private Label _colonistSkills = null!;
     private NeedBar _food = null!, _rest = null!, _leisure = null!, _mood = null!;
 
     public override void _Ready()
@@ -46,6 +48,8 @@ public partial class Hud : CanvasLayer
         _rest = new NeedBar(colonistColumn, "Repos");
         _leisure = new NeedBar(colonistColumn, "Détente");
         _mood = new NeedBar(colonistColumn, "Humeur");
+        _colonistSector = AddLabel(colonistColumn, 14, new Color(0.95f, 0.85f, 0.6f));
+        _colonistSkills = AddLabel(colonistColumn, 13, new Color(0.8f, 0.8f, 0.8f));
     }
 
     public void SetStatus(string text) => _status.Text = text;
@@ -63,7 +67,33 @@ public partial class Hud : CanvasLayer
         _rest.Set(colonist.Needs.Rest);
         _leisure.Set(colonist.Needs.Leisure);
         _mood.Set(colonist.Needs.Mood);
+        _colonistSector.Text = $"Affecté à : {SectorName(colonist.Sector)}";
+
+        // Niveau et talent : « ★ » = très doué (apprend vite), « · » = peu doué.
+        var lines = new System.Text.StringBuilder("Compétences\n");
+        foreach (SkillType skill in Skills.All)
+        {
+            float talent = colonist.Skills.Talent(skill);
+            string mark = talent > 1.2f ? " ★" : talent < 0.75f ? " ·" : "";
+            lines.Append($"  {SkillName(skill),-14} {colonist.Skills.Level(skill):0.0}{mark}\n");
+        }
+        _colonistSkills.Text = lines.ToString().TrimEnd();
     }
+
+    public static string SectorName(WorkSector sector) => sector switch
+    {
+        WorkSector.Food => "nourriture",
+        WorkSector.Wood => "bois",
+        _ => "pierre",
+    };
+
+    private static string SkillName(SkillType skill) => skill switch
+    {
+        SkillType.Foraging => "Cueillette",
+        SkillType.Woodcutting => "Bûcheronnage",
+        SkillType.Mining => "Minage",
+        _ => "Construction",
+    };
 
     private static string Describe(Colonist colonist)
     {
@@ -78,7 +108,9 @@ public partial class Hud : CanvasLayer
             ActivityKind.Relax => there ? "Se détend près du feu" : "Va se détendre près du feu",
             ActivityKind.Forage => there ? "Cueille des baies" : "Part cueillir des baies",
             ActivityKind.ForageToEat => there ? "Mange des baies sauvages" : "Cherche des baies à manger",
-            ActivityKind.Deliver => "Rapporte des baies au camp",
+            ActivityKind.Chop => there ? "Abat un arbre" : "Part couper du bois",
+            ActivityKind.Mine => there ? "Taille la roche" : "Part à la carrière",
+            ActivityKind.Deliver => "Rapporte sa récolte au camp",
             _ => "Se promène",
         };
     }

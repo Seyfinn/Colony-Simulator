@@ -41,7 +41,7 @@ public sealed class WorldState
         long day = Clock.TotalDays;
         Clock.Advance();
         if (Clock.TotalDays != day)
-            Map.DailyUpdate();
+            Map.DailyUpdate(Clock.TotalDays);
 
         foreach (Colony colony in Colonies)
         foreach (Colonist colonist in colony.Members)

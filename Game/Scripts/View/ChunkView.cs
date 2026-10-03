@@ -71,10 +71,13 @@ public partial class ChunkView : Node2D
             if (flora == FloraType.None)
                 continue;
 
-            Texture2D sprite = flora == FloraType.Tree ? SpriteFactory.Tree
-                : _map.GetBerries(x, y) > 0 ? SpriteFactory.Bush
-                : SpriteFactory.BushEmpty;
-            float scale = 0.55f + 0.45f * _map.GetFloraGrowth(x, y);
+            Texture2D sprite = flora switch
+            {
+                FloraType.Tree => SpriteFactory.Tree,
+                FloraType.Stump => SpriteFactory.Stump,
+                _ => _map.GetBerries(x, y) > 0 ? SpriteFactory.Bush : SpriteFactory.BushEmpty,
+            };
+            float scale = flora == FloraType.Stump ? 1f : 0.3f + 0.7f * _map.GetFloraGrowth(x, y);
             Vector2 size = sprite.GetSize() * scale;
             // Le pied de la plante est posé au bas de la case, légèrement décalé pour éviter un effet de grille.
             var jitter = new Vector2(

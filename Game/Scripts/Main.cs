@@ -84,6 +84,12 @@ public partial class Main : Node2D
             }
             else if (arg == "--select-first")
                 Select(_world.Colonies[0].Members[0]);
+            else if (arg == "--focus-quarry" && _world.Colonies[0].Quarry is { } quarry)
+            {
+                // Centre la caméra sur la carrière et suit un mineur.
+                camera.Position = new Vector2(quarry.X + 0.5f, quarry.Y + 0.5f) * TerrainPainter.TileSize;
+                Select(_world.Colonies[0].Members.Find(m => m.Sector == WorkSector.Stone));
+            }
             else if (arg == "--demo-quarry")
             {
                 (int x, int y) = DevTools.DigDemoQuarry(_world.Map);
@@ -204,7 +210,10 @@ public partial class Main : Node2D
         _hud.SetStatus($"An {clock.Year}  ·  {SeasonName(clock.Season)}, jour {clock.DayOfSeason}/5  ·  {clock.Hour:00}:{clock.Minute:00}  ·  {speed}");
 
         Colony colony = _world.Colonies[0];
-        _hud.SetColony($"{colony.Name}  ·  {colony.Members.Count} colons  ·  nourriture {colony.Stock.Get(ResourceType.Food)}  ·  humeur {colony.AverageMood * 100:0} %");
+        Stockpile stock = colony.Stock;
+        _hud.SetColony($"{colony.Name}  ·  {colony.Members.Count} colons  ·  humeur {colony.AverageMood * 100:0} %  ·  " +
+                       $"nourriture {stock.Get(ResourceType.Food)}  ·  bois {stock.Get(ResourceType.Wood)}  ·  " +
+                       $"pierre {stock.Get(ResourceType.Stone)}  ·  minerai de fer {stock.Get(ResourceType.IronOre)}");
 
         (int x, int y) = TileUnderMouse();
         LocalMap map = _world.Map;

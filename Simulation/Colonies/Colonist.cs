@@ -4,15 +4,21 @@ public enum Sex { Female, Male }
 
 public sealed class Colonist
 {
-    public Colonist(int id, string name, Sex sex, Colony colony, float x, float y)
+    public Colonist(int id, string name, Sex sex, Colony colony, Skills skills, float x, float y)
     {
         Id = id;
         Name = name;
         Sex = sex;
         Colony = colony;
+        Skills = skills;
         X = PrevX = x;
         Y = PrevY = y;
     }
+
+    public Skills Skills { get; }
+
+    /// <summary>Le secteur auquel la colonie l'a affecté. Il y travaille en priorité, sans y être limité.</summary>
+    public WorkSector Sector { get; internal set; }
 
     public int Id { get; }
     public string Name { get; }
@@ -42,5 +48,8 @@ public sealed class Colonist
 
     internal List<(int X, int Y)> Path { get; set; } = [];
     internal int PathIndex { get; set; }
+
+    /// <summary>Hauteur de marche autorisée sur le chemin en cours (2 seulement pour escalader hors d'un trou).</summary>
+    internal int PathMaxStep { get; set; } = 1;
     internal int ThinkCooldown { get; set; }
 }

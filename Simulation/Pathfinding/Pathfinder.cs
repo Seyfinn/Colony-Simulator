@@ -35,7 +35,7 @@ public sealed class Pathfinder
     /// <summary>
     /// Renvoie la liste des cases à parcourir (sans la case de départ), ou null si la destination est inaccessible.
     /// </summary>
-    public List<(int X, int Y)>? FindPath(int startX, int startY, int goalX, int goalY, int maxExpanded = 40000)
+    public List<(int X, int Y)>? FindPath(int startX, int startY, int goalX, int goalY, int maxStep = 1, int maxExpanded = 40000)
     {
         if (!_map.IsWalkable(goalX, goalY) || !_map.InBounds(startX, startY))
             return null;
@@ -66,11 +66,11 @@ public sealed class Pathfinder
             foreach ((int dx, int dy) in Directions)
             {
                 int nx = cx + dx, ny = cy + dy;
-                if (!_map.CanStep(cx, cy, nx, ny))
+                if (!_map.CanStep(cx, cy, nx, ny, maxStep))
                     continue;
                 bool diagonal = dx != 0 && dy != 0;
                 // En diagonale, on ne coupe pas les coins : les deux cases adjacentes doivent être praticables.
-                if (diagonal && (!_map.CanStep(cx, cy, cx + dx, cy) || !_map.CanStep(cx, cy, cx, cy + dy)))
+                if (diagonal && (!_map.CanStep(cx, cy, cx + dx, cy, maxStep) || !_map.CanStep(cx, cy, cx, cy + dy, maxStep)))
                     continue;
 
                 int next = ny * width + nx;

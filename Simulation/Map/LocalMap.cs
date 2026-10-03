@@ -11,7 +11,8 @@ public enum Material : byte { Soil, Stone, IronOre }
 /// <summary>Ce qu'on voit sur le dessus d'une case.</summary>
 public enum Surface : byte { Water, Grass, Dirt, Sand, Stone, IronOre }
 
-public enum FloraType : byte { None, Tree, Bush }
+/// <summary>Végétation d'une case. Une souche reste après l'abattage d'un arbre, et peut repousser.</summary>
+public enum FloraType : byte { None, Tree, Bush, Stump }
 
 /// <summary>
 /// La carte locale d'une colonie.
@@ -109,17 +110,58 @@ public sealed class LocalMap
         TileChanged?.Invoke(x, y);
     }
 
-    /// <summary>Appelé à chaque nouveau jour : une baie repousse sur chaque buisson.</summary>
-    public void DailyUpdate()
+    /// <summary>Un arbre doit avoir atteint cette croissance pour être abattu.</summary>
+    public const float MinChopGrowth = 0.5f;
+
+    private const float TreeGrowthPerDay = 0.04f;
+    private const float StumpRegrowthChancePerDay = 0.03f;
+
+    public bool CanChop(int x, int y) =>
+        InBounds(x, y) && GetFlora(x, y) == FloraType.Tree && GetFloraGrowth(x, y) >= MinChopGrowth;
+
+    /// <summary>Abat un arbre, laisse une souche et renvoie la quantité de bois obtenue (plus l'arbre est grand, plus il en donne).</summary>
+    public int ChopTree(int x, int y)
+    {
+        if (!CanChop(x, y))
+            throw new InvalidOperationException($"Pas d'arbre à abattre en ({x}, {y}).");
+        int i = Index(x, y);
+        int wood = (int)MathF.Round(3 + 7 * _floraGrowth[i]);
+        _flora[i] = FloraType.Stump;
+        _floraGrowth[i] = 0f;
+        TileChanged?.Invoke(x, y);
+        return wood;
+    }
+
+    /// <summary>
+    /// Appelé à chaque nouveau jour : une baie repousse sur chaque buisson, les arbres grandissent,
+    /// et quelques souches donnent une jeune pousse. La forêt repousse, mais lentement.
+    /// </summary>
+    public void DailyUpdate(long day)
     {
         for (int y = 0; y < Height; y++)
         for (int x = 0; x < Width; x++)
         {
             int i = Index(x, y);
-            if (_flora[i] == FloraType.Bush && _berries[i] < MaxBerries)
+            switch (_flora[i])
             {
-                _berries[i]++;
-                TileChanged?.Invoke(x, y);
+                case FloraType.Bush when _berries[i] < MaxBerries:
+                    _berries[i]++;
+                    TileChanged?.Invoke(x, y);
+                    break;
+                case FloraType.Tree when _floraGrowth[i] < 1f:
+                {
+                    // On ne prévient l'affichage que quand l'arbre grandit visiblement.
+                    int before = (int)(_floraGrowth[i] * 10);
+                    _floraGrowth[i] = MathF.Min(1f, _floraGrowth[i] + TreeGrowthPerDay);
+                    if ((int)(_floraGrowth[i] * 10) != before)
+                        TileChanged?.Invoke(x, y);
+                    break;
+                }
+                case FloraType.Stump when Noise.Hash01(x, y, (int)day, Seed + 77) < StumpRegrowthChancePerDay:
+                    _flora[i] = FloraType.Tree;
+                    _floraGrowth[i] = 0.05f;
+                    TileChanged?.Invoke(x, y);
+                    break;
             }
         }
     }
@@ -131,10 +173,11 @@ public sealed class LocalMap
 
     /// <summary>
     /// Peut-on passer d'une case voisine à l'autre ? Une marche d'un niveau se monte ou se descend,
-    /// une falaise de deux niveaux ou plus est infranchissable.
+    /// une falaise de deux niveaux ou plus est infranchissable. <paramref name="maxStep"/> vaut 2
+    /// seulement pour escalader hors d'un trou où l'on serait coincé.
     /// </summary>
-    public bool CanStep(int fromX, int fromY, int toX, int toY) =>
-        IsWalkable(toX, toY) && Math.Abs(GetElevation(toX, toY) - GetElevation(fromX, fromY)) <= 1;
+    public bool CanStep(int fromX, int fromY, int toX, int toY, int maxStep = 1) =>
+        IsWalkable(toX, toY) && Math.Abs(GetElevation(toX, toY) - GetElevation(fromX, fromY)) <= maxStep;
 
     /// <summary>Coût de traversée d'une case : on avance moins vite en forêt.</summary>
     public float MoveCost(int x, int y) => GetFlora(x, y) == FloraType.Tree ? 1.6f : 1f;

@@ -19,6 +19,11 @@ public static class SpriteFactory
     /// <summary>Arbre de 16 × 24 pixels : le tronc touche le bas de la case, le feuillage déborde au-dessus.</summary>
     public static ImageTexture Tree => _tree ??= BuildTree();
 
+    private static ImageTexture? _stump;
+
+    /// <summary>Souche de 8 × 6 pixels laissée par un arbre abattu.</summary>
+    public static ImageTexture Stump => _stump ??= BuildStump();
+
     public static ImageTexture Bush => _bush ??= BuildBush(withBerries: true);
     public static ImageTexture BushEmpty => _bushEmpty ??= BuildBush(withBerries: false);
 
@@ -130,6 +135,18 @@ public static class SpriteFactory
             if ((x * 7 + y * 13) % 11 == 0) c = leafDark;
             image.SetPixel(x, y, c);
         }
+        return ImageTexture.CreateFromImage(image);
+    }
+
+    private static ImageTexture BuildStump()
+    {
+        var image = Image.CreateEmpty(8, 6, false, Image.Format.Rgba8);
+        Color bark = Color.Color8(92, 62, 38), top = Color.Color8(176, 140, 92), dark = Color.Color8(64, 42, 26);
+        for (int y = 0; y < 6; y++)
+        for (int x = 1; x < 7; x++)
+            image.SetPixel(x, y, y < 2 ? top : x is 1 or 6 ? dark : bark);
+        image.SetPixel(0, 5, dark);
+        image.SetPixel(7, 5, dark);
         return ImageTexture.CreateFromImage(image);
     }
 

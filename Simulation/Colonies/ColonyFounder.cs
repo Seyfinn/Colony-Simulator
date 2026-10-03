@@ -18,19 +18,23 @@ public static class ColonyFounder
             if (map.InBounds(campX + dx, campY + dy))
                 map.ClearFlora(campX + dx, campY + dy);
 
-        var colony = new Colony(name, campX, campY, FindGatherSpots(map, campX, campY));
+        var colony = new Colony(name, campX, campY, FindGatherSpots(map, campX, campY))
+        {
+            Quarry = WorkSites.FindQuarry(map, campX, campY),
+        };
         colony.Stock.Add(ResourceType.Food, StartingFood);
 
         for (int i = 0; i < colonistCount; i++)
         {
             Sex sex = i % 2 == 0 ? Sex.Female : Sex.Male;
             (int x, int y) = colony.GatherSpots[random.Next(colony.GatherSpots.Count)];
-            var colonist = new Colonist(nextId(), Names.Pick(sex, random), sex, colony, x + 0.5f, y + 0.5f);
+            var colonist = new Colonist(nextId(), Names.Pick(sex, random), sex, colony, Skills.Random(random), x + 0.5f, y + 0.5f);
             colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Rest = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Leisure = 0.6f + 0.35f * random.NextSingle();
             colony.Members.Add(colonist);
         }
+        colony.AssignSectors();
         return colony;
     }
 
