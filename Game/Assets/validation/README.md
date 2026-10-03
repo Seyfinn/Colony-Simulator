@@ -1,5 +1,11 @@
 # Validation graphique T-001 — 2026-10-03
 
+## T-006 — caravane — 2026-10-04
+
+`t006_caravane.png` : quatre poses ×8, boucle droite/gauche ×4 et aperçu à taille native. Scène `caravane.tscn` utilisant `CaravanSprites.Draw` et les PNG livrés, avec filtre nearest.
+
+Après compilation, lancer Godot : `--path Game res://Assets/validation/caravane.tscn -- --capture=chemin.png`. Ajouter `--export-caravan` pour réexporter explicitement les quatre PNG à partir du système pixel art natif ; sans cette option, la scène ne les écrit pas. Les fichiers sont RGBA 8 bits, 24 × 16, fond transparent, quatre poses distinctes. Build sans erreur/avertissement ; capture inspectée. La carte du monde attend le branchement T-010 par Claude.
+
 ## T-003 — canaux secs et en eau — 2026-10-04
 
 - `t003_catalogue.png` : 32 tuiles au grossissement ×4, deux rangées sèches puis deux en eau, masques 0 à 15 dans chaque groupe.

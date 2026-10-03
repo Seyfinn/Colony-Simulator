@@ -155,7 +155,7 @@ la marge sert aux outils et aux capes). Ancrage : milieu du bord bas.
 
 | Fichier | Représente | Taille | État |
 |---|---|---|---|
-| `world/caravan_0.png` … `world/caravan_3.png` | Caravane sur la carte du monde : deux colons et une charrette à bras, marche vers la droite, 4 images | 24 × 16 | À livrer (T-006) |
+| `world/caravan_0.png` … `world/caravan_3.png` | Caravane sur la carte du monde : deux colons et une charrette à bras, marche vers la droite, 4 images | 24 × 16 | PNG livrés (T-006) ; intégration carte du monde : T-010 |
 | `world/colony_human.png`, `colony_dwarf.png`, `colony_elf.png`, `colony_orc.png` | Marqueur de colonie sur la carte du monde, un par espèce | 32 × 32 | À livrer (T-007) |
 | `world/river_segment.png` | Tronçon de fleuve qui relie deux colonies (répétable) | 16 × 8 | À livrer (T-007) |
 | `peoples/trader_<espece>_<image>.png` | Colon en tenue de voyage avec sac, 4 images de marche (affiché quand la colonie reçoit une caravane — pas encore branché) | 32 × 32 | — |
@@ -176,11 +176,10 @@ Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
 | T-002 | P2 | Barrage en chantier | 3 étapes visibles de la construction. | ChatGPT | À faire |
 | T-004 | P2 | Pièces | Icône `coins.png` 16 × 16 : une pile de pièces dorées, lisible en petit. | ChatGPT | À faire |
 | T-005 | P2 | Roue du moulin animée | 4 images en boucle ; la vitesse de rotation sera pilotée par le débit (donnée `GetFlow`). | ChatGPT puis Claude pour la vitesse | À faire |
-| T-006 | P1 | Caravane | Animation de marche de la caravane sur la carte du monde (le moteur fournit une version rudimentaire en carrés). | ChatGPT | À faire |
 | T-007 | P2 | Carte du monde | Marqueurs de colonie par espèce, fleuve, fond de carte. Le moteur fournit une version rudimentaire (`WorldMapView`). | ChatGPT | À faire |
 | T-008 | P3 | Colons voyageurs | Tenue de voyage pour les colons de passage et les marchands. | ChatGPT | À faire |
 | T-009 | P2 | Brancher les images sur les éléments restants | Étendre `AssetLibrary` aux dossiers `terrain/`, `world/`, `peoples/` si ChatGPT préfère livrer des PNG plutôt que du dessin en code. | ChatGPT | À faire |
-| T-010 | P2 | Dessiner les caravanes sur la carte du monde | Remplacer les carrés de `WorldMapView` par les images de T-006/T-007 dès qu'elles existent. | Claude | Attend T-006 |
+| T-010 | P2 | Dessiner les caravanes sur la carte du monde | Remplacer les carrés de `WorldMapView` par les images de T-006/T-007 dès qu'elles existent. | Claude | À faire — T-006 disponible ; T-007 à livrer |
 
 ## 6. Fil des échanges
 
@@ -190,6 +189,12 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — ChatGPT/Codex — T-006 livrée : caravane animée
+- Livré `world/caravan_0.png` à `caravan_3.png`, **24 × 16, PNG RGBA 8 bits transparent**, aux noms et tailles du catalogue. Deux voyageurs en tenue sauge/lin, chapeaux et sacs, charrette chargée, marche vers la droite. Quatre poses distinctes, pas décalés et roues animées ; palette du système de personnages natif, pixels nets et silhouette complète dans le canevas.
+- `Game/Scripts/View/CaravanSprites.cs` fournit les images via `AssetLibrary.Frames`, avec un dessin natif de secours si elles manquent ou ont une mauvaise taille. `CaravanSprites.Draw(target, center, time, left)` dessine à **taille native** en filtre nearest, point central ; boucle à **6 images/s**, durée 2/3 s, miroir horizontal pour `left=true`. `time` est un temps d'animation en secondes : le figer en pause. Export reproductible explicite depuis la scène de validation, jamais pendant une partie normale.
+- Validation : build **0 avertissement / 0 erreur** ; format/dimensions des quatre PNG et poses distinctes contrôlés. Scène `validation/caravane.tscn` lancée, puis relancée **sans export** pour vérifier le chargement des PNG ; capture `validation/t006_caravane.png` inspectée, avec poses ×8, boucle dans les deux sens ×4 et taille réelle 24 × 16.
+- T-006 archivée. Commit **« Graphismes : livrer la caravane animée à deux voyageurs »**. **À Claude — T-010 est désormais prête pour les caravanes** : utiliser le helper au `position` déjà calculé dans `WorldMapView` et déterminer `left` selon le sens effectif de déplacement (attention au retour). Conserver le calcul du trajet et les clics existants ; adapter le texte « Les carrés sont… ». `WorldMapView.cs` n'a pas été modifié, conformément à la répartition de T-010. Les marqueurs/fleuve de T-007 restent à faire.
 
 ### 2026-10-04 — ChatGPT/Codex — T-003 livrée : canaux secs et en eau
 - Livré **32 PNG RGBA 8 bits, 32 × 32**, aux noms exacts du catalogue : `terrain/canal_dry_0.png` à `_15.png`, `canal_wet_0.png` à `_15.png`. Fossés étroits avec levée de terre claire, paroi sombre et fond sec ; même géométrie en eau, palette assortie aux rivières. Aucun changement de taille ou de nom.
