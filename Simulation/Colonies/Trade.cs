@@ -1,4 +1,4 @@
-using GodColony.Simulation.Time;
+﻿using GodColony.Simulation.Time;
 
 namespace GodColony.Simulation.Colonies;
 
@@ -84,10 +84,10 @@ public static class Trade
     public const int CarryCapacity = 36;
 
     /// <summary>Heures de travail utiles par jour et par colon : le coût d'un colon en voyage.</summary>
-    public const double WorkHoursPerDay = 10;
+    public const double WorkHoursPerDay = 8;
 
     /// <summary>Le gain doit dépasser le coût du voyage d'au moins ce facteur : on ne risque pas la route pour une broutille.</summary>
-    public const double RequiredGainOverCost = 1.5;
+    public const double RequiredGainOverCost = 1.25;
 
     /// <summary>Écart de valeur minimal (en proportion) pour qu'un échange vaille la peine.</summary>
     public const double MinValueGap = 0.15;
@@ -116,18 +116,15 @@ public static class Trade
         var candidates = new List<(TradeLine Line, double GainPerUnit)>();
         foreach (ResourceType good in Economy.Tradable)
         {
-            double mine = Economy.Value(from, good), theirs = Economy.Value(to, good);
-            double price = (mine + theirs) / 2;
+            // Je vends : chaque unité part tant qu'ils lui accordent plus de valeur que moi.
+            Clearing sale = Economy.Clear(from, to, good, CarryCapacity);
+            if (sale.Units > 0)
+                candidates.Add((new TradeLine(good, sale.Units, sale.UnitPrice, IsSale: true), sale.GainHours / sale.Units));
 
-            // Je vends : j'en ai en trop, ils en manquent, et ils l'estiment davantage que moi.
-            int sellable = Math.Min(Economy.Surplus(from, good), Economy.Shortage(to, good));
-            if (sellable > 0 && theirs > mine * (1 + MinValueGap))
-                candidates.Add((new TradeLine(good, sellable, price, IsSale: true), theirs - mine));
-
-            // J'achète : il m'en manque, ils en ont en trop, et je l'estime davantage qu'eux.
-            int buyable = Math.Min(Economy.Surplus(to, good), Economy.Shortage(from, good));
-            if (buyable > 0 && mine > theirs * (1 + MinValueGap))
-                candidates.Add((new TradeLine(good, buyable, price, IsSale: false), mine - theirs));
+            // J'achète : chaque unité vient tant que je lui accorde plus de valeur qu'eux.
+            Clearing purchase = Economy.Clear(to, from, good, CarryCapacity);
+            if (purchase.Units > 0)
+                candidates.Add((new TradeLine(good, purchase.Units, purchase.UnitPrice, IsSale: false), purchase.GainHours / purchase.Units));
         }
         if (candidates.Count == 0)
             return null;
@@ -217,10 +214,10 @@ public static class Trade
         {
             if (colony.Labor.HoursPerUnit(ResourceType.Tools) is null && colony.Stock.Get(ResourceType.Tools) == 0)
                 continue;
-            double mine = Economy.Cost(colony, ResourceType.Tools);
-            double theirs = Economy.Value(partner, ResourceType.Tools);
-            if (theirs > mine * (1 + MinValueGap))
-                tools = Math.Max(tools, Math.Min(MaxExportInterest, Economy.Shortage(partner, ResourceType.Tools)));
+            // Combien d'outils le voisin paierait-il plus cher que ce qu'ils nous coûtent à fabriquer ?
+            double mine = Economy.Cost(colony, ResourceType.Tools) * (1 + MinValueGap);
+            int wanted = Economy.UnitsWillingToBuy(partner, ResourceType.Tools, mine, MaxExportInterest);
+            tools = Math.Max(tools, wanted);
         }
         colony.ExportInterest[ResourceType.Tools] = tools;
     }
@@ -320,10 +317,11 @@ public static class Trade
         {
             if (line.IsSale)
             {
-                // Je vends à l'hôte : il paie ce qu'il peut.
+                // Je vends à l'hôte : il achète ce qu'il juge valoir ce prix, et paie ce qu'il peut.
                 int carried = caravan.Cargo.GetValueOrDefault(line.Good);
                 int affordable = line.UnitPrice <= 0 ? carried : (int)Math.Min(carried, host.Stock.Get(ResourceType.Coins) / line.UnitPrice);
-                int units = Math.Min(Math.Min(line.Units, carried), affordable);
+                int wanted = Economy.UnitsWillingToBuy(host, line.Good, line.UnitPrice, line.Units);
+                int units = Math.Min(Math.Min(wanted, carried), affordable);
                 if (units <= 0)
                     continue;
                 int pay = (int)Math.Round(units * line.UnitPrice);
@@ -337,7 +335,7 @@ public static class Trade
             else
             {
                 // J'achète à l'hôte : il livre ce qu'il a de trop, je paie avec les pièces que je porte.
-                int available = Math.Min(line.Units, Economy.Surplus(host, line.Good));
+                int available = Economy.UnitsWillingToSell(host, line.Good, line.UnitPrice, line.Units);
                 int affordable = line.UnitPrice <= 0 ? available : (int)Math.Min(available, caravan.Coins / line.UnitPrice);
                 int units = Math.Min(available, affordable);
                 if (units <= 0 || !host.Stock.TryTake(line.Good, units))
@@ -412,3 +410,4 @@ public static class Trade
         world.CompletedCaravans++;
     }
 }
+

@@ -121,7 +121,8 @@ public sealed class WorldState
             }
         }
 
-        if (Clock.Hour != hour && _trade)
+        // Les caravanes déjà en route continuent même si l'on coupe le commerce pour de nouveaux départs.
+        if (Clock.Hour != hour && Caravans.Count > 0)
             Trade.Hourly(this);
 
         foreach (Colony colony in Colonies)
