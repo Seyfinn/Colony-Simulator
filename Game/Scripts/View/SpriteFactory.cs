@@ -9,7 +9,8 @@ namespace GodColony.View;
 /// </summary>
 public static class SpriteFactory
 {
-    private static readonly ImageTexture?[] Trees = new ImageTexture?[3];
+    public const int TreeVariantCount = TreeSprites.StyleCount;
+    private static readonly ImageTexture?[] Trees = new ImageTexture?[TreeVariantCount];
     private static ImageTexture? _bush;
     private static ImageTexture? _bushEmpty;
     private static ImageTexture[]? _campfire;
@@ -17,7 +18,7 @@ public static class SpriteFactory
     private static readonly Dictionary<(int Id, bool Elder), ImageTexture[]> Colonists = [];
     private static readonly Dictionary<string, ImageTexture> Workshops = [];
 
-    /// <summary>Arbres de 32 × 48 pixels, avec trois silhouettes et palettes.</summary>
+    /// <summary>Chêne, bouleau, conifère et saule : quatre silhouettes en 32 × 48 pixels.</summary>
     public static ImageTexture Tree => TreeVariant(0);
     public static ImageTexture TreeVariant(int variant)
     {
@@ -380,35 +381,7 @@ public static class SpriteFactory
 
     private static ImageTexture BuildTree(int variant)
     {
-        var image = Image.CreateEmpty(32, 48, false, Image.Format.Rgba8);
-        Color trunk = Color.Color8(137, 99, 62);
-        Color trunkDark = Color.Color8(83, 66, 45);
-        for (int y = 25; y < 48; y++)
-        for (int x = 13; x < 19; x++)
-        {
-            if (y < 44 && (x == 13 || x == 18)) continue;
-            image.SetPixel(x, y, x < 16 ? trunk : trunkDark);
-        }
-
-        Color leafDark = Color.Color8(43, (byte)(83 + variant * 5), 57);
-        Color leaf = Color.Color8((byte)(66 + variant * 8), (byte)(119 + variant * 6), 66);
-        Color leafLight = Color.Color8((byte)(110 + variant * 8), (byte)(155 + variant * 5), 83);
-        Color highlight = Color.Color8(149, 179, 104);
-        for (int y = 0; y < 38; y++)
-        for (int x = 0; x < 32; x++)
-        {
-            float dx = x - 15.5f, dy = y - (variant == 1 ? 19f : 18f);
-            float d = dx * dx / (variant == 1 ? 160f : 225f) + dy * dy / 310f;
-            d += ((x / 3 * 7 + y / 3 * 13 + variant * 3) % 9 - 4) * 0.018f;
-            if (d > 1f) continue;
-            float light = -dx * 0.6f - dy * 0.8f;
-            int cluster = (x / 3 * 7 + y / 3 * 13 + variant * 5) % 11;
-            Color c = light > 6f ? leafLight : light < -7f || d > 0.88f ? leafDark : leaf;
-            if (cluster == 0 && d < 0.8f) c = leafDark;
-            if (cluster == 3 && light > 8f && d < 0.75f) c = highlight;
-            image.SetPixel(x, y, c);
-        }
-        return ImageTexture.CreateFromImage(image);
+        return TreeSprites.Create(variant);
     }
 
     private static ImageTexture BuildStump()
