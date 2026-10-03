@@ -4,11 +4,12 @@ using GodColony.Simulation.Map;
 
 namespace GodColony.View;
 
-/// <summary>Tuiles cardinales du courant réel ; les diagonales reçoivent un coude purement visuel.</summary>
+/// <summary>Tuiles à huit directions du courant réel, avec berges continues aux coins.</summary>
 public static class RiverTiles
 {
     private static readonly Dictionary<string, byte[]?> Pixels = [];
     private static bool? _complete;
+    private static readonly Dictionary<(int Mask, int Corners), byte[]?> Composed = [];
 
     public static bool Complete
     {
@@ -21,7 +22,7 @@ public static class RiverTiles
         }
     }
 
-    public static void Reload() { Pixels.Clear(); _complete = null; }
+    public static void Reload() { Pixels.Clear(); Composed.Clear(); _complete = null; }
 
     public static byte[]? Get(string name)
     {
@@ -35,7 +36,15 @@ public static class RiverTiles
         return Pixels[name] = image?.GetData();
     }
 
-    private static int Direction(int dx, int dy) => dx > 0 ? 2 : dx < 0 ? 8 : dy > 0 ? 4 : 1;
+    private static int Direction(int dx, int dy) => (Math.Sign(dx), Math.Sign(dy)) switch
+    {
+        (1, -1) => 16, (1, 1) => 32, (-1, 1) => 64, (-1, -1) => 128,
+        (1, 0) => 2, (-1, 0) => 8, (0, 1) => 4, _ => 1,
+    };
+    private static string Suffix(int direction) => direction switch
+    {
+        16 => "ne", 32 => "se", 64 => "sw", 128 => "nw", _ => direction.ToString(),
+    };
 
     public static int Connections(LocalMap map, int x, int y)
     {
@@ -51,11 +60,64 @@ public static class RiverTiles
         {
             if (!map.InBounds(sx, sy) || !map.IsRiver(sx, sy) || map.IsFlooded(sx, sy)) continue;
             if (map.RiverDownstream(sx, sy) is not { } next) continue;
-            // Même coude vu des deux extrémités : d'abord est/ouest, puis nord/sud.
-            Edge(sx, sy, next.X, sy);
-            Edge(next.X, sy, next.X, next.Y);
+            Edge(sx, sy, next.X, next.Y);
         }
         return mask;
+    }
+
+    /// <summary>Berges des diagonales qui effleurent un coin de cette case latérale.</summary>
+    public static int Corners(LocalMap map, int x, int y)
+    {
+        int mask = 0;
+        for (int sy = y - 1; sy <= y + 1; sy++)
+        for (int sx = x - 1; sx <= x + 1; sx++)
+        {
+            if (!map.InBounds(sx, sy) || !map.IsRiver(sx, sy) || map.IsFlooded(sx, sy)) continue;
+            if (map.RiverDownstream(sx, sy) is not { } next || sx == next.X || sy == next.Y) continue;
+            if ((x == next.X && y == sy) || (x == sx && y == next.Y))
+                mask |= Direction(Math.Max(sx, next.X) == x ? -1 : 1, Math.Max(sy, next.Y) == y ? -1 : 1);
+        }
+        return mask;
+    }
+
+    // L'eau l'emporte sur une berge superposée : aucun trait de terre à une confluence.
+    private static int Priority(byte[] data, int index)
+    {
+        if (data[index + 3] == 0) return 0;
+        int r = data[index], g = data[index + 1], b = data[index + 2];
+        return b > r && g > r || r == 193 ? 2 : 1;
+    }
+
+    public static byte[]? River(int mask, int corners, bool center)
+    {
+        if (!center && mask == 0 && corners == 0) return null;
+        // -1 distingue une berge latérale d'une mare isolée (masque 0).
+        int key = mask == 0 && !center ? -1 : mask;
+        if (Composed.TryGetValue((key, corners), out var cached)) return cached;
+        byte[]? tile = key < 0 ? new byte[32 * 32 * 4] : Get(mask < 16 ? $"river_{mask}" : $"river_diag_{mask}");
+        if (tile is null) return Composed[(key, corners)] = null;
+        if (corners == 0) return Composed[(key, corners)] = tile;
+        tile = (byte[])tile.Clone();
+        foreach (int direction in new[] { 16, 32, 64, 128 })
+        {
+            if ((corners & direction) == 0) continue;
+            var corner = Get($"river_corner_{Suffix(direction)}");
+            if (corner is null) return Composed[(key, corners)] = null;
+            for (int i = 0; i < tile.Length; i += 4)
+                if (Priority(corner, i) > Priority(tile, i))
+                    Array.Copy(corner, i, tile, i, 4);
+        }
+        return Composed[(key, corners)] = tile;
+    }
+
+    public static byte[]? Shore(int mask, byte[]? river)
+    {
+        var shore = Get($"lake_edge_{mask}");
+        if (shore is null || river is null) return shore;
+        shore = (byte[])shore.Clone();
+        for (int i = 0; i < shore.Length; i += 4)
+            if (Priority(river, i) == 2) shore[i + 3] = 0;
+        return shore;
     }
 
     public static byte[]? Accent(LocalMap map, int x, int y)
@@ -65,9 +127,9 @@ public static class RiverTiles
             int direction = Direction(next.X - x, next.Y - y);
             bool source = true;
             foreach (var _ in map.RiverUpstream(x, y)) { source = false; break; }
-            if (source) return Get($"river_end_{direction}");
+            if (source) return Get($"river_end_{Suffix(direction)}");
             if (map.GetElevation(next.X, next.Y) < map.GetElevation(x, y))
-                return Get($"river_fall_{direction}");
+                return Get($"river_fall_{Suffix(direction)}");
         }
         return null;
     }

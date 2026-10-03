@@ -35,6 +35,10 @@ def distance(x, y, mask):
     d = math.hypot(dx, dy)
     if (mask & 1 and y < 16) or (mask & 4 and y >= 16): d = min(d, dx)
     if (mask & 2 and x >= 16) or (mask & 8 and x < 16): d = min(d, dy)
+    for bit, sx, sy in ((16, 1, -1), (32, 1, 1), (64, -1, 1), (128, -1, -1)):
+        if mask & bit:
+            along = max(0, ((x-15.5)*sx + (y-15.5)*sy)/2)
+            d = min(d, math.hypot(x-15.5-along*sx, y-15.5-along*sy))
     return d
 
 
@@ -54,6 +58,47 @@ def river(mask):
             # Petits traits discontinus, pas de bruit ni de flou.
             if d < width - 3 and y % 11 == 4 and 5 <= x % 13 <= 8: c = CLAIR
             if width - 1 <= d < width and (x+y) % 9 < 3: c = ECUME
+            pixels.append(c)
+    return pixels
+
+
+def corner(sx, sy):
+    # Quart de berge au point commun des quatre cases, sans coude.
+    cx, cy = (31.5 if sx > 0 else -0.5), (31.5 if sy > 0 else -0.5)
+    pixels = []
+    for y in range(32):
+        for x in range(32):
+            d = (abs(x-cx) + abs(y-cy))/math.sqrt(2)
+            c = VIDE
+            if d < 12.5: c = TERRE
+            if 11 <= d < 12 and (x+y) % 5 < 3: c = MOUSSE
+            if d < 10.5: c = CLAIR
+            if d < 8.5: c = EAU
+            if d < 4: c = PROFOND
+            if 9.5 <= d < 10.5 and (x+y) % 9 < 3: c = ECUME
+            pixels.append(c)
+    return pixels
+
+
+def diagonal_accent(kind, sx, sy):
+    pixels = []
+    for y in range(32):
+        for x in range(32):
+            along = ((x-15.5)*sx + (y-15.5)*sy)/math.sqrt(2)
+            across = ((x-15.5)*sy - (y-15.5)*sx)/math.sqrt(2)
+            c = VIDE
+            if kind == 'end':
+                r = math.hypot(across, (along+4)*1.25)
+                if 7 < r < 12 and along < 3:
+                    c = ROCHE if (x+y)//4 % 3 else OMBRE
+                    if along < -8: c = (180, 187, 164, 255)
+                if abs(across) < 5.5 and -4 <= along <= 2: c = PROFOND
+                if abs(across) < 2.5 and 0 <= along < 1.5: c = ECUME
+            else:
+                if abs(across) < 9.5 and 2 <= along < 10:
+                    c = OMBRE if along < 3 else CLAIR if int(across) % 5 < 2 else EAU
+                if abs(across) < 8.5 and 10 <= along < 12:
+                    c = ECUME if (x+y) % 4 else CLAIR
             pixels.append(c)
     return pixels
 
@@ -119,6 +164,12 @@ def main():
     for direction in (1, 2, 4, 8):
         for kind in ('end', 'fall'):
             tiles[f'river_{kind}_{direction}'] = rotate(accent(kind), direction)
+    for mask in range(16, 256):
+        tiles[f'river_diag_{mask}'] = river(mask)
+    for name, sx, sy in (('ne', 1, -1), ('se', 1, 1), ('sw', -1, 1), ('nw', -1, -1)):
+        tiles[f'river_corner_{name}'] = corner(sx, sy)
+        for kind in ('end', 'fall'):
+            tiles[f'river_{kind}_{name}'] = diagonal_accent(kind, sx, sy)
     for name, pixels in tiles.items():
         png(OUT / (name + '.png'), pixels)
     # Contrôle du contrat : chaque sortie est un PNG RGBA 8 bits de 32 × 32.
@@ -130,7 +181,23 @@ def main():
         tile = tiles[f'river_{mask}']
         for bit, index in ((1, 15), (2, 15*32+31), (4, 31*32+15), (8, 15*32)):
             assert bool(tile[index][3]) == bool(mask & bit), (mask, bit)
-    print('40 tuiles RGBA 32 × 32 vérifiées ; raccords des 16 masques conformes.')
+    # Les sorties diagonales atteignent leur coin ; aucun raccord par un coude intermédiaire.
+    for mask in range(16, 256):
+        tile = tiles[f'river_diag_{mask}']
+        for bit, index in ((16, 31), (32, 1023), (64, 992), (128, 0)):
+            if mask & bit: assert tile[index][3] == 255, (mask, bit)
+    # Deux assemblages 2 × 2 : bande d'eau continue de part et d'autre du coin commun.
+    # Ce contrôle détecte un débord trop étroit et le retour à un coude sur la case latérale.
+    for names, slope in ((('river_diag_32', 'river_corner_sw', 'river_corner_ne', 'river_diag_128'), 1),
+                         (('river_corner_se', 'river_diag_64', 'river_diag_16', 'river_corner_nw'), -1)):
+        for x in range(15, 49):
+            for offset in range(-6, 7):
+                y = (x if slope == 1 else 63-x) + offset
+                tile = tiles[names[(y//32)*2+x//32]]
+                assert tile[(y%32)*32+x%32] in (EAU, PROFOND, CLAIR, ECUME), (names, x, y)
+    for name in ('ne', 'se', 'sw', 'nw'):
+        assert tiles[f'river_corner_{name}'][16*32+16] == VIDE
+    print(f'{len(tiles)} tuiles RGBA 32 × 32 vérifiées ; connexions cardinales et diagonales conformes.')
 
 
 if __name__ == '__main__':

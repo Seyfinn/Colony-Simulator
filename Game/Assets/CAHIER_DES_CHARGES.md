@@ -132,6 +132,9 @@ Les cases voisines sont reliées par un **masque de connexions** à 4 bits : nor
 | Fichier | Représente | État |
 |---|---|---|
 | `river_0.png` … `river_15.png` | Rivière, une image par masque de connexions (16) | PNG (T-001) |
+| `river_diag_16.png` … `river_diag_255.png` | Connexions à 8 directions : N=1, E=2, S=4, O=8, NE=16, SE=32, SO=64, NO=128 | PNG (T-001-D) |
+| `river_corner_ne.png`, `river_corner_se.png`, `river_corner_sw.png`, `river_corner_nw.png` | Débord de berge dans les cases latérales d'un passage diagonal | PNG (T-001-D) |
+| `river_end_ne/se/sw/nw.png`, `river_fall_ne/se/sw/nw.png` | Sources et chutes orientées en diagonale | PNG (T-001-D) |
 | `river_end_<masque>.png` | Source (en montagne), 4 images pour les masques 1, 2, 4, 8 | PNG (T-001) |
 | `river_fall_<masque>.png` | Chute d'eau quand la rivière descend d'un niveau, masques 1, 2, 4, 8 | PNG (T-001) |
 | `canal_dry_0.png` … `canal_dry_15.png` | Fossé creusé, encore à sec | À livrer (T-003) |
@@ -186,6 +189,14 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-03 — ChatGPT/Codex — T-001-D livrée : vraies diagonales
+- À la demande de l'utilisateur, remplacement des coudes par des diagonales suivant directement `RiverDownstream` / `RiverUpstream`.
+- **Annonce avant livraison** : ajout au catalogue de `river_diag_16.png` à `river_diag_255.png` (masques à 8 directions), quatre débords `river_corner_ne/se/sw/nw.png` et huit accents `river_end_ne/se/sw/nw.png` / `river_fall_ne/se/sw/nw.png`. Tous restent **32 × 32, PNG RGBA 8 bits**, sans lissage. Les 16 masques cardinaux existants conservent leurs noms.
+- **Livré et branché** : 252 nouveaux PNG (240 combinaisons avec diagonales, 4 débords et 8 accents), exportés par le système de terrain natif `tools/generer_rivieres.py`. Les 40 images antérieures restent compatibles. Les sources/chutes suivent désormais aussi la direction diagonale aval.
+- La largeur de la rivière exige de petits débords de berge aux coins des cases voisines ; ils suivent le segment diagonal réel, sans détour en angle droit. `RiverTiles.cs` remplace le routage par un coude par les liaisons directes à huit directions ; il compose les débords en laissant l'eau l'emporter sur la terre aux jonctions. `TerrainPainter.cs` garde les embouchures diagonales ouvertes dans les rives de la retenue. Aucun changement dans `Simulation/` ni `Simulation.Tests/`.
+- Validation : `dotnet build Game/GodColony.csproj`, **0 avertissement / 0 erreur** ; formats/dimensions des 292 PNG vérifiés, sorties des masques vérifiées et bandes d'eau continues contrôlées sur deux assemblages diagonaux 2 × 2. Capture réelle avec `--demo-dam --focus-dam --zoom=1.5` et planche inspectées : `validation/t001_diagonales_retenue.png`, `validation/t001_diagonales_catalogue.png`. Le dessin procédural prend le relais lorsqu'une tuile requise manque.
+- T-001-D archivée ; commit **« Graphismes : suivre les diagonales naturelles des rivières »**. **À Claude** : la demande de convention de coudes de mon entrée précédente est annulée ; le rendu suit désormais directement le courant existant. Aucun branchement ni nouvelle donnée attendu de ta part. T-003 et T-006 restent les prochaines P1.
 
 ### 2026-10-03 — ChatGPT/Codex — T-001 livrée : rivières, sources, chutes et retenues
 - **À Claude** : tailles et noms confirmés, sans changement du contrat. Livré 40 PNG RGBA 8 bits, **32 × 32**, dans `terrain/` : `river_0` à `river_15`, `river_end_1/2/4/8`, `river_fall_1/2/4/8`, `lake_edge_0` à `lake_edge_15`. Palette du terrain existant, pixels nets et fond transparent ; les sources et chutes sont des accents superposés à la rivière, les rives se superposent à l'eau profonde.

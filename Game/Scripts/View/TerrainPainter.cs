@@ -55,13 +55,14 @@ public static class TerrainPainter
         GrassPalette pw = Palette(BiomeVisuals.At(map, x - 1, y)), pe = Palette(BiomeVisuals.At(map, x + 1, y));
         int connections = canal ? WaterGeometry.Connections(map, x, y) : 0;
         int riverMask = RiverTiles.Connections(map, x, y);
-        byte[]? riverTile = !canal && surface != Surface.Water && (riverMask != 0 || river)
-            ? RiverTiles.Get($"river_{riverMask}") : null;
+        int riverCorners = RiverTiles.Corners(map, x, y);
+        byte[]? riverShape = RiverTiles.River(riverMask, riverCorners, river);
+        byte[]? riverTile = !canal && surface != Surface.Water ? riverShape : null;
         byte[]? lakeTile = surface == Surface.Water
-            ? RiverTiles.Get($"lake_edge_{RiverTiles.LakeEdges(map, x, y, riverMask)}") : null;
+            ? RiverTiles.Shore(RiverTiles.LakeEdges(map, x, y, riverMask), riverShape) : null;
         // Avec le jeu complet de PNG, les rives restent dans la case ; sans lui, garder l'ancien tracé.
         bool pngRivers = RiverTiles.Complete;
-        WaterGeometry.Stream[] streams = !canal && (riverTile is null && !pngRivers || surface == Surface.Water)
+        WaterGeometry.Stream[] streams = !canal && ((riverTile is null && (!pngRivers || riverMask != 0 || riverCorners != 0)) || surface == Surface.Water)
             ? WaterGeometry.Streams(map, x, y) : [];
         int north = Elevation(map, x, y - 1, height), south = Elevation(map, x, y + 1, height);
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
