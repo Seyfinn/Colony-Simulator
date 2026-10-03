@@ -19,6 +19,9 @@ public sealed class WorldState
     /// <summary>Les voyageurs et les départs sont-ils actifs ? (On peut les couper pour étudier une colonie fermée.)</summary>
     private readonly bool _migration;
 
+    /// <summary>Les âges, les couples, les naissances et la mort sont-ils actifs ?</summary>
+    private readonly bool _lifecycle;
+
     internal int NextColonistId() => _nextColonistId++;
 
     public GameClock Clock { get; }
@@ -31,16 +34,17 @@ public sealed class WorldState
 
     /// <param name="startingColonists">Nombre de colons fondateurs ; tiré au hasard entre 5 et 10 si l'on n'en précise pas.</param>
     /// <param name="migration">Faux pour couper les arrivées de voyageurs et les départs.</param>
-    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true)
+    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true, bool lifecycle = true)
     {
         _migration = migration;
+        _lifecycle = lifecycle;
         Random = new Random(seed);
         Clock = new GameClock(StartTicks);
         Map = MapGenerator.Generate(mapWidth, mapHeight, seed);
         Pathfinder = new Pathfinder(Map);
         int founders = startingColonists
             ?? Random.Next(ColonyFounder.MinStartingColonists, ColonyFounder.MaxStartingColonists + 1);
-        Colonies.Add(ColonyFounder.Found(Map, Random, "Première colonie", founders, NextColonistId));
+        Colonies.Add(ColonyFounder.Found(Map, Random, "Première colonie", founders, NextColonistId, Clock));
         foreach (Colony colony in Colonies)
             ColonyBrain.Think(colony, Map, Clock);
     }
@@ -55,7 +59,11 @@ public sealed class WorldState
         {
             Map.DailyUpdate(Clock.TotalDays, Clock.Season);
             foreach (Colony colony in Colonies)
+            {
                 ColonyBrain.OnDayStart(colony, Clock);
+                if (_lifecycle)
+                    Lifecycle.Daily(this, colony);
+            }
         }
 
         if (Clock.Hour != hour)
@@ -65,6 +73,8 @@ public sealed class WorldState
                 ColonyBrain.Think(colony, Map, Clock);
                 if (Clock.Hour == FireLightingHour)
                     ColonyBrain.LightFire(colony, Clock);
+                if (_lifecycle)
+                    Lifecycle.Hourly(this, colony);
                 if (_migration)
                 {
                     Migration.Hourly(this, colony);

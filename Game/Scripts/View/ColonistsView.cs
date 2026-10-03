@@ -61,6 +61,9 @@ public partial class ColonistsView : Node2D
     {
         foreach (Colony colony in _world.Colonies)
         {
+            foreach (Grave grave in colony.Graves)
+                if (grave.X >= 0)
+                    DrawGrave(grave);
             foreach (Field field in colony.Fields)
                 DrawField(field);
             foreach (Building building in colony.Buildings)
@@ -109,6 +112,17 @@ public partial class ColonistsView : Node2D
             for (int column = 0; column < 4; column++)
                 DrawRect(new Rect2(origin + new Vector2(1 + column * 4, 4 + row * 5 - height + 3), new Vector2(2, height)), stalk);
         }
+    }
+
+    /// <summary>Une petite pierre tombale, avec une croix.</summary>
+    private void DrawGrave(Grave grave)
+    {
+        var origin = new Vector2(grave.X, grave.Y) * Tile;
+        DrawRect(new Rect2(origin + new Vector2(4, 12), new Vector2(9, 2)), new Color(0, 0, 0, 0.25f));
+        DrawRect(new Rect2(origin + new Vector2(5, 4), new Vector2(7, 9)), new Color(0.58f, 0.58f, 0.6f));
+        DrawRect(new Rect2(origin + new Vector2(5, 4), new Vector2(7, 1)), new Color(0.75f, 0.75f, 0.78f));
+        DrawRect(new Rect2(origin + new Vector2(8, 6), new Vector2(1, 5)), new Color(0.3f, 0.3f, 0.33f));
+        DrawRect(new Rect2(origin + new Vector2(6, 7), new Vector2(3, 1)), new Color(0.3f, 0.3f, 0.33f));
     }
 
     private void DrawBubble(Colonist colonist)
@@ -166,7 +180,19 @@ public partial class ColonistsView : Node2D
         }
 
         int frame = (int)(colonist.DistanceWalked * 3f) % 2;
-        DrawTexture(frames[frame], feet - new Vector2(4, 12));
+        if (colonist.Stage == LifeStage.Child)
+        {
+            // Les enfants sont plus petits.
+            DrawSetTransform(feet, 0, new Vector2(0.7f, 0.7f));
+            DrawTexture(frames[frame], new Vector2(-4, -12));
+            DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        }
+        else
+        {
+            // Les anciens ont les cheveux blancs et le teint pâle.
+            Color tint = colonist.Stage == LifeStage.Elder ? new Color(0.85f, 0.85f, 0.92f) : Colors.White;
+            DrawTexture(frames[frame], feet - new Vector2(4, 12), tint);
+        }
 
         // Ce qu'il rapporte au camp, en petit sous le bras.
         if (colonist.Carrying is { } load)

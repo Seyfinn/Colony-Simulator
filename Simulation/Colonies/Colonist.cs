@@ -2,6 +2,9 @@ namespace GodColony.Simulation.Colonies;
 
 public enum Sex { Female, Male }
 
+/// <summary>Les âges de la vie : enfant (ne travaille pas), adolescent (apprenti, mi-temps), adulte, ancien.</summary>
+public enum LifeStage { Child, Teen, Adult, Elder }
+
 /// <summary>Un colon est « de passage » quand il marche vers la colonie pour la rejoindre, ou en sort pour toujours.</summary>
 public enum TransitState { None, Arriving, Leaving }
 
@@ -19,6 +22,53 @@ public sealed class Colonist
     }
 
     public Skills Skills { get; }
+
+    // --- Âge et famille ---
+
+    public const float TeenAge = 3f;
+    public const float AdultAge = 6f;
+    public const float ElderAge = 16f;
+
+    public string Surname { get; init; } = "";
+    public string FullName => Surname.Length == 0 ? Name : $"{Name} {Surname}";
+
+    /// <summary>Le moment de la naissance, en ticks (négatif pour ceux qui sont nés avant la fondation).</summary>
+    public long BirthTicks { get; init; }
+
+    /// <summary>Âge en années de jeu (une année = 20 jours).</summary>
+    public float AgeYears => (Colony.Clock.Ticks - BirthTicks) / (float)Time.TimeConstants.TicksPerYear;
+
+    public LifeStage Stage => AgeYears switch
+    {
+        < TeenAge => LifeStage.Child,
+        < AdultAge => LifeStage.Teen,
+        < ElderAge => LifeStage.Adult,
+        _ => LifeStage.Elder,
+    };
+
+    public Colonist? Mother { get; init; }
+    public Colonist? Father { get; init; }
+
+    /// <summary>Le conjoint (un adulte de l'autre sexe) ; null tant qu'on est seul.</summary>
+    public Colonist? Partner { get; internal set; }
+
+    public List<Colonist> Children { get; } = [];
+
+    /// <summary>Jusqu'à quand elle porte son enfant (null si elle n'est pas enceinte), et de qui.</summary>
+    public long? PregnantUntilTicks { get; internal set; }
+    public Colonist? PregnancyFather { get; internal set; }
+
+    /// <summary>Dernière naissance de cette mère : un couple attend un an entre deux enfants.</summary>
+    public long LastBirthTicks { get; internal set; } = long.MinValue / 2;
+
+    /// <summary>Heures de suite sans rien manger du tout ; au bout de deux jours, c'est la mort.</summary>
+    internal int StarvedHours { get; set; }
+    internal bool StarvationWarned { get; set; }
+
+    /// <summary>Deux colons sont de la même famille proche : parent et enfant, ou frère et sœur.</summary>
+    public static bool AreKin(Colonist a, Colonist b) =>
+        a.Mother == b || a.Father == b || b.Mother == a || b.Father == a
+        || (a.Mother is not null && a.Mother == b.Mother) || (a.Father is not null && a.Father == b.Father);
 
     public Personality Personality { get; init; } = Personality.Neutral;
 

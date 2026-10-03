@@ -97,6 +97,9 @@ public static class Farming
         foreach (Building other in colony.Buildings)
             if (x < other.X + other.Width + 1 && x + Field.Size > other.X - 1 && y < other.Y + other.Height + 1 && y + Field.Size > other.Y - 1)
                 return null;
+        foreach (Grave grave in colony.Graves)
+            if (grave.X >= x && grave.X < x + Field.Size && grave.Y >= y && grave.Y < y + Field.Size)
+                return null;
         foreach (Field other in colony.Fields)
             if (x < other.X + Field.Size && x + Field.Size > other.X && y < other.Y + Field.Size && y + Field.Size > other.Y)
                 return null;

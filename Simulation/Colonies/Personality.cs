@@ -23,6 +23,23 @@ public sealed class Personality
         return personality;
     }
 
+    /// <summary>
+    /// Un enfant tient de ses deux parents : sur chaque axe, un peu plus de l'un ou de l'autre, avec une part de hasard.
+    /// </summary>
+    public static Personality Inherit(Random random, Personality mother, Personality father)
+    {
+        var child = new Personality();
+        foreach (Axis axis in All)
+        {
+            bool fromMother = random.Next(2) == 0;
+            float main = fromMother ? mother[axis] : father[axis];
+            float other = fromMother ? father[axis] : mother[axis];
+            float noise = random.NextSingle() + random.NextSingle() - 1f;
+            child._value[(int)axis] = Math.Clamp(0.6f * main + 0.4f * other + 0.3f * noise, -1f, 1f);
+        }
+        return child;
+    }
+
     public float this[Axis axis] => _value[(int)axis];
 
     /// <summary>Les travailleurs acharnés vont plus vite, les paresseux moins (de -15 % à +15 %).</summary>

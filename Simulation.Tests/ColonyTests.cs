@@ -9,7 +9,7 @@ public class ColonyTests(ITestOutputHelper output)
     [Fact]
     public void La_colonie_est_fondee_sur_un_site_praticable_avec_20_colons()
     {
-        var world = new WorldState(12345, startingColonists: 20, migration: false);
+        var world = new WorldState(12345, startingColonists: 20, migration: false, lifecycle: false);
         Colony colony = Assert.Single(world.Colonies);
         Assert.Equal(20, colony.Members.Count);
         Assert.True(world.Map.IsWalkable(colony.CampX, colony.CampY));
@@ -19,7 +19,7 @@ public class ColonyTests(ITestOutputHelper output)
     [Fact]
     public void Les_colons_dorment_la_nuit_mangent_et_cueillent_pendant_cinq_jours()
     {
-        var world = new WorldState(12345, startingColonists: 20, migration: false);
+        var world = new WorldState(12345, startingColonists: 20, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         int foodAtStart = colony.Stock.Get(ResourceType.Food);
         int sleepingAt3am = 0;

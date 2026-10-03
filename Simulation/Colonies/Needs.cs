@@ -13,6 +13,9 @@ public sealed class Needs
     /// <summary>Le besoin des autres : il baisse avec le temps, une conversation le comble.</summary>
     public float Social { get; set; } = 1f;
 
+    /// <summary>Le chagrin d'un deuil, de 0 à 1 ; il s'estompe en quelques jours.</summary>
+    public float Grief { get; set; }
+
     /// <summary>L'abri et la chaleur : une hutte, un feu allumé, de quoi dormir au chaud.</summary>
     public float Comfort { get; set; } = 1f;
 
@@ -22,6 +25,7 @@ public sealed class Needs
         get
         {
             float mood = Food * 0.3f + Rest * 0.25f + Leisure * 0.15f + Social * 0.15f + Comfort * 0.15f;
+            mood -= 0.25f * Grief;
             if (Food < 0.15f) mood -= 0.2f;
             if (Rest < 0.15f) mood -= 0.15f;
             return Math.Clamp(mood, 0f, 1f);
@@ -35,5 +39,6 @@ public sealed class Needs
         Leisure = Math.Clamp(Leisure, 0f, 1f);
         Social = Math.Clamp(Social, 0f, 1f);
         Comfort = Math.Clamp(Comfort, 0f, 1f);
+        Grief = Math.Clamp(Grief, 0f, 1f);
     }
 }

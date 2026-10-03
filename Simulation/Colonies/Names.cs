@@ -15,6 +15,23 @@ public static class Names
         "Odon", "Perceval", "Raoul", "Savary", "Thibaut", "Urbain", "Yvon", "Bertrand", "Gauvain", "Renaud",
     ];
 
+    private static readonly string[] Surnames =
+    [
+        "Lenoir", "Fabre", "Mercier", "Boulanger", "Charron", "Delorme", "Fontaine", "Gaillard", "Hamel", "Joubert",
+        "Lefèvre", "Marchand", "Navarre", "Perrin", "Rousseau", "Tessier", "Vidal", "Moulin", "Garnier", "Sabatier",
+        "Du Bois", "De la Roche", "Pelletier", "Collin", "Masson", "Berger", "Chevalier", "Lambert", "Renard", "Blanchard",
+    ];
+
+    /// <summary>Un nom de famille au hasard, de préférence qu'aucune autre famille de la colonie ne porte déjà.</summary>
+    public static string PickSurname(Random random, IEnumerable<string> taken)
+    {
+        var used = new HashSet<string>(taken);
+        string surname = Surnames[random.Next(Surnames.Length)];
+        if (!used.Contains(surname))
+            return surname;
+        return Surnames.FirstOrDefault(n => !used.Contains(n)) ?? surname;
+    }
+
     /// <summary>Un prénom au hasard, de préférence qu'aucun autre membre de la colonie ne porte déjà.</summary>
     public static string Pick(Sex sex, Random random, IEnumerable<string> taken)
     {

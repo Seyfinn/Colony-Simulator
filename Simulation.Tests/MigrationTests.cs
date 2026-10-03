@@ -35,7 +35,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Les_prenoms_d_une_colonie_sont_uniques()
     {
-        var world = new WorldState(12345, startingColonists: 10, migration: false);
+        var world = new WorldState(12345, startingColonists: 10, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Assert.Equal(colony.Members.Count, colony.Members.Select(m => m.Name).Distinct().Count());
 
@@ -50,7 +50,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Plus_la_colonie_est_prospere_plus_elle_attire_de_voyageurs()
     {
-        var world = new WorldState(12345, startingColonists: 6, migration: false);
+        var world = new WorldState(12345, startingColonists: 6, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         BuildHut(world, colony);
 
@@ -86,7 +86,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Un_voyageur_est_refuse_quand_les_reserves_sont_vides()
     {
-        var world = new WorldState(12345, startingColonists: 6, migration: false);
+        var world = new WorldState(12345, startingColonists: 6, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Set(colony, ResourceType.Food, 0);
 
@@ -98,7 +98,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Un_voyageur_est_refuse_quand_personne_n_a_de_toit_a_lui_offrir()
     {
-        var world = new WorldState(12345, startingColonists: 10, migration: false);
+        var world = new WorldState(12345, startingColonists: 10, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Set(colony, ResourceType.Food, 1000);
 
@@ -117,7 +117,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Un_voyageur_accueilli_marche_jusqu_au_camp_et_rejoint_la_colonie()
     {
-        var world = new WorldState(12345, startingColonists: 6, migration: false);
+        var world = new WorldState(12345, startingColonists: 6, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Set(colony, ResourceType.Food, 1000);
         BuildHut(world, colony);
@@ -144,7 +144,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Un_voyageur_prend_la_place_libre_d_une_hutte()
     {
-        var world = new WorldState(12345, startingColonists: 6, migration: false);
+        var world = new WorldState(12345, startingColonists: 6, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Set(colony, ResourceType.Food, 1000);
 
@@ -167,7 +167,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Un_colon_malheureux_depuis_trop_longtemps_quitte_la_colonie()
     {
-        var world = new WorldState(12345, startingColonists: 8, migration: false);
+        var world = new WorldState(12345, startingColonists: 8, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Colonist unhappy = colony.Members[0];
         unhappy.Needs.Food = 0f;
@@ -192,7 +192,7 @@ public class MigrationTests(ITestOutputHelper output)
     [Fact]
     public void Un_colon_qui_part_rend_ce_qu_il_portait_et_libere_le_chantier()
     {
-        var world = new WorldState(12345, startingColonists: 8, migration: false);
+        var world = new WorldState(12345, startingColonists: 8, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         (int x, int y) = Urbanism.FindHutSite(world.Map, colony)!.Value;
         Building site = Urbanism.PlanHut(world.Map, colony, x, y);

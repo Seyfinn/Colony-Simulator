@@ -8,7 +8,7 @@ public class BrainTests(ITestOutputHelper output)
 {
     private static (WorldState World, Colony Colony) ColonyWith(int food, int wood, int stone)
     {
-        var world = new WorldState(12345, startingColonists: 20, migration: false);
+        var world = new WorldState(12345, startingColonists: 20, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Set(colony, ResourceType.Food, food);
         Set(colony, ResourceType.Wood, wood);
@@ -116,7 +116,7 @@ public class BrainTests(ITestOutputHelper output)
     [Fact]
     public void Sur_une_annee_entiere_la_colonie_survit_seule()
     {
-        var world = new WorldState(12345, startingColonists: 20, migration: false);
+        var world = new WorldState(12345, startingColonists: 20, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         int coldNightsWithoutFire = 0;
 

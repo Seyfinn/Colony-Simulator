@@ -26,6 +26,21 @@ public sealed class Skills
         return skills;
     }
 
+    /// <summary>
+    /// Un enfant : il naît sans expérience, mais son talent vient de ses parents (la moyenne des deux, à peu près).
+    /// </summary>
+    public static Skills Inherit(Random random, Skills mother, Skills father)
+    {
+        var skills = new Skills();
+        foreach (SkillType skill in All)
+        {
+            float average = (mother._talent[(int)skill] + father._talent[(int)skill]) / 2f;
+            skills._talent[(int)skill] = Math.Clamp(average + (random.NextSingle() - 0.5f) * 0.4f, 0.5f, 1.5f);
+            skills._level[(int)skill] = 0f;
+        }
+        return skills;
+    }
+
     /// <summary>Un voyageur expérimenté : un métier déjà maîtrisé (niveau 8 à 12), le reste tiré au hasard.</summary>
     public static Skills Veteran(Random random, SkillType specialty)
     {

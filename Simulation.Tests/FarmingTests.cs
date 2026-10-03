@@ -7,7 +7,7 @@ namespace GodColony.Simulation.Tests;
 public class FarmingTests(ITestOutputHelper output)
 {
     private static WorldState ClosedColony(int colonists) =>
-        new(12345, startingColonists: colonists, migration: false);
+        new(12345, startingColonists: colonists, migration: false, lifecycle: false);
 
     private static void RunDays(WorldState world, double days)
     {

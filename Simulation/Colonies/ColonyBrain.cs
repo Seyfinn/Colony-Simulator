@@ -281,7 +281,7 @@ public static class ColonyBrain
 
     private static void Narrate(Colony colony, ColonySensors sensors, GameClock clock)
     {
-        int Workers(WorkSector sector) => colony.Members.Count(m => m.Sector == sector);
+        int Workers(WorkSector sector) => colony.Workers.Count(m => m.Sector == sector);
         string People(WorkSector sector) => Workers(sector) == 1 ? "1 colon" : $"{Workers(sector)} colons";
 
         string foodBand = sensors.FoodDays < 2 ? "crise"
@@ -326,6 +326,21 @@ public static class ColonyBrain
                 : "La carrière attendra : les besoins vitaux passent d'abord.");
         }
 
+        // Les couples et les enfants : en temps de crise, on renonce à agrandir la famille.
+        if (colony.Members.Any(m => m.Sex == Sex.Female && m.Partner is not null))
+        {
+            float prosperity = Lifecycle.Prosperity(colony, clock);
+            string birthBand = prosperity < 0.25f ? "freinée" : prosperity > 0.5f ? "normale" : Announced(colony, "natalité");
+            if (birthBand.Length == 0)
+                birthBand = "normale";
+            if (Changed(colony, "natalité", birthBand))
+            {
+                Say(colony, clock, birthBand == "freinée"
+                    ? "Les temps sont durs : les couples renoncent à avoir des enfants pour l'instant."
+                    : "Les couples songent à agrandir leur famille.");
+            }
+        }
+
         // Les champs : semailles, pousse, moisson, repos hivernal.
         if (colony.Fields.Count > 0)
         {
@@ -354,7 +369,7 @@ public static class ColonyBrain
             Say(colony, clock, "Bilan de saison, en heures de travail par unité : " + CostSummary(colony.Labor) + ".");
 
         int free = Workers(WorkSector.Free);
-        float freeRatio = free / (float)Math.Max(1, colony.Members.Count);
+        float freeRatio = free / (float)Math.Max(1, colony.Workers.Count());
         string freeBand = free == 0 ? "aucun"
             : freeRatio < 0.4f ? "quelques"
             : freeRatio > 0.6f ? "beaucoup"

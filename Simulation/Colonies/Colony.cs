@@ -12,6 +12,17 @@ public sealed class Colony
 
     public string Name { get; }
 
+    /// <summary>L'horloge du monde, pour calculer les âges.</summary>
+    internal GodColony.Simulation.Time.GameClock Clock { get; set; } = new(0);
+
+    /// <summary>Ceux qui sont morts dans la colonie, avec leur tombe.</summary>
+    public List<Grave> Graves { get; } = [];
+
+    /// <summary>Les colons qui travaillent : tout le monde sauf les enfants.</summary>
+    public IEnumerable<Colonist> Workers => Members.Where(m => m.Stage != LifeStage.Child);
+
+    public int Children => Members.Count(m => m.Stage == LifeStage.Child);
+
     /// <summary>Le feu de camp, cœur de la colonie : on y mange, on s'y détend, on dort autour.</summary>
     public int CampX { get; }
     public int CampY { get; }
@@ -113,10 +124,13 @@ public sealed class Colony
     /// </summary>
     public void AssignSectors()
     {
-        Dictionary<WorkSector, int> quotas = ComputeQuotas(Members.Count);
+        List<Colonist> workers = Workers.ToList();
+        foreach (Colonist child in Members.Where(m => m.Stage == LifeStage.Child))
+            child.Sector = WorkSector.Free;
+        Dictionary<WorkSector, int> quotas = ComputeQuotas(workers.Count);
         // Le temps libre revient à ceux qui restent une fois les postes productifs pourvus.
         var candidates =
-            from colonist in Members
+            from colonist in workers
             from sector in WorkSectors.All
             let fit = sector.Fitness(colonist.Skills) + (colonist.Sector == sector ? 3f : 0f)
             orderby fit descending

@@ -33,6 +33,7 @@ public static class ColonistAI
     private const float SleepRecoveryPerHour = 0.12f;
     private const float BoredomPerHour = 0.03f;
     private const float RelaxRecoveryPerHour = 0.3f;
+    private const float GriefFadePerHour = 0.2f / 24f;
     private const float SocialLossPerHour = 0.02f;
     private const float ComfortChangePerHour = 0.25f;
 
@@ -94,6 +95,28 @@ public static class ColonistAI
     /// </summary>
     internal static void BeginDeparture(Colonist colonist, WorldState world)
     {
+        DetachFromColony(colonist);
+
+        // Le couple se défait, la grossesse aussi.
+        if (colonist.Partner is { } partner)
+        {
+            partner.Partner = null;
+            partner.Needs.Grief = Math.Max(partner.Needs.Grief, 0.5f);
+            colonist.Partner = null;
+        }
+        colonist.PregnantUntilTicks = null;
+        colonist.PregnancyFather = null;
+
+        colonist.Transit = TransitState.Leaving;
+        colonist.Colony.Transients.Add(colonist);
+    }
+
+    /// <summary>
+    /// Un colon sort de la colonie (départ ou mort) : il laisse ce qu'il portait, libère sa place en hutte
+    /// et n'est plus compté parmi les membres.
+    /// </summary>
+    internal static void DetachFromColony(Colonist colonist)
+    {
         Colony colony = colonist.Colony;
         EndActivity(colonist);
 
@@ -116,9 +139,6 @@ public static class ColonistAI
         }
         colony.FillVacancies();
         colony.AssignSectors();
-
-        colonist.Transit = TransitState.Leaving;
-        colony.Transients.Add(colonist);
     }
 
     /// <summary>Fait marcher un voyageur vers le camp (arrivée) ou vers le bord de la carte (départ).</summary>
@@ -165,7 +185,8 @@ public static class ColonistAI
     {
         Needs needs = colonist.Needs;
         const float hour = 1f / TimeConstants.TicksPerHour;
-        needs.Food -= HungerPerHour * hour;
+        needs.Food -= HungerPerHour * HungerFactor(colonist.Stage) * hour;
+        needs.Grief -= GriefFadePerHour * hour;
 
         // On dort mieux à l'abri d'une hutte ; dehors, sans feu pendant la saison froide, le sommeil répare mal.
         bool sheltered = colonist.IsSleepingAtHome;
@@ -185,6 +206,32 @@ public static class ColonistAI
         needs.Comfort += (ComfortTarget(colonist, world) - needs.Comfort) * ComfortChangePerHour * hour;
         needs.Clamp();
     }
+
+    /// <summary>Les enfants mangent moins, les adolescents un peu moins que les adultes.</summary>
+    private static float HungerFactor(LifeStage stage) => stage switch
+    {
+        LifeStage.Child => 0.6f,
+        LifeStage.Teen => 0.85f,
+        _ => 1f,
+    };
+
+    /// <summary>L'âge change la vitesse de travail : les adolescents travaillent à mi-temps, les anciens à 70 %.</summary>
+    private static float WorkFactorOf(LifeStage stage) => stage switch
+    {
+        LifeStage.Child => 0f,
+        LifeStage.Teen => 0.5f,
+        LifeStage.Elder => 0.7f,
+        _ => 1f,
+    };
+
+    /// <summary>Les adolescents apprennent plus vite, les anciens un peu moins.</summary>
+    private static float LearningFactorOf(LifeStage stage) => stage switch
+    {
+        LifeStage.Child => 0.5f,
+        LifeStage.Teen => 1.5f,
+        LifeStage.Elder => 0.7f,
+        _ => 1f,
+    };
 
     /// <summary>Le confort visé : un toit, de la chaleur (un feu allumé en saison froide), et un peu plus à l'abri l'hiver.</summary>
     private static float ComfortTarget(Colonist colonist, WorldState world)
@@ -238,7 +285,7 @@ public static class ColonistAI
         // Les conversations ont lieu le soir et pendant le temps libre, sauf si la solitude devient pesante.
         float socialThreshold = 0.75f - 0.2f * colonist.Personality[Axis.Sociabilite];
         bool leisureTime = colonist.Sector == WorkSector.Free || clock.Hour >= 17;
-        if (needs.Social < socialThreshold && (leisureTime || needs.Social < 0.2f) && !clock.IsNight
+        if (colonist.Stage != LifeStage.Child && needs.Social < socialThreshold && (leisureTime || needs.Social < 0.2f) && !clock.IsNight
             && colonist.ChatCooldownTicks <= 0 && TryChat(colonist, world))
             return;
 
@@ -247,7 +294,7 @@ public static class ColonistAI
             return;
 
         // Temps libre : la colonie n'a pas besoin de ses bras pour l'instant, il se détend.
-        if (colonist.Sector == WorkSector.Free)
+        if (colonist.Sector == WorkSector.Free || colonist.Stage == LifeStage.Child)
         {
             if (needs.Leisure < 0.95f && StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds))
                 return;
@@ -271,7 +318,7 @@ public static class ColonistAI
         var candidates = new List<(Colonist Colonist, float Weight)>();
         foreach (Colonist other in colonist.Colony.Members)
         {
-            if (other == colonist || other.IsSleeping || other.Transit != TransitState.None)
+            if (other == colonist || other.IsSleeping || other.Transit != TransitState.None || other.Stage == LifeStage.Child)
                 continue;
             float affinity = Relations.Affinity(colonist, other);
             float distance = MathF.Sqrt((other.X - colonist.X) * (other.X - colonist.X) + (other.Y - colonist.Y) * (other.Y - colonist.Y));
@@ -411,7 +458,7 @@ public static class ColonistAI
 
     /// <summary>Vitesse de travail : l'habileté du métier, modulée par l'ardeur du colon.</summary>
     private static float WorkSpeed(Colonist colonist, SkillType skill) =>
-        colonist.Skills.WorkSpeed(skill) * colonist.Personality.WorkFactor;
+        colonist.Skills.WorkSpeed(skill) * colonist.Personality.WorkFactor * MathF.Max(0.1f, WorkFactorOf(colonist.Stage));
 
     private static IEnumerable<FieldPlot> NearestPlots(Colony colony, Colonist colonist, CropStage stage) =>
         Farming.Plots(colony)
@@ -631,7 +678,7 @@ public static class ColonistAI
 
         activity.ElapsedTicks++;
         if (activity.Skill is { } skill)
-            colonist.Skills.Practice(skill, colonist.Personality.LearningFactor / TimeConstants.TicksPerSecond);
+            colonist.Skills.Practice(skill, colonist.Personality.LearningFactor * LearningFactorOf(colonist.Stage) / TimeConstants.TicksPerSecond);
 
         Needs needs = colonist.Needs;
         bool done = activity.Kind == ActivityKind.Sleep

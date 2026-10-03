@@ -22,6 +22,7 @@ public partial class Hud : CanvasLayer
     private Label _colonistActivity = null!;
     private Label _colonistSector = null!;
     private Label _colonistSkills = null!;
+    private Label _colonistFamily = null!;
     private Label _colonistTraits = null!;
     private Label _colonistRelations = null!;
     private NeedBar _food = null!, _rest = null!, _leisure = null!, _social = null!, _comfort = null!, _mood = null!;
@@ -73,6 +74,9 @@ public partial class Hud : CanvasLayer
         _social = new NeedBar(colonistColumn, "Compagnie");
         _comfort = new NeedBar(colonistColumn, "Confort");
         _mood = new NeedBar(colonistColumn, "Humeur");
+        _colonistFamily = AddLabel(colonistColumn, 13, new Color(0.8f, 0.9f, 0.85f));
+        _colonistFamily.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _colonistFamily.CustomMinimumSize = new Vector2(260, 0);
         _colonistTraits = AddLabel(colonistColumn, 13, new Color(0.85f, 0.8f, 0.95f));
         _colonistTraits.AutowrapMode = TextServer.AutowrapMode.WordSmart;
         _colonistTraits.CustomMinimumSize = new Vector2(260, 0);
@@ -115,7 +119,7 @@ public partial class Hud : CanvasLayer
         _colonistPanel.Visible = colonist is not null;
         if (colonist is null)
             return;
-        _colonistName.Text = colonist.Name;
+        _colonistName.Text = colonist.FullName;
         _colonistActivity.Text = Describe(colonist);
         _food.Set(colonist.Needs.Food);
         _rest.Set(colonist.Needs.Rest);
@@ -130,6 +134,27 @@ public partial class Hud : CanvasLayer
             _ => $"Affecté à : {SectorName(colonist.Sector)}\n" +
                  (colonist.Home is null ? "Dort à la belle étoile" : "Dort dans une hutte"),
         };
+
+        // Âge et famille.
+        string stage = colonist.Stage switch
+        {
+            LifeStage.Child => colonist.Sex == Sex.Female ? "Petite fille" : "Petit garçon",
+            LifeStage.Teen => "Adolescent" + (colonist.Sex == Sex.Female ? "e" : ""),
+            LifeStage.Elder => colonist.Sex == Sex.Female ? "Ancienne" : "Ancien",
+            _ => colonist.Sex == Sex.Female ? "Adulte (femme)" : "Adulte (homme)",
+        };
+        var family = new System.Text.StringBuilder($"{stage}, {colonist.AgeYears:0.#} ans");
+        if (colonist.PregnantUntilTicks is not null)
+            family.Append("  ·  enceinte");
+        if (colonist.Needs.Grief > 0.15f)
+            family.Append("  ·  en deuil");
+        if (colonist.Partner is { } partner)
+            family.Append($"\nEn couple avec {partner.Name}");
+        if (colonist.Mother is not null || colonist.Father is not null)
+            family.Append($"\nParents : {string.Join(" et ", new[] { colonist.Mother?.Name, colonist.Father?.Name }.Where(n => n is not null))}");
+        if (colonist.Children.Count > 0)
+            family.Append($"\nEnfants : {string.Join(", ", colonist.Children.Select(c => c.Name))}");
+        _colonistFamily.Text = family.ToString();
 
         // Personnalité : les traits marquants en toutes lettres ; amis et rivaux par leur nom.
         string traits = string.Join(", ", colonist.Personality.NotableTraits(colonist.Sex));

@@ -24,7 +24,7 @@ public class LaborTests(ITestOutputHelper output)
     [Fact]
     public void La_colonie_mesure_ce_que_lui_coute_chaque_ressource()
     {
-        var world = new WorldState(12345, startingColonists: 20, migration: false);
+        var world = new WorldState(12345, startingColonists: 20, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         for (long i = 0; i < 12L * TimeConstants.TicksPerDay; i++)
             world.Step();

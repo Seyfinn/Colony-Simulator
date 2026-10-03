@@ -1,4 +1,5 @@
 using GodColony.Simulation.Map;
+using GodColony.Simulation.Time;
 
 namespace GodColony.Simulation.Colonies;
 
@@ -12,7 +13,7 @@ public static class ColonyFounder
     public const int MinStartingColonists = 5;
     public const int MaxStartingColonists = 10;
 
-    public static Colony Found(LocalMap map, Random random, string name, int colonistCount, Func<int> nextId)
+    public static Colony Found(LocalMap map, Random random, string name, int colonistCount, Func<int> nextId, GameClock clock)
     {
         (int campX, int campY) = FindCampSite(map);
 
@@ -26,6 +27,7 @@ public static class ColonyFounder
         {
             Quarry = WorkSites.FindQuarry(map, campX, campY),
         };
+        colony.Clock = clock;
         colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount);
 
         for (int i = 0; i < colonistCount; i++)
@@ -36,6 +38,9 @@ public static class ColonyFounder
             var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random), x + 0.5f, y + 0.5f)
             {
                 Personality = Personality.Random(random),
+                // Tous des adultes, d'âges variés : la colonie ne vieillira pas d'un seul bloc.
+                BirthTicks = clock.Ticks - (long)((Colonist.AdultAge + 6f * random.NextSingle()) * TimeConstants.TicksPerYear),
+                Surname = Names.PickSurname(random, colony.Members.Select(m => m.Surname)),
             };
             colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Rest = 0.6f + 0.35f * random.NextSingle();

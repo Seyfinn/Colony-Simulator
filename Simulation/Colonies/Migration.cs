@@ -132,6 +132,8 @@ public static class Migration
             {
                 Transit = TransitState.Arriving,
                 Personality = Personality.Random(world.Random),
+                BirthTicks = world.Clock.Ticks - (long)((Colonist.AdultAge + 6f * world.Random.NextSingle()) * TimeConstants.TicksPerYear),
+                Surname = Names.PickSurname(world.Random, colony.Members.Concat(colony.Transients).Select(t => t.Surname)),
             };
             // Il arrive après une longue marche : fatigué et un peu affamé.
             traveler.Needs.Food = 0.5f + 0.15f * world.Random.NextSingle();
@@ -175,7 +177,8 @@ public static class Migration
         if (colony.Members.Count <= MinPopulationToLeave)
             return;
         // Les enracinés tiennent plus longtemps, les nomades partent plus vite.
-        Colonist? leaver = colony.Members.FirstOrDefault(m => m.UnhappyHours >= UnhappyHoursBeforeLeaving * m.Personality.PatienceFactor);
+        Colonist? leaver = colony.Members.FirstOrDefault(m => m.Stage is LifeStage.Adult or LifeStage.Elder
+            && m.UnhappyHours >= UnhappyHoursBeforeLeaving * m.Personality.PatienceFactor);
         if (leaver is null)
             return;
         ColonyBrain.Say(colony, world.Clock, $"{leaver.Name} n'en peut plus et quitte la colonie.");
