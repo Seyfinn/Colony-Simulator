@@ -24,7 +24,7 @@ public static class Lifecycle
     public const float FertileUntilAge = 14f;
 
     /// <summary>Chance par jour qu'un couple éligible conçoive, dans une colonie parfaitement prospère.</summary>
-    public const float ConceptionChancePerDay = 0.07f;
+    public const float ConceptionChancePerDay = 0.05f;
 
     // Mort
     public const float OldAgeStart = 17f;

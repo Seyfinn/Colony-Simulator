@@ -17,7 +17,7 @@ public static class Migration
     /// Chance maximale, par jour, qu'un voyageur (ou un petit groupe) se présente : celle d'une colonie
     /// au sommet de son attrait. Une colonie ordinaire en reçoit bien moins, une colonie pauvre presque aucun.
     /// </summary>
-    public const float MaxTravelerChancePerDay = 0.2f;
+    public const float MaxTravelerChancePerDay = 0.14f;
     private const float PairChance = 0.25f;
 
     /// <summary>On voyage peu en hiver.</summary>
@@ -64,8 +64,7 @@ public static class Migration
         float mood = Math.Clamp((colony.AverageMood - MinMoodToAttract) / 0.4f, 0f, 1f);
         float food = Math.Clamp((sensors.FoodDays - MinFoodDaysToWelcome) / (PlentifulFoodDays - MinFoodDaysToWelcome), 0f, 1f);
         float housing = 1f - Math.Clamp(sensors.Homeless / (float)Building.HutCapacity, 0f, 1f);
-        float materials = colony.Stock.Get(ResourceType.Wood) + colony.Stock.Get(ResourceType.Stone) + 2f * colony.Stock.Get(ResourceType.IronOre)
-                           + 2f * colony.Stock.Get(ResourceType.Iron) + 6f * colony.Stock.Get(ResourceType.Tools);
+        float materials = colony.Stock.Get(ResourceType.Wood) + colony.Stock.Get(ResourceType.Stone) + 2f * colony.Stock.Get(ResourceType.IronOre);
         float wealth = Math.Clamp(materials / population / WealthyMaterialsPerColonist, 0f, 1f);
 
         return MoodWeight * mood + FoodWeight * food + HousingWeight * housing + WealthWeight * wealth;
