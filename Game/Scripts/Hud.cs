@@ -35,9 +35,7 @@ public partial class Hud : CanvasLayer
     private string _thoughtStamp = "";
 
     private TextureRect _portrait = null!;
-    private int _portraitId = -1;
-    private bool _portraitElder;
-    private WoodlandBiome _portraitBiome;
+    private ColonistAppearance? _portraitAppearance;
     private Label _colonistName = null!, _colonistActivity = null!, _colonistSector = null!;
     private Label _colonistAge = null!, _colonistFamily = null!, _colonistTraits = null!, _colonistRelations = null!;
     private readonly Dictionary<SkillType, Label> _skills = [];
@@ -221,7 +219,7 @@ public partial class Hud : CanvasLayer
         identity.AddChild(portraitFrame);
         _portrait = new TextureRect
         {
-            CustomMinimumSize = new Vector2(32, 48), TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            CustomMinimumSize = new Vector2(64, 64), TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
             ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
             StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
             MouseFilter = Control.MouseFilterEnum.Ignore,
@@ -359,13 +357,11 @@ public partial class Hud : CanvasLayer
     {
         _colonistPanel.Visible = colonist is not null;
         if (colonist is null) return;
-        bool elder = colonist.Stage == LifeStage.Elder;
-        if (_portraitId != colonist.Id || _portraitElder != elder || _portraitBiome != biome)
+        var appearance = PeoplesSprites.Describe(colonist, biome);
+        if (_portraitAppearance != appearance)
         {
-            _portrait.Texture = SpriteFactory.Colonist(colonist.Id, elder, biome)[0];
-            _portraitId = colonist.Id;
-            _portraitElder = elder;
-            _portraitBiome = biome;
+            _portrait.Texture = PeoplesSprites.Portrait(appearance);
+            _portraitAppearance = appearance;
         }
         _colonistName.Text = colonist.FullName;
         _colonistActivity.Text = Describe(colonist);
@@ -374,7 +370,9 @@ public partial class Hud : CanvasLayer
             LifeStage.Child => "Enfant", LifeStage.Teen => "Adolescent" + (colonist.Sex == Sex.Female ? "e" : ""),
             LifeStage.Elder => colonist.Sex == Sex.Female ? "Ancienne" : "Ancien", _ => "Adulte",
         };
-        _colonistAge.Text = $"{stage} · {colonist.AgeYears:0.#} ans";
+        string people = colonist.Sex != Sex.Female ? colonist.Species.Name
+            : colonist.Species == Species.Human ? "Humaine" : colonist.Species == Species.Dwarf ? "Naine" : colonist.Species.Name;
+        _colonistAge.Text = $"{people} · {stage}\n{colonist.AgeYears:0.#} ans";
         _food.Set(colonist.Needs.Food); _rest.Set(colonist.Needs.Rest); _leisure.Set(colonist.Needs.Leisure);
         _social.Set(colonist.Needs.Social); _comfort.Set(colonist.Needs.Comfort); _mood.Set(colonist.Needs.Mood);
         _colonistSector.Text = colonist.Transit switch

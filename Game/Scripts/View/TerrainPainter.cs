@@ -54,7 +54,7 @@ public static class TerrainPainter
         GrassPalette pn = Palette(BiomeVisuals.At(map, x, y - 1)), ps = Palette(BiomeVisuals.At(map, x, y + 1));
         GrassPalette pw = Palette(BiomeVisuals.At(map, x - 1, y)), pe = Palette(BiomeVisuals.At(map, x + 1, y));
         int connections = canal ? WaterGeometry.Connections(map, x, y) : 0;
-        WaterGeometry.Stream[] streams = surface != Surface.Water && !canal ? WaterGeometry.Streams(map, x, y) : [];
+        WaterGeometry.Stream[] streams = !canal ? WaterGeometry.Streams(map, x, y) : [];
         int north = Elevation(map, x, y - 1, height), south = Elevation(map, x, y + 1, height);
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
         Surface n = Neighbor(map, x, y - 1, surface), s = Neighbor(map, x, y + 1, surface);
@@ -99,7 +99,7 @@ public static class TerrainPainter
                 if (distance < edge)
                 {
                     if (surface == Surface.Water && adjacent != Surface.Water)
-                        color = distance == 0 ? Blend(color, Foam, 0.65f) : Blend(color, Foam, 0.22f);
+                        color = Blend(color, Foam, 0.12f);
                     else if (surface != Surface.Water && adjacent == Surface.Water)
                         color = surface == Surface.Sand ? WetSand : Blend(color, Loam, 0.52f);
                     else if (surface == Surface.Grass && adjacent is Surface.Dirt or Surface.Sand)
@@ -107,8 +107,30 @@ public static class TerrainPainter
                     else if (surface is Surface.Stone or Surface.IronOre && adjacent == Surface.Grass)
                         color = Blend(color, Moss, (1 - distance / (float)edge) * 0.3f);
                 }
+                if (surface == Surface.Water)
+                {
+                    float shore = distance;
+                    const float radius = 9;
+                    // Les coins de la retenue sont adoucis à l'intérieur des cases réellement noyées.
+                    if (n != Surface.Water && w != Surface.Water && px < radius && py < radius)
+                        shore = Math.Min(shore, radius - MathF.Sqrt((px - radius) * (px - radius) + (py - radius) * (py - radius)));
+                    if (n != Surface.Water && e != Surface.Water && px > 31 - radius && py < radius)
+                        shore = Math.Min(shore, radius - MathF.Sqrt((px - 31 + radius) * (px - 31 + radius) + (py - radius) * (py - radius)));
+                    if (s != Surface.Water && w != Surface.Water && px < radius && py > 31 - radius)
+                        shore = Math.Min(shore, radius - MathF.Sqrt((px - radius) * (px - radius) + (py - 31 + radius) * (py - 31 + radius)));
+                    if (s != Surface.Water && e != Surface.Water && px > 31 - radius && py > 31 - radius)
+                        shore = Math.Min(shore, radius - MathF.Sqrt((px - 31 + radius) * (px - 31 + radius) + (py - 31 + radius) * (py - 31 + radius)));
+                    float margin = 1.5f + Noise.Value2D(wx / 13f, wy / 13f, 193) * 1.5f;
+                    bool mouth = streams.Length > 0 && WaterGeometry.Nearest(streams, px, py).Distance < 10;
+                    if (!mouth && shore < margin)
+                    {
+                        Rgb soil = GroundPixel(Underlying(map, x, y), wx, wy, height, biome, grass);
+                        color = Blend(soil, Underlying(map, x, y) == Surface.Sand ? WetSand : Loam, 0.25f);
+                    }
+                    else if (!mouth && shore < margin + 2.5f) color = Blend(color, Foam, 0.22f);
+                }
                 bool streamWater = false;
-                if (streams.Length > 0)
+                if (streams.Length > 0 && surface != Surface.Water)
                 {
                     var nearest = WaterGeometry.Nearest(streams, px, py);
                     float width = 10.5f + (Noise.Value2D(wx / 15f, wy / 15f, 191) - 0.5f) * 3;
@@ -201,10 +223,12 @@ public static class TerrainPainter
 
     private static int Elevation(LocalMap map, int x, int y, int fallback) => map.InBounds(x, y) ? map.GetElevation(x, y) : fallback;
     private static Surface Neighbor(LocalMap map, int x, int y, Surface fallback) => map.InBounds(x, y) ? VisualSurface(map, x, y) : fallback;
-    private static Surface VisualSurface(LocalMap map, int x, int y) => map.IsCanal(x, y) || (map.IsRiver(x, y) && !map.IsFlooded(x, y)) ? map.GetSoil(x, y) switch
+    private static Surface VisualSurface(LocalMap map, int x, int y) => map.IsCanal(x, y) || (map.IsRiver(x, y) && !map.IsFlooded(x, y))
+        ? Underlying(map, x, y) : Structural(map.GetSurface(x, y));
+    private static Surface Underlying(LocalMap map, int x, int y) => map.GetSoil(x, y) switch
     {
         SoilType.Dirt => Surface.Dirt, SoilType.Sand => Surface.Sand, _ => Surface.Grass,
-    } : Structural(map.GetSurface(x, y));
+    };
 
     /// <summary>Pour les bords et les falaises, la rivière compte comme de l'eau.</summary>
     private static Surface Structural(Surface surface) => surface == Surface.River ? Surface.Water : surface;

@@ -219,4 +219,26 @@ public class TradeTests(ITestOutputHelper output)
         Assert.True(world.CompletedCaravans >= 3, $"Au moins quelques voyages : {world.CompletedCaravans}.");
         Assert.True(world.Colonies.Sum(c => c.LifetimeTradeGainHours) > 0);
     }
+
+    [Fact]
+    public void La_caravane_avance_sur_la_route_attend_chez_l_hote_puis_revient()
+    {
+        WorldState world = TwoPeoples();
+        Colony from = world.Colonies[0], to = world.Colonies[1];
+        Set(from, ResourceType.Tools, 30);
+        Set(to, ResourceType.Tools, 0);
+        Set(to, ResourceType.Coins, 800);
+        Caravan caravan = Trade.Depart(world, Trade.Plan(world, from, to)!)!;
+
+        Assert.Equal(0f, caravan.RoutePosition(caravan.DepartTicks), 3);
+        float midway = caravan.RoutePosition((caravan.DepartTicks + caravan.ArriveTicks) / 2);
+        Assert.InRange(midway, 0.45f, 0.55f);
+        Assert.Equal(1f, caravan.RoutePosition(caravan.ArriveTicks), 3);
+        Assert.Equal(1f, caravan.RoutePosition(caravan.ArriveTicks + 10), 3); // elle échange chez l'hôte
+
+        long backStart = caravan.ReturnTicks - (caravan.ArriveTicks - caravan.DepartTicks);
+        float onTheWayBack = caravan.RoutePosition((backStart + caravan.ReturnTicks) / 2);
+        Assert.InRange(onTheWayBack, 0.45f, 0.55f);
+        Assert.Equal(0f, caravan.RoutePosition(caravan.ReturnTicks), 3);
+    }
 }

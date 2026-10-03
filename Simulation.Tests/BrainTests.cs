@@ -58,6 +58,9 @@ public class BrainTests(ITestOutputHelper output)
     {
         (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 1000);
         HouseEveryone(world, colony);
+        // Une colonie prospère garde des lits d'avance : on lui en donne, pour qu'aucun chantier ne vienne troubler le test.
+        (int x, int y) = Urbanism.FindHutSite(world.Map, colony)!.Value;
+        Urbanism.PlanHut(world.Map, colony, x, y).Progress = 1f;
         colony.Fields.Clear(); // les champs réclameraient des bras pour les semailles : on teste ici la pyramide seule
         colony.Stock.Add(ResourceType.Tools, 100); // la colonie est équipée : ni fer à chercher, ni outils à forger
         colony.IronSeen = true;

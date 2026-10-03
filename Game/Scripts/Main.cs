@@ -18,8 +18,8 @@ public partial class Main : Node2D
 {
     private const int Seed = 12345;
 
-    /// <summary>Nombre de peuples au départ : des humains et des nains, chacun sur sa carte.</summary>
-    private const int ColonyCount = 2;
+    /// <summary>Nombre de peuples au départ : humains, nains, elfes et orques, chacun sur sa carte.</summary>
+    private const int ColonyCount = 4;
 
     /// <summary>Limite de ticks par image, pour que le jeu ne fige pas si la simulation prend du retard.</summary>
     private const int MaxTicksPerFrame = 2000;
@@ -167,6 +167,8 @@ public partial class Main : Node2D
                 ObserveColony(colonyIndex);
             else if (arg == "--open-world")
                 _worldPanel.Open = true;
+            else if (arg == "--open-map")
+                _worldPanel.MapOpen = true;
             else if (arg == "--auto-dam")
                 Observed.Prayers.AutoApprove.Add(DecisionKind.Dam);
             else if (arg == "--focus-dam" && Observed.Buildings.Find(b => b.IsDam) is { } dam)
@@ -211,6 +213,7 @@ public partial class Main : Node2D
         _ambience.Update(_world.Clock, atmosphereSpeed, _speed == GameSpeed.Pause, delta);
         _daylight.Color = _ambience.Tint;
         _colonistsView.AmbientEffectsEnabled = _ambience.DetailedEffects;
+        _colonistsView.WaterAnimationTime = _ambience.AnimationTime;
 
         UpdateHud();
 

@@ -131,7 +131,8 @@ public static class ColonyBrain
         }
         PlanFields(colony, map, clock);
         ColonySensors sensors = Sense(colony, clock);
-        if (PlanConstruction(colony, map, sensors, clock) || PlanWorkshop(colony, map, sensors, clock)
+        if (PlanConstruction(colony, map, sensors, clock) || PlanSpareRoom(colony, map, sensors, clock)
+            || PlanWorkshop(colony, map, sensors, clock)
             || PlanCanal(colony, map, sensors, clock))
             sensors = Sense(colony, clock);
         AskForDam(colony, map, sensors, clock);
@@ -258,6 +259,28 @@ public static class ColonyBrain
         Say(colony, clock, colony.Buildings.Count(b => b.IsHut) == 1
             ? $"{sensors.Homeless} colons dorment à la belle étoile : nous décidons de bâtir notre première hutte."
             : $"Encore {sensors.Homeless} {(sensors.Homeless > 1 ? "colons sans toit" : "colon sans toit")} : nous ouvrons le chantier d'une nouvelle hutte.");
+        return true;
+    }
+
+    /// <summary>Lits libres qu'une colonie prospère veut toujours avoir d'avance : elle bâtit avant d'être à l'étroit.</summary>
+    private const int SpareBedsWanted = 3;
+
+    /// <summary>
+    /// Une colonie prospère anticipe sa croissance : tant que tout le monde est logé et qu'il reste moins de trois lits libres
+    /// (les huttes en chantier comptent), elle ouvre le chantier d'une hutte de plus, au lieu d'attendre que des colons dorment dehors.
+    /// Sans cela, la population plafonne à la capacité des huttes.
+    /// </summary>
+    private static bool PlanSpareRoom(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
+    {
+        if (!sensors.SurvivalAssured || sensors.Homeless > 0 || colony.ConstructionSites.Any() || colony.AverageMood < 0.5f
+            || sensors.FoodDays < Migration.MinFoodDaysToWelcome)
+            return false;
+        int beds = colony.Buildings.Count(b => b.IsHut) * Building.HutCapacity;
+        if (beds - colony.Members.Count >= SpareBedsWanted || Urbanism.FindHutSite(map, colony) is not { } site)
+            return false;
+
+        Urbanism.PlanHut(map, colony, site.X, site.Y);
+        Say(colony, clock, "La colonie grandit : nous préparons une hutte de plus avant d'être à l'étroit.");
         return true;
     }
 
@@ -446,7 +469,7 @@ public static class ColonyBrain
         float wood = sensors.WoodPressure / 100f * MaxWoodShare;
         // Un chantier d'atelier ou de canal mobilise des bras même quand tout le monde est déjà logé.
         float construction = sensors.SurvivalAssured && (sensors.HasConstructionSite || sensors.CanalWork)
-            ? Math.Max(sensors.HasWorkshopSite || sensors.CanalWork ? 0.5f : 0.1f, sensors.HousingPressure / 100f) * MaxConstructionShare
+            ? Math.Max(sensors.HasWorkshopSite || sensors.CanalWork || sensors.Homeless == 0 ? 0.5f : 0.1f, sensors.HousingPressure / 100f) * MaxConstructionShare
             : 0f;
         bool comfortAssured = sensors.SurvivalAssured && sensors.HousingPressure <= ComfortHousingLimit;
         float stone = comfortAssured ? sensors.StonePressure / 100f * MaxStoneShare : 0f;

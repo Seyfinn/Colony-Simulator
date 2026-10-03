@@ -28,7 +28,8 @@ public partial class WorldPanel : CanvasLayer
     private VBoxContainer _stack = null!, _details = null!;
     private HBoxContainer _colonyRow = null!;
     private readonly List<Button> _colonyButtons = [];
-    private Button _economyButton = null!;
+    private Button _economyButton = null!, _mapButton = null!;
+    private WorldMapView _map = null!;
     private double _sinceRefresh = 1;
     private bool _open;
     private int _observed;
@@ -40,7 +41,18 @@ public partial class WorldPanel : CanvasLayer
         set { _open = value; _sinceRefresh = 1; }
     }
 
-    public void Init(WorldState world) => _world = world;
+    /// <summary>La carte du monde est-elle ouverte ?</summary>
+    public bool MapOpen
+    {
+        get => _map?.Visible ?? false;
+        set { if (_map is not null) _map.Visible = value; _sinceRefresh = 1; }
+    }
+
+    public void Init(WorldState world)
+    {
+        _world = world;
+        _map?.Init(world); // la carte est créée dans _Ready, qui peut précéder cet appel
+    }
 
     public override void _Ready()
     {
@@ -59,6 +71,15 @@ public partial class WorldPanel : CanvasLayer
         _colonyRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         _colonyRow.AddThemeConstantOverride("separation", 6);
         _stack.AddChild(_colonyRow);
+
+        // La carte du monde : un grand panneau au centre, qu'on ouvre depuis le bouton « Carte ».
+        _map = new WorldMapView { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop };
+        root.AddChild(_map);
+        _map.AnchorLeft = 0.5f; _map.AnchorRight = 0.5f; _map.AnchorTop = 0.5f; _map.AnchorBottom = 0.5f;
+        _map.OffsetLeft = -300; _map.OffsetRight = 300; _map.OffsetTop = -210; _map.OffsetBottom = 210;
+        if (_world is not null)
+            _map.Init(_world);
+        _map.ColonyClicked += index => ColonyRequested?.Invoke(index);
 
         _details = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
         _details.AddThemeConstantOverride("separation", 4);
@@ -106,13 +127,23 @@ public partial class WorldPanel : CanvasLayer
             _economyButton.ToggleMode = true;
             _economyButton.Pressed += () => Open = !Open;
             _colonyRow.AddChild(_economyButton);
+            _mapButton = Chip("Carte");
+            _mapButton.Name = "CarteMonde";
+            _mapButton.ToggleMode = true;
+            _mapButton.Pressed += () => MapOpen = !MapOpen;
+            _colonyRow.AddChild(_mapButton);
         }
         for (int i = 0; i < _colonyButtons.Count; i++)
             _colonyButtons[i].SetPressedNoSignal(i == _observed);
         _economyButton.SetPressedNoSignal(_open);
+        _mapButton.SetPressedNoSignal(MapOpen);
+        _map.Observed = _observed;
         _colonyRow.Visible = _world.Colonies.Count > 1;
         if (_world.Colonies.Count <= 1)
+        {
             _open = false;
+            MapOpen = false;
+        }
 
         foreach (Node child in _details.GetChildren())
             child.QueueFree();

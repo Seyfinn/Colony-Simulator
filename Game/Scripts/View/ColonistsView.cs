@@ -23,6 +23,7 @@ public partial class ColonistsView : Node2D
 
     /// <summary>Halos et braises réservés au mode d'observation.</summary>
     public bool AmbientEffectsEnabled { get; set; } = true;
+    public double WaterAnimationTime { get; set; }
 
     /// <summary>La colonie observée : la vue ne dessine qu'elle, sur sa propre carte.</summary>
     private Colony _colony = null!;
@@ -78,6 +79,7 @@ public partial class ColonistsView : Node2D
     public override void _Draw()
     {
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+        if (AmbientEffectsEnabled) WaterEffects.Draw(this, _colony.Map, WaterAnimationTime);
         foreach (Colony colony in new[] { _colony })
         {
             // Au sol, sans épaisseur : les champs passent sous tout le reste.
@@ -227,7 +229,9 @@ public partial class ColonistsView : Node2D
 
     private void DrawBubble(Colonist colonist)
     {
-        Vector2 origin = DisplayPosition(colonist).Round() + new Vector2(-12, -44);
+        var appearance = PeoplesSprites.Describe(colonist, BiomeVisuals.At(_colony.Map, colonist.TileX, colonist.TileY));
+        float scale = colonist.Stage == LifeStage.Child ? 0.7f : 1;
+        Vector2 origin = DisplayPosition(colonist).Round() + new Vector2(-12, -PeoplesSprites.Bounds(appearance).Size.Y * scale - 20);
         DrawTexture(SpriteFactory.ChatBubble, origin);
         for (int i = 0; i < 3; i++)
         {
@@ -281,7 +285,9 @@ public partial class ColonistsView : Node2D
             return;
         }
         DrawGroundShadow(origin + new Vector2(16, 28), 17, 3, 0.25f);
-        DrawTexture(SpriteFactory.BuildingSprite("Dam"), origin + new Vector2(0, Tile - 48));
+        var downstream = _colony.Map.RiverDownstream(dam.X, dam.Y);
+        bool side = downstream is { } to && Math.Abs(to.X - dam.X) > Math.Abs(to.Y - dam.Y);
+        DrawTexture(SpriteFactory.BuildingSprite(side ? "DamSide" : "Dam"), origin + new Vector2(0, Tile - 48));
     }
 
     private void DrawBuilding(Building building)
@@ -384,10 +390,11 @@ public partial class ColonistsView : Node2D
     {
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
         Vector2 feet = DisplayPosition(colonist).Round();
-        ImageTexture[] frames = SpriteFactory.Colonist(colonist.Id, colonist.Stage == LifeStage.Elder,
-            BiomeVisuals.At(_colony.Map, colonist.TileX, colonist.TileY));
+        var appearance = PeoplesSprites.Describe(colonist, BiomeVisuals.At(_colony.Map, colonist.TileX, colonist.TileY));
+        ImageTexture[] frames = PeoplesSprites.Get(appearance);
+        Vector2 spriteOffset = new(-frames[0].GetWidth() / 2f, -frames[0].GetHeight());
         float scale = colonist.Stage == LifeStage.Child ? 0.7f : 1f;
-        DrawGroundShadow(feet, (int)(7 * scale), 2, 0.24f);
+        DrawGroundShadow(feet, (int)(PeoplesSprites.ShadowRadius(appearance.People) * scale), 2, 0.24f);
 
         if (colonist == Selected)
             DrawSelection(feet);
@@ -395,24 +402,26 @@ public partial class ColonistsView : Node2D
         if (colonist.IsSleeping)
         {
             // Une lune accompagne la pose de repos.
-            DrawSetTransform(feet + new Vector2(-12, -6), Mathf.Pi / 2f, new Vector2(scale, scale));
-            DrawTexture(frames[0], new Vector2(-8, -24));
+            Rect2I bounds = PeoplesSprites.Bounds(appearance);
+            Vector2 center = new(bounds.Position.X + bounds.Size.X / 2f, bounds.Position.Y + bounds.Size.Y / 2f);
+            DrawSetTransform(feet + new Vector2(0, -4), Mathf.Pi / 2f, new Vector2(scale, scale));
+            DrawTexture(PeoplesSprites.Rest(appearance), -center);
             DrawSetTransform(Vector2.Zero, 0, Vector2.One);
             float bob = Mathf.Sin((float)_time * 2 + colonist.Id) * 2;
-            DrawTexture(SpriteFactory.Sleep, feet + new Vector2(5, -26 + bob), new Color(1, 1, 1, 0.85f));
+            DrawTexture(SpriteFactory.Sleep, feet + new Vector2(5, -bounds.Size.Y * scale - 4 + bob), new Color(1, 1, 1, 0.85f));
             return;
         }
 
         bool walking = colonist.X != colonist.PrevX || colonist.Y != colonist.PrevY;
         int frame = walking ? (int)(colonist.DistanceWalked * 6f) % frames.Length : 0;
         DrawSetTransform(feet, 0, new Vector2(scale, scale));
-        DrawTexture(frames[frame], new Vector2(-8, -24));
+        DrawTexture(frames[frame], spriteOffset);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
 
         // Ce qu'il rapporte au camp, en petit sous le bras.
         if (colonist.Carrying is { } load)
         {
-            Vector2 parcel = feet + new Vector2(5, -13) * scale;
+            Vector2 parcel = feet + PeoplesSprites.CarryOffset(appearance.People) * scale;
             DrawRect(new Rect2(parcel - Vector2.One, new Vector2(12, 12) * scale), ArtDirection.Charcoal);
             DrawTextureRect(ResourceIcons.Get(load.Type), new Rect2(parcel, new Vector2(10, 10) * scale), false);
         }

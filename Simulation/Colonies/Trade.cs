@@ -65,6 +65,20 @@ public sealed class Caravan
         internal set => Cargo[ResourceType.Coins] = value;
     }
 
+    /// <summary>
+    /// Où se trouve la caravane sur la route, de 0 (à la colonie qui l'envoie) à 1 (chez l'hôte) :
+    /// elle avance à l'aller, attend l'échange, puis revient.
+    /// </summary>
+    public float RoutePosition(long nowTicks)
+    {
+        if (nowTicks <= ArriveTicks)
+            return Math.Clamp((nowTicks - DepartTicks) / (float)Math.Max(1, ArriveTicks - DepartTicks), 0f, 1f);
+        long backStart = ReturnTicks - (ArriveTicks - DepartTicks);
+        if (nowTicks <= backStart)
+            return 1f; // elle échange chez l'hôte
+        return Math.Clamp(1f - (nowTicks - backStart) / (float)Math.Max(1, ReturnTicks - backStart), 0f, 1f);
+    }
+
     /// <summary>Avancement du voyage entier, de 0 (départ) à 1 (retour).</summary>
     public float Progress(long nowTicks) => Math.Clamp((nowTicks - DepartTicks) / (float)(ReturnTicks - DepartTicks), 0f, 1f);
 

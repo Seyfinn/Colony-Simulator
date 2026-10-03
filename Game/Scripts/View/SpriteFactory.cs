@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using Godot;
+using GodColony.Simulation.Colonies;
 
 namespace GodColony.View;
 
@@ -104,7 +105,15 @@ public static class SpriteFactory
         Color.Color8(145, 102, 70), Color.Color8(107, 76, 54), Color.Color8(227, 183, 145),
     ];
 
-    /// <summary>Quatre poses de marche et cheveux gris pour les anciens, sans modifier la simulation.</summary>
+    /// <summary>Apparence du peuple, de l'âge, du milieu et du métier réellement portés par le colon.</summary>
+    public static ImageTexture[] Colonist(Colonist person, WoodlandBiome biome) => PeoplesSprites.Get(PeoplesSprites.Describe(person, biome));
+
+    /// <summary>Accès aux sprites préparés, même avant l'apparition d'un peuple dans une partie.</summary>
+    public static ImageTexture[] Colonist(int id, PeopleLook people, WoodlandBiome biome = WoodlandBiome.TemperatePlain,
+        LifeStage stage = LifeStage.Adult, Sex sex = Sex.Male, OutfitTrade trade = OutfitTrade.Everyday) =>
+        PeoplesSprites.Get(new(id, people, biome, stage, sex, trade));
+
+    /// <summary>Apparence humaine historique, conservée pour les appels existants.</summary>
     public static ImageTexture[] Colonist(int id, bool elder = false, WoodlandBiome biome = WoodlandBiome.TemperatePlain)
     {
         var key = (id, elder, biome);

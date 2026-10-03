@@ -17,7 +17,7 @@ public static class Migration
     /// Chance maximale, par jour, qu'un voyageur (ou un petit groupe) se présente : celle d'une colonie
     /// au sommet de son attrait. Une colonie ordinaire en reçoit bien moins, une colonie pauvre presque aucun.
     /// </summary>
-    public const float MaxTravelerChancePerDay = 0.14f;
+    public const float MaxTravelerChancePerDay = 0.13f;
     private const float PairChance = 0.25f;
 
     /// <summary>On voyage peu en hiver.</summary>
@@ -123,7 +123,7 @@ public static class Migration
         SkillType specialty = Skills.All[world.Random.Next(Skills.All.Length)];
         for (int i = 0; i < size; i++)
         {
-            Sex sex = world.Random.Next(2) == 0 ? Sex.Female : Sex.Male;
+            Sex sex = Lifecycle.ChooseSex(colony, world.Random);
             string name = Names.Pick(sex, world.Random, taken);
             taken.Add(name);
             var traveler = new Colonist(world.NextColonistId(), name, sex, colony,

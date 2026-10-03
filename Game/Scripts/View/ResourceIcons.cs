@@ -14,6 +14,11 @@ public static class ResourceIcons
     public static ImageTexture Get(string resource)
     {
         if (Cache.TryGetValue(resource, out var texture)) return texture;
+
+        // Une icône fournie dans Game/Assets/icons/ prime sur le dessin en code (voir le cahier des charges).
+        if (AssetLibrary.Get($"icons/{resource.ToLowerInvariant()}.png") is { } provided)
+            return Cache[resource] = provided;
+
         var image = Image.CreateEmpty(16, 16, false, Image.Format.Rgba8);
         Color dark = Color.Color8(48, 52, 45);
         switch (resource)

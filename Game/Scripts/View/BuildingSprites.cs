@@ -17,7 +17,15 @@ public static class BuildingSprites
     {
         var key = (kind, biome);
         if (Textures.TryGetValue(key, out var texture)) return texture;
-        var art = new PixelArt(kind == "Dam" ? 32 : 64, kind == "Dam" ? 48 : 80);
+
+        // Une image fournie dans Game/Assets/buildings/ prime sur le dessin en code (voir le cahier des charges).
+        string file = kind == "DamSide" ? "dam_side" : kind.ToLowerInvariant();
+        string variant = biome.ToString().ToLowerInvariant();
+        if ((AssetLibrary.Get($"buildings/{file}_{variant}.png") ?? AssetLibrary.Get($"buildings/{file}.png")) is { } provided)
+            return Textures[key] = provided;
+
+        bool dam = kind is "Dam" or "DamSide";
+        var art = new PixelArt(dam ? 32 : 64, dam ? 48 : 80);
         switch (kind)
         {
             case "Kiln": Kiln(art, biome); break;
@@ -26,6 +34,7 @@ public static class BuildingSprites
             case "Mill": Mill(art, biome); break;
             case "Oven": Bakery(art, biome); break;
             case "Dam": Dam(art); break;
+            case "DamSide": SideDam(art); break;
             default: Cottage(art, biome); break;
         }
         return Textures[key] = art.Texture();
@@ -325,6 +334,25 @@ public static class BuildingSprites
             a.Dot(17 + i * 6, 61, C(252, 218, 151));
         }
         Sack(a, 7, 66); a.Line(58, 58, 58, 75, WoodLight); a.Oval(58, 56, 2, 3, C(207, 157, 89));
+    }
+
+    private static void SideDam(PixelArt a)
+    {
+        // Même vanne vue latéralement lorsque le courant traverse la carte d'est en ouest.
+        a.Polygon(Mortar, new(6, 15), new(24, 20), new(29, 44), new(12, 47));
+        Masonry(a, 8, 18, 13, 11, Stone, 5, 4);
+        Masonry(a, 12, 36, 16, 10, Stone, 6, 4);
+        a.Box(10, 29, 12, 8, Soot);
+        a.Box(10, 31, 13, 4, Color.Color8(92, 158, 157));
+        a.Line(9, 33, 15, 33, Color.Color8(188, 218, 199));
+        a.Box(19, 28, 5, 10, Wood); a.Box(19, 29, 1, 9, WoodLight);
+        foreach (int y in new[] { 30, 34 }) a.Box(20, y, 3, 1, Wood.Darkened(0.3f));
+        a.Line(7, 16, 23, 20, StoneLight); a.Line(12, 36, 28, 39, StoneLight);
+        Beam(a, 21, 10, 3, 19); Beam(a, 25, 24, 3, 19);
+        a.Line(22, 10, 27, 24, WoodLight); a.Line(23, 10, 28, 24, Wood);
+        a.Oval(22, 9, 4, 4, Ink); a.Oval(22, 9, 3, 3, WoodLight); a.Oval(22, 9, 1, 1, Soot);
+        a.Line(19, 9, 25, 9, Brass); a.Line(22, 6, 22, 12, Brass);
+        a.Box(22, 13, 1, 18, StoneLight);
     }
 
     private static void Dam(PixelArt a)

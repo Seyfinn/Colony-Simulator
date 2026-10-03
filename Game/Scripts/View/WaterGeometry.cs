@@ -22,9 +22,16 @@ public static class WaterGeometry
             streams.Add(next is { } to
                 ? new Stream(dx * 32 + 16, dy * 32 + 16, (to.X - sx) * 32, (to.Y - sy) * 32, map.GetFlow(sx, sy))
                 : new Stream(dx * 32 + 16, dy * 32 + 16, 0, 0, map.GetFlow(sx, sy)));
+            foreach (var (cx, cy) in CanalSteps)
+            {
+                int nx = sx + cx, ny = sy + cy;
+                if (map.InBounds(nx, ny) && map.IsCanalWet(nx, ny))
+                    streams.Add(new Stream(dx * 32 + 16, dy * 32 + 16, cx * 32, cy * 32, 0.3f));
+            }
         }
         return streams?.ToArray() ?? [];
     }
+    private static readonly (int X, int Y)[] CanalSteps = [(0, -1), (1, 0), (0, 1), (-1, 0)];
 
     public static (float Distance, Stream Stream) Nearest(Stream[] streams, float x, float y)
     {
