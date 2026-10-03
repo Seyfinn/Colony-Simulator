@@ -25,8 +25,8 @@ public static class MapGenerator
             map.SetGenerated(x, y, e, soil, flora, growth);
         }
 
-        foreach ((int x, int y) in Rivers.Generate(elevation, width, height, seed))
-            map.SetRiver(x, y);
+        foreach ((int x, int y, int downX, int downY) in Rivers.Generate(elevation, width, height, seed))
+            map.SetRiver(x, y, downX, downY);
         map.ComputeBanks();
         return map;
     }

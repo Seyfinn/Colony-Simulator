@@ -69,6 +69,15 @@ public sealed class LocalMap
     /// <summary>Distance (en cases) à l'eau en deçà de laquelle une terre est fertile.</summary>
     public const int BankReach = 2;
 
+    /// <summary>Niveau de l'eau retenue derrière un barrage (0 = case non inondée).</summary>
+    private readonly byte[] _floodLevel;
+
+    /// <summary>Pour chaque case de rivière, l'index de la case vers laquelle elle coule (-1 sinon).</summary>
+    private readonly int[] _downstream;
+
+    /// <summary>Débit relatif de la rivière sur chaque case : 1 au naturel, moins en aval d'un barrage.</summary>
+    private readonly float[] _flow;
+
     /// <summary>Canaux creusés par les colons : 0 = rien, 1 = fossé à sec, 2 = fossé où l'eau coule.</summary>
     private readonly byte[] _canal;
 
@@ -101,6 +110,11 @@ public sealed class LocalMap
         _bank = new bool[n];
         _canal = new byte[n];
         _irrigation = new byte[n];
+        _floodLevel = new byte[n];
+        _downstream = new int[n];
+        Array.Fill(_downstream, -1);
+        _flow = new float[n];
+        Array.Fill(_flow, 1f);
     }
 
     public bool InBounds(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
@@ -109,7 +123,57 @@ public sealed class LocalMap
 
     public int GetElevation(int x, int y) => _elevation[Index(x, y)];
 
-    public bool IsWater(int x, int y) => _originalElevation[Index(x, y)] <= WaterLevel;
+    /// <summary>Eau profonde, qu'on ne traverse pas : lac, mer, ou étendue retenue par un barrage.</summary>
+    public bool IsWater(int x, int y) => _originalElevation[Index(x, y)] <= WaterLevel || _floodLevel[Index(x, y)] != 0;
+
+    /// <summary>Cette case est noyée derrière un barrage.</summary>
+    public bool IsFlooded(int x, int y) => InBounds(x, y) && _floodLevel[Index(x, y)] != 0;
+
+    /// <summary>
+    /// Hauteur de la surface de l'eau sur cette case : celle de la retenue derrière un barrage, celle du sol
+    /// pour une rivière ou un canal en eau. Un canal ne peut être alimenté que par de l'eau au moins aussi haute que lui.
+    /// </summary>
+    public int WaterHeight(int x, int y) => IsFlooded(x, y) ? _floodLevel[Index(x, y)] : GetElevation(x, y);
+
+    /// <summary>Débit de la rivière sur cette case (1 au naturel).</summary>
+    public float GetFlow(int x, int y) => _flow[Index(x, y)];
+
+    /// <summary>La case de rivière vers laquelle l'eau coule depuis (x, y), ou null (embouchure, ou pas une rivière).</summary>
+    public (int X, int Y)? RiverDownstream(int x, int y)
+    {
+        int d = _downstream[Index(x, y)];
+        return d < 0 ? null : (d % Width, d / Width);
+    }
+
+    /// <summary>Les cases de rivière qui se jettent directement dans (x, y).</summary>
+    public IEnumerable<(int X, int Y)> RiverUpstream(int x, int y)
+    {
+        int self = Index(x, y);
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            if ((dx != 0 || dy != 0) && InBounds(x + dx, y + dy) && _downstream[Index(x + dx, y + dy)] == self)
+                yield return (x + dx, y + dy);
+    }
+
+    /// <summary>Un barrage retient l'eau : ces cases sont noyées jusqu'au niveau donné, la végétation y meurt et des poissons s'y installent.</summary>
+    public void Flood(IEnumerable<(int X, int Y)> tiles, int level)
+    {
+        foreach ((int x, int y) in tiles)
+        {
+            int i = Index(x, y);
+            _floodLevel[i] = (byte)level;
+            _flora[i] = FloraType.None;
+            _floraGrowth[i] = 0f;
+            _berries[i] = 0;
+            _canal[i] = 0;
+            _fish[i] = MaxFish;
+            TileChanged?.Invoke(x, y);
+        }
+        ComputeBanks();
+    }
+
+    /// <summary>Un barrage fait baisser le débit en aval.</summary>
+    public void ReduceFlow(int x, int y, float factor) => _flow[Index(x, y)] *= factor;
 
     /// <summary>Une rivière : de l'eau peu profonde, qui se traverse à pied.</summary>
     public bool IsRiver(int x, int y) => _river[Index(x, y)];
@@ -241,7 +305,7 @@ public sealed class LocalMap
         for (int x = 0; x < Width; x++)
         {
             int i = Index(x, y);
-            if (_fish[i] < MaxFish && (IsWater(x, y) || _river[i]) && Noise.Hash01(x, y, (int)day, Seed + 91) < fishChance)
+            if (_fish[i] < MaxFish && (IsWater(x, y) || _river[i]) && Noise.Hash01(x, y, (int)day, Seed + 91) < fishChance * _flow[i])
                 _fish[i]++;
 
             switch (_flora[i])
@@ -347,10 +411,11 @@ public sealed class LocalMap
         Noise.Fractal3D(x * 0.11f, y * 0.11f, level * 0.45f, Seed + 500, 3) > 0.64f;
 
     /// <summary>Utilisé par le générateur : trace une rivière sur la case (sans plante, poissonneuse).</summary>
-    internal void SetRiver(int x, int y)
+    internal void SetRiver(int x, int y, int downX, int downY)
     {
         int i = Index(x, y);
         _river[i] = true;
+        _downstream[i] = InBounds(downX, downY) ? Index(downX, downY) : -1;
         _flora[i] = FloraType.None;
         _floraGrowth[i] = 0f;
         _berries[i] = 0;

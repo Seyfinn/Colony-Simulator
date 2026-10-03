@@ -46,6 +46,8 @@ public sealed class Prayer
     public bool AutoApproved { get; internal set; }
 
     internal Action Apply { get; }
+
+    internal int CooldownDays { get; init; } = PrayerBook.RefusalCooldownDays;
 }
 
 /// <summary>
@@ -67,6 +69,7 @@ public sealed class PrayerBook(Colony colony)
     private int _nextId = 1;
     private readonly List<Prayer> _prayers = [];
     private readonly Dictionary<(DecisionKind Kind, string Subject), long> _blockedUntilTicks = [];
+    private readonly Dictionary<DecisionKind, long> _quietUntilTicks = [];
 
     /// <summary>Toutes les prières, des plus anciennes aux plus récentes.</summary>
     public IReadOnlyList<Prayer> All => _prayers;
@@ -83,14 +86,15 @@ public sealed class PrayerBook(Colony colony)
     /// La colonie soumet une décision. Renvoie la prière, ou null si la même est déjà en attente
     /// ou a été refusée récemment. Si le joueur accorde ce type d'office, la décision est exécutée tout de suite.
     /// </summary>
-    public Prayer? Ask(DecisionKind kind, string subject, string question, string reason, Action apply, GameClock clock)
+    /// <param name="cooldownDays">Jours sans reposer la question si elle est refusée (5 par défaut).</param>
+    public Prayer? Ask(DecisionKind kind, string subject, string question, string reason, Action apply, GameClock clock, int cooldownDays = RefusalCooldownDays)
     {
         if (_prayers.Any(p => p.Status == PrayerStatus.Pending && p.Kind == kind && p.Subject == subject))
             return null;
         if (_blockedUntilTicks.TryGetValue((kind, subject), out long until) && clock.Ticks < until)
             return null;
 
-        var prayer = new Prayer(_nextId++, colony, kind, subject, question, reason, clock.Ticks, apply);
+        var prayer = new Prayer(_nextId++, colony, kind, subject, question, reason, clock.Ticks, apply) { CooldownDays = cooldownDays };
         _prayers.Add(prayer);
 
         if (AutoApprove.Contains(kind))
@@ -103,6 +107,13 @@ public sealed class PrayerBook(Colony colony)
         Asked?.Invoke(prayer);
         return prayer;
     }
+
+    /// <summary>
+    /// Vrai si la colonie ne doit pas encore solliciter le joueur pour ce type de décision : une demande attend
+    /// sa réponse, ou un refus est trop récent. Évite de chercher une solution dont on ne pourra pas parler.
+    /// </summary>
+    public bool IsQuiet(DecisionKind kind, GameClock clock) =>
+        Pending.Any(p => p.Kind == kind) || (_quietUntilTicks.TryGetValue(kind, out long until) && clock.Ticks < until);
 
     /// <summary>Le joueur répond à une prière en attente.</summary>
     public void Answer(Prayer prayer, bool approve, GameClock clock)
@@ -129,7 +140,9 @@ public sealed class PrayerBook(Colony colony)
             return;
         }
 
-        _blockedUntilTicks[(prayer.Kind, prayer.Subject)] = clock.Ticks + RefusalCooldownDays * TimeConstants.TicksPerDay;
+        long until = clock.Ticks + prayer.CooldownDays * TimeConstants.TicksPerDay;
+        _blockedUntilTicks[(prayer.Kind, prayer.Subject)] = until;
+        _quietUntilTicks[prayer.Kind] = until;
         ShiftFaith(-RefusalFaithLoss);
         ColonyBrain.Say(colony, clock, "Notre prière est restée sans réponse favorable : la foi vacille.");
     }

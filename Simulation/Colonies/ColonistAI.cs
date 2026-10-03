@@ -816,7 +816,7 @@ public static class ColonistAI
             case ActivityKind.Build when activity.Building is { IsComplete: false } site:
                 site.Progress = MathF.Min(1f, site.Progress + BuildActionSeconds / site.WorkSeconds);
                 if (site.IsComplete)
-                    ColonyBrain.OnBuildingComplete(colonist.Colony, site, world.Clock);
+                    ColonyBrain.OnBuildingComplete(colonist.Colony, site, map, world.Clock);
                 break;
             case ActivityKind.Sow when Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow } plot:
                 plot.Stage = CropStage.Growing;

@@ -5,7 +5,7 @@ namespace GodColony.Simulation.Colonies;
 /// La charbonnière brûle du bois en charbon de bois, le bas fourneau tire du fer du minerai,
 /// la forge fait des outils de ce fer.
 /// </summary>
-public enum BuildingType { Hut, Kiln, Bloomery, Forge }
+public enum BuildingType { Hut, Kiln, Bloomery, Forge, Dam }
 
 /// <summary>
 /// Un bâtiment de la colonie, du chantier à l'achèvement. Tous font 2 × 2 cases ; ils coûtent du bois
@@ -30,19 +30,22 @@ public sealed class Building
     public BuildingType Type { get; }
 
     public bool IsHut => Type == BuildingType.Hut;
-    public bool IsWorkshop => Type != BuildingType.Hut;
+    public bool IsDam => Type == BuildingType.Dam;
+    public bool IsWorkshop => Type is BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge;
 
     /// <summary>Case en haut à gauche du bâtiment.</summary>
     public int X { get; }
     public int Y { get; }
-    public int Width => 2;
-    public int Height => 2;
+    /// <summary>Un barrage ne tient que sur une case de rivière ; les autres bâtiments font 2 × 2.</summary>
+    public int Width => IsDam ? 1 : 2;
+    public int Height => IsDam ? 1 : 2;
 
     public int WoodRequired => Type switch
     {
         BuildingType.Kiln => 8,
         BuildingType.Bloomery => 6,
         BuildingType.Forge => 10,
+        BuildingType.Dam => 16,
         _ => HutWood,
     };
 
@@ -51,6 +54,7 @@ public sealed class Building
     {
         BuildingType.Bloomery => 24,
         BuildingType.Forge => 12,
+        BuildingType.Dam => 30,
         _ => 0,
     };
 
@@ -59,6 +63,7 @@ public sealed class Building
         BuildingType.Kiln => 14f,
         BuildingType.Bloomery => 26f,
         BuildingType.Forge => 24f,
+        BuildingType.Dam => 40f,
         _ => HutWorkSeconds,
     };
 
@@ -138,6 +143,7 @@ public sealed class Building
         BuildingType.Kiln => "charbonnière",
         BuildingType.Bloomery => "bas fourneau",
         BuildingType.Forge => "forge",
+        BuildingType.Dam => "barrage",
         _ => "hutte",
     };
 }

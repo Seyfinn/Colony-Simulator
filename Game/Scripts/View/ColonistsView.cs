@@ -256,8 +256,45 @@ public partial class ColonistsView : Node2D
         DrawColoredPolygon([top + new Vector2(-3, -3), top + new Vector2(3, -3), top], ArtDirection.Cream);
     }
 
+    /// <summary>Un barrage tient sur une seule case de rivière : un mur de pierre et des pieux de bois (illustration provisoire).</summary>
+    private void DrawDam(Building dam)
+    {
+        var origin = new Vector2(dam.X, dam.Y) * Tile;
+        Color timber = Color.Color8(111, 77, 49), light = Color.Color8(172, 127, 78);
+        Color stone = Color.Color8(138, 148, 142), stoneLight = Color.Color8(190, 198, 187), stoneDark = Color.Color8(86, 99, 98);
+        if (!dam.IsComplete)
+        {
+            // Des pieux plantés au fil des travaux, et les pierres déjà apportées.
+            int posts = 1 + (int)(dam.Progress * 5);
+            for (int i = 0; i < posts && i < 6; i++)
+            {
+                DrawRect(new Rect2(origin + new Vector2(2 + i * 5, 6), new Vector2(3, 20)), timber);
+                DrawRect(new Rect2(origin + new Vector2(2 + i * 5, 6), new Vector2(1, 20)), light);
+            }
+            int rocks = dam.StoneDelivered * 6 / Math.Max(1, dam.StoneRequired);
+            for (int i = 0; i < rocks; i++)
+                DrawRect(new Rect2(origin + new Vector2(3 + i * 5, 26), new Vector2(4, 4)), stone);
+            return;
+        }
+        DrawGroundShadow(origin + new Vector2(16, 28), 17, 3, 0.25f);
+        DrawRect(new Rect2(origin + new Vector2(0, 10), new Vector2(Tile, 16)), stone);
+        DrawRect(new Rect2(origin + new Vector2(0, 10), new Vector2(Tile, 3)), stoneLight);
+        DrawRect(new Rect2(origin + new Vector2(0, 23), new Vector2(Tile, 3)), stoneDark);
+        foreach (int x in new[] { 3, 14, 25 })
+        {
+            DrawRect(new Rect2(origin + new Vector2(x, 4), new Vector2(4, 24)), timber);
+            DrawRect(new Rect2(origin + new Vector2(x, 4), new Vector2(1, 24)), light);
+        }
+        DrawRect(new Rect2(origin + new Vector2(1, 6), new Vector2(Tile - 2, 3)), timber);
+    }
+
     private void DrawBuilding(Building building)
     {
+        if (building.IsDam)
+        {
+            DrawDam(building);
+            return;
+        }
         var origin = new Vector2(building.X, building.Y) * Tile;
         var footprint = new Rect2(origin, new Vector2(building.Width, building.Height) * Tile);
         Vector2 basePoint = origin + new Vector2(0, footprint.Size.Y);

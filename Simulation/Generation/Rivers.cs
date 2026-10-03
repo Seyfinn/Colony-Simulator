@@ -26,12 +26,12 @@ public static class Rivers
         (1, 1, 1.41421356f), (1, -1, 1.41421356f), (-1, 1, 1.41421356f), (-1, -1, 1.41421356f),
     ];
 
-    /// <summary>Les cases de toutes les rivières, de la source à l'embouchure.</summary>
-    public static List<(int X, int Y)> Generate(int[] elevation, int width, int height, int seed)
+    /// <summary>Les cases de toutes les rivières, de la source à l'embouchure, avec la case vers laquelle chacune coule.</summary>
+    public static List<(int X, int Y, int DownX, int DownY)> Generate(int[] elevation, int width, int height, int seed)
     {
         var river = new bool[width * height];
         var sources = new List<(int X, int Y)>();
-        var tiles = new List<(int X, int Y)>();
+        var tiles = new List<(int X, int Y, int DownX, int DownY)>();
 
         for (int attempt = 0; attempt < SourceTries && sources.Count < RiverCount; attempt++)
         {
@@ -44,23 +44,26 @@ public static class Rivers
             if (sources.Any(s => Math.Max(Math.Abs(s.X - x), Math.Abs(s.Y - y)) < MinSourceSpacing))
                 continue;
 
-            List<(int X, int Y)>? path = Flow(elevation, river, width, height, x, y, seed + attempt);
+            List<(int X, int Y)>? path = Flow(elevation, river, width, height, x, y, seed + attempt, out (int X, int Y) mouth);
             if (path is null || path.Count < MinLength)
                 continue;
 
             sources.Add((x, y));
-            foreach ((int px, int py) in path)
+            for (int i = 0; i < path.Count; i++)
             {
+                (int px, int py) = path[i];
+                (int nx, int ny) = i + 1 < path.Count ? path[i + 1] : mouth;
                 river[py * width + px] = true;
-                tiles.Add((px, py));
+                tiles.Add((px, py, nx, ny));
             }
         }
         return tiles;
     }
 
     /// <summary>Le chemin le moins coûteux de la source jusqu'à l'eau, sans jamais remonter.</summary>
-    private static List<(int X, int Y)>? Flow(int[] elevation, bool[] river, int width, int height, int sourceX, int sourceY, int seed)
+    private static List<(int X, int Y)>? Flow(int[] elevation, bool[] river, int width, int height, int sourceX, int sourceY, int seed, out (int X, int Y) mouth)
     {
+        mouth = (-1, -1);
         int n = width * height;
         var cost = new float[n];
         var parent = new int[n];
@@ -79,7 +82,10 @@ public static class Rivers
 
             // Arrivée : un lac, la mer, ou une rivière déjà tracée (confluent).
             if (current != start && (elevation[current] <= LocalMap.WaterLevel || river[current]))
+            {
+                mouth = (current % width, current / width);
                 return Trace(parent, width, current, elevation);
+            }
 
             foreach ((int dx, int dy, float step) in Moves)
             {

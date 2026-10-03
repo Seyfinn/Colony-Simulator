@@ -102,6 +102,7 @@ public static class ColonyBrain
         if (PlanConstruction(colony, map, sensors, clock) || PlanWorkshop(colony, map, sensors, clock)
             || PlanCanal(colony, map, sensors, clock))
             sensors = Sense(colony, clock);
+        AskForDam(colony, map, sensors, clock);
         colony.Sensors = sensors;
 
         Dictionary<WorkSector, float> target = DecideShares(sensors);
@@ -229,6 +230,40 @@ public static class ColonyBrain
 
     private const float ComfortHousingLimit = 25f;
 
+    /// <summary>Jours sans reposer la question d'un barrage refusé : c'est un gros ouvrage, on n'insiste pas.</summary>
+    private const int DamRefusalCooldownDays = 20;
+
+    /// <summary>
+    /// Quand des champs manquent d'eau, la colonie envisage un barrage. Ce n'est pas elle qui décide : elle adresse
+    /// une prière au joueur (une seule à la fois) et, si elle est exaucée, ouvre le chantier.
+    /// </summary>
+    private static void AskForDam(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
+    {
+        if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || clock.Season == Season.Hiver
+            || colony.Fields.Count == 0 || colony.ConstructionSites.Any() || colony.Buildings.Any(b => b.IsDam)
+            || colony.Prayers.IsQuiet(DecisionKind.Dam, clock))
+            return;
+        if (!colony.Fields.Any(f => Irrigation.IrrigatedShare(map, f) < 0.5f))
+            return;
+        if (Hydrology.FindSite(map, colony) is not { } site)
+            return;
+
+        int x = site.X, y = site.Y;
+        int tiles = site.Reservoir.Tiles.Count;
+        colony.Prayers.Ask(DecisionKind.Dam, $"{x},{y}",
+            "Construire un barrage sur la rivière ?",
+            $"Nos champs manquent d'eau. Un barrage en ({x}, {y}) formerait en amont un lac de {tiles} cases : des poissons, des berges fertiles et de l'eau à portée de nos champs. " +
+            "La rivière coulerait moins fort en aval.",
+            () =>
+            {
+                if (Hydrology.FindReservoir(map, colony, x, y) is null)
+                    return;
+                Urbanism.PlanBuilding(map, colony, BuildingType.Dam, x, y);
+                Say(colony, clock, "Nous bâtissons un barrage sur la rivière.");
+            },
+            clock, DamRefusalCooldownDays);
+    }
+
     /// <summary>
     /// Étage 4 aussi : une fois tout le monde logé, la colonie creuse un canal vers un champ trop sec
     /// quand une rivière (ou un canal en eau) est plus haute que lui. Pas en hiver : le sol est gelé.
@@ -267,8 +302,16 @@ public static class ColonyBrain
         });
 
     /// <summary>Un bâtiment vient d'être achevé : des colons s'installent dans une hutte, un atelier se met au travail.</summary>
-    public static void OnBuildingComplete(Colony colony, Building building, GameClock clock)
+    public static void OnBuildingComplete(Colony colony, Building building, LocalMap map, GameClock clock)
     {
+        if (building.IsDam)
+        {
+            Reservoir? lake = Hydrology.CompleteDam(map, colony, building);
+            Say(colony, clock, lake is null
+                ? "Le barrage est achevé, mais l'eau ne monte pas : le terrain a changé."
+                : $"Le barrage est achevé : un lac de {lake.Tiles.Count} cases se forme en amont.");
+            return;
+        }
         if (building.IsWorkshop)
         {
             Say(colony, clock, building.Type == BuildingType.Bloomery
@@ -326,7 +369,7 @@ public static class ColonyBrain
 
         return new ColonySensors(foodDays, foodPressure, heatingPressure, woodTarget, woodPressure,
             homeless, housingPressure, hasSite, stonePressure, farmShare,
-            chain, colony.ConstructionSites.Any(b => b.IsWorkshop), colony.Buildings.Any(b => b.IsWorkshop && b.IsComplete), orePressure,
+            chain, colony.ConstructionSites.Any(b => !b.IsHut), colony.Buildings.Any(b => b.IsWorkshop && b.IsComplete), orePressure,
             colony.CanalsInProgress.Any());
     }
 

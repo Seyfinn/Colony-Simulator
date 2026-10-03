@@ -431,8 +431,8 @@ public partial class Hud : CanvasLayer
             ActivityKind.FetchMaterials => "Va chercher des matériaux pour le chantier",
             ActivityKind.SupplySite => "Apporte des matériaux au chantier",
             ActivityKind.Build => there
-                ? (activity.Building is { IsWorkshop: true } site
-                    ? $"Bâtit {(site.Type == BuildingType.Bloomery ? "un" : "une")} {Building.NameOf(site.Type)}"
+                ? (activity.Building is { IsHut: false } site
+                    ? $"Bâtit {(site.Type is BuildingType.Bloomery or BuildingType.Dam ? "un" : "une")} {Building.NameOf(site.Type)}"
                     : "Bâtit une hutte")
                 : "Part sur le chantier",
             ActivityKind.Dig => there ? "Creuse un canal" : "Part creuser le canal",

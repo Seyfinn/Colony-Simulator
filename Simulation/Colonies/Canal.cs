@@ -113,7 +113,8 @@ public static class Irrigation
         foreach ((int dx, int dy) in Steps)
         {
             int sx = x + dx, sy = y + dy;
-            if (map.InBounds(sx, sy) && (map.IsRiver(sx, sy) || map.IsCanalWet(sx, sy)) && map.GetElevation(sx, sy) >= map.GetElevation(x, y))
+            if (map.InBounds(sx, sy) && (map.IsRiver(sx, sy) || map.IsCanalWet(sx, sy) || map.IsFlooded(sx, sy))
+                && map.WaterHeight(sx, sy) >= map.GetElevation(x, y))
                 return true;
         }
         return false;

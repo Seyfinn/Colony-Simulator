@@ -42,6 +42,7 @@ public partial class Main : Node2D
     //   --speed=1|4|30         choisit la vitesse pour vérifier les ambiances
     //   --demo-quarry          creuse une carrière de démonstration
     //   --demo-prayer          soumet une prière factice ; --open-prayers ouvre le détail
+    //   --auto-dam / --focus-dam   accorde d'office les barrages / centre la caméra sur le barrage
     //   --zoom=N               règle le zoom de la caméra (0.2 montre presque toute la carte)
     //   --select-first         sélectionne le premier colon
     //   --focus-fields         centre la caméra sur le premier champ
@@ -113,6 +114,12 @@ public partial class Main : Node2D
                 _world.Colonies[0].Prayers.Ask(DecisionKind.Dam, "demo", "Construire un barrage sur la rivière ?",
                     "Nos champs manquent d'eau et le débit de la rivière est fort : un barrage formerait un lac en amont.", () => { }, _world.Clock);
             }
+            else if (arg == "--demo-dam")
+                Hydrology.BuildInstantly(_world.Map, _world.Colonies[0]);
+            else if (arg == "--auto-dam")
+                _world.Colonies[0].Prayers.AutoApprove.Add(DecisionKind.Dam);
+            else if (arg == "--focus-dam" && _world.Colonies[0].Buildings.Find(b => b.IsDam) is { } dam)
+                camera.Position = new Vector2(dam.X + 0.5f, dam.Y + 0.5f) * TerrainPainter.TileSize;
             else if (arg == "--open-prayers")
                 _prayerPanel.Open = true;
             else if (arg.StartsWith("--zoom="))
