@@ -15,6 +15,7 @@ public static class TimeConstants
     public const int SeasonsPerYear = 4;
     public const int DaysPerYear = DaysPerSeason * SeasonsPerYear;
     public const int TicksPerYear = TicksPerDay * DaysPerYear;
+    public const float TicksPerHour = TicksPerDay / 24f;
 }
 
 public sealed class GameClock
@@ -40,6 +41,12 @@ public sealed class GameClock
     public float TimeOfDay => Ticks % TimeConstants.TicksPerDay / (float)TimeConstants.TicksPerDay;
 
     public int Hour => (int)(TimeOfDay * 24);
+
+    /// <summary>Nombre de jours écoulés depuis le début du monde.</summary>
+    public long TotalDays => Ticks / TimeConstants.TicksPerDay;
+
+    public bool IsNight => Hour >= 22 || Hour < 6;
+    public bool IsEvening => Hour >= 19 && Hour < 22;
     public int Minute => (int)(TimeOfDay * 24 * 60) % 60;
 
     /// <summary>Luminosité du jour, de 0 (nuit noire) à 1 (plein jour). Le soleil se lève vers 6 h et se couche vers 20 h.</summary>

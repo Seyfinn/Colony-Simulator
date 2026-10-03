@@ -45,6 +45,10 @@ public sealed class LocalMap
     private readonly SoilType[] _soil;
     private readonly FloraType[] _flora;
     private readonly float[] _floraGrowth;
+    private readonly byte[] _berries;
+
+    /// <summary>Nombre maximal de baies sur un buisson ; il en repousse une par jour.</summary>
+    public const int MaxBerries = 3;
 
     /// <summary>Déclenché quand une case change d'aspect (minée, arbre coupé…).</summary>
     public event Action<int, int>? TileChanged;
@@ -60,6 +64,7 @@ public sealed class LocalMap
         _soil = new SoilType[n];
         _flora = new FloraType[n];
         _floraGrowth = new float[n];
+        _berries = new byte[n];
     }
 
     public bool InBounds(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
@@ -78,6 +83,61 @@ public sealed class LocalMap
 
     /// <summary>Croissance de la plante, de 0 (pousse) à 1 (adulte).</summary>
     public float GetFloraGrowth(int x, int y) => _floraGrowth[Index(x, y)];
+
+    public int GetBerries(int x, int y) => _berries[Index(x, y)];
+
+    /// <summary>Cueille toutes les baies d'un buisson et renvoie leur nombre.</summary>
+    public int HarvestBerries(int x, int y)
+    {
+        int i = Index(x, y);
+        int count = _berries[i];
+        if (count == 0)
+            return 0;
+        _berries[i] = 0;
+        TileChanged?.Invoke(x, y);
+        return count;
+    }
+
+    /// <summary>Retire la végétation d'une case (pour dégager un campement, par exemple).</summary>
+    public void ClearFlora(int x, int y)
+    {
+        int i = Index(x, y);
+        if (_flora[i] == FloraType.None)
+            return;
+        _flora[i] = FloraType.None;
+        _berries[i] = 0;
+        TileChanged?.Invoke(x, y);
+    }
+
+    /// <summary>Appelé à chaque nouveau jour : une baie repousse sur chaque buisson.</summary>
+    public void DailyUpdate()
+    {
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            int i = Index(x, y);
+            if (_flora[i] == FloraType.Bush && _berries[i] < MaxBerries)
+            {
+                _berries[i]++;
+                TileChanged?.Invoke(x, y);
+            }
+        }
+    }
+
+    // --- Déplacements ---
+
+    /// <summary>On peut marcher partout sauf dans l'eau.</summary>
+    public bool IsWalkable(int x, int y) => InBounds(x, y) && !IsWater(x, y);
+
+    /// <summary>
+    /// Peut-on passer d'une case voisine à l'autre ? Une marche d'un niveau se monte ou se descend,
+    /// une falaise de deux niveaux ou plus est infranchissable.
+    /// </summary>
+    public bool CanStep(int fromX, int fromY, int toX, int toY) =>
+        IsWalkable(toX, toY) && Math.Abs(GetElevation(toX, toY) - GetElevation(fromX, fromY)) <= 1;
+
+    /// <summary>Coût de traversée d'une case : on avance moins vite en forêt.</summary>
+    public float MoveCost(int x, int y) => GetFlora(x, y) == FloraType.Tree ? 1.6f : 1f;
 
     /// <summary>Matière de la couche numéro <paramref name="level"/> (0 = tout en bas) de la case.</summary>
     public Material MaterialAt(int x, int y, int level)
@@ -141,5 +201,6 @@ public sealed class LocalMap
         _soil[i] = soil;
         _flora[i] = flora;
         _floraGrowth[i] = growth;
+        _berries[i] = flora == FloraType.Bush ? (byte)MaxBerries : (byte)0;
     }
 }

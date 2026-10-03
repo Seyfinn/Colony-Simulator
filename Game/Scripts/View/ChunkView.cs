@@ -71,7 +71,9 @@ public partial class ChunkView : Node2D
             if (flora == FloraType.None)
                 continue;
 
-            Texture2D sprite = flora == FloraType.Tree ? SpriteFactory.Tree : SpriteFactory.Bush;
+            Texture2D sprite = flora == FloraType.Tree ? SpriteFactory.Tree
+                : _map.GetBerries(x, y) > 0 ? SpriteFactory.Bush
+                : SpriteFactory.BushEmpty;
             float scale = 0.55f + 0.45f * _map.GetFloraGrowth(x, y);
             Vector2 size = sprite.GetSize() * scale;
             // Le pied de la plante est posé au bas de la case, légèrement décalé pour éviter un effet de grille.
