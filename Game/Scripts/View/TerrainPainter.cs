@@ -35,7 +35,8 @@ public static class TerrainPainter
     {
         int height = map.GetElevation(x, y);
         // Une rivière se dessine comme de l'eau (rives, pas de falaise) ; seule sa teinte, plus claire, change.
-        bool river = map.IsRiver(x, y);
+        bool river = map.GetSurface(x, y) == Surface.River; // rivière ou canal en eau
+        bool ditch = map.IsCanal(x, y) && !map.IsCanalWet(x, y); // fossé creusé, encore à sec
         Surface surface = Structural(map.GetSurface(x, y));
         int north = Elevation(map, x, y - 1, height), south = Elevation(map, x, y + 1, height);
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
@@ -63,7 +64,7 @@ public static class TerrainPainter
             }
             else
             {
-                color = river ? RiverPixel(wx, wy) : GroundPixel(surface, wx, wy, height);
+                color = river ? RiverPixel(wx, wy) : ditch ? DitchPixel(wx, wy) : GroundPixel(surface, wx, wy, height);
                 int edge = 2 + (int)(Noise.Value2D(wx / 9f, wy / 9f, 51) * 4);
                 int distance = TileSize;
                 Surface adjacent = surface;
@@ -153,6 +154,10 @@ public static class TerrainPainter
 
     /// <summary>Pour les bords et les falaises, la rivière compte comme de l'eau.</summary>
     private static Surface Structural(Surface surface) => surface == Surface.River ? Surface.Water : surface;
+
+    /// <summary>Fossé à sec : de la terre brune, plus sombre que le sol alentour.</summary>
+    private static Rgb DitchPixel(int x, int y) =>
+        Tint(Blend(Loam, Clay, 0.2f + 0.2f * Noise.Value2D(x / 14f, y / 14f, 73)), 0.78f);
 
     /// <summary>Eau peu profonde, claire, avec de petites rides dans le sens du courant (en attendant les vraies illustrations).</summary>
     private static Rgb RiverPixel(int x, int y)

@@ -18,6 +18,8 @@ public static class ColonistAI
     private const int FoodPerFish = 2;
     private const float ChopSeconds = 4f;
     private const float MineSeconds = 5f;
+    /// <summary>Creuser une case de canal à la bêche : plus long que d'abattre un arbre.</summary>
+    private const float DigSeconds = 4f;
     private const float DeliverSeconds = 0.5f;
     private const float RelaxSeconds = 6f;
 
@@ -492,7 +494,7 @@ public static class ColonistAI
             .OrderBy(b => Math.Abs(b.X - colonist.TileX) + Math.Abs(b.Y - colonist.TileY))
             .FirstOrDefault(b => b.HasAllMaterials || b.MaterialToFetch(colony.Stock) is not null);
         if (site is null)
-            return false;
+            return TryDig(colonist, world);
 
         if (!site.HasAllMaterials)
         {
@@ -504,6 +506,18 @@ public static class ColonistAI
         (int bx, int by) = site.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
         float seconds = BuildActionSeconds / WorkSpeed(colonist, SkillType.Construction);
         return TryStart(colonist, world, new Activity(ActivityKind.Build, bx, by, Ticks(seconds)) { Building = site });
+    }
+
+    /// <summary>Creuse la prochaine case d'un canal en chantier, en commençant par la source : l'eau avance à mesure.</summary>
+    private static bool TryDig(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        float seconds = DigSeconds / WorkSpeed(colonist, SkillType.Construction);
+        foreach (Canal canal in colony.CanalsInProgress)
+            foreach ((int x, int y) in canal.TilesToDig().Where(t => !colony.Reserved.Contains(t)).Take(TargetsToTry))
+                if (TryStart(colonist, world, new Activity(ActivityKind.Dig, x, y, Ticks(seconds))))
+                    return true;
+        return false;
     }
 
     private static bool TrySupplySite(Colonist colonist, WorldState world, Building site)
@@ -578,7 +592,14 @@ public static class ColonistAI
         // Filet de sécurité : coincé dans un trou ou sur un plateau isolé par la carrière,
         // on escalade une marche de deux niveaux pour rentrer au camp.
         if (path is null && (IsStranded(colonist, world.Map) || IsGoingHome(activity)))
-            return (world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, maxStep: 2), 2);
+        {
+            // D'abord une marche de deux niveaux ; si le colon est enfermé dans un trou plus profond, il escalade
+            // la paroi à mains nues plutôt que d'y mourir de faim.
+            foreach (int step in new[] { 2, LocalMap.MaxElevation })
+                if (world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, maxStep: step) is { } rescue)
+                    return (rescue, step);
+            return (null, 2);
+        }
         return (path, 1);
     }
 
@@ -731,6 +752,7 @@ public static class ColonistAI
         ActivityKind.Fish => world.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Chop => world.Map.CanChop(activity.TargetX, activity.TargetY),
         ActivityKind.Mine => WorkSites.CanMineFrom(world.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
+        ActivityKind.Dig => !world.Map.IsCanal(activity.TargetX, activity.TargetY),
         ActivityKind.Craft => activity.Building is { IsComplete: true } workshop && TakeCraftInputs(colonist, activity, workshop),
         ActivityKind.FetchMaterials => TakeMaterials(colonist, activity.Building!),
         ActivityKind.SupplySite => activity.Building is { IsComplete: false } site && colonist.CarryingTo == site,
@@ -816,6 +838,9 @@ public static class ColonistAI
                     ColonyBrain.OnFirstProduct(colonist.Colony, recipe.Output, world.Clock);
                 break;
             }
+            case ActivityKind.Dig when !map.IsCanal(activity.TargetX, activity.TargetY):
+                FinishDig(colonist, world, activity);
+                break;
             case ActivityKind.Chat when activity.Partner is { } partner:
             {
                 Relations.Outcome outcome = Relations.Converse(colonist, partner, world.Random);
@@ -841,6 +866,23 @@ public static class ColonistAI
         }
         colonist.Needs.Clamp();
         EndActivity(colonist);
+    }
+
+    /// <summary>Une case de canal est creusée ; si le fossé est continu depuis la source, l'eau avance.</summary>
+    private static void FinishDig(Colonist colonist, WorldState world, Activity activity)
+    {
+        Colony colony = colonist.Colony;
+        LocalMap map = world.Map;
+        map.DigCanal(activity.TargetX, activity.TargetY);
+        colony.Labor.RecordCanalTile(LaborLedger.TicksToHours(world.Clock.Ticks - activity.CommittedAtTicks));
+
+        Canal? canal = colony.Canals.FirstOrDefault(c => c.Contains(activity.TargetX, activity.TargetY));
+        if (canal is null)
+            return;
+        foreach ((int x, int y) in canal.MarkDug(activity.TargetX, activity.TargetY))
+            map.FillCanal(x, y);
+        if (canal.IsComplete)
+            ColonyBrain.OnCanalComplete(colony, canal, map, world.Clock);
     }
 
     private static void Cancel(Colonist colonist) => EndActivity(colonist);

@@ -16,7 +16,11 @@ public static class Farming
     public const int BankBonus = 1;
 
     /// <summary>Ce que rapporte la parcelle de cette case : plus sur les berges.</summary>
-    public static int YieldAt(LocalMap map, int x, int y) => PlotYield + (map.IsFertileBank(x, y) ? BankBonus : 0);
+    public static int YieldAt(LocalMap map, int x, int y) =>
+        PlotYield + (map.IsFertileBank(x, y) ? BankBonus : 0) + (map.IsIrrigated(x, y) ? IrrigationBonus : 0);
+
+    /// <summary>Céréales de plus pour une parcelle qu'un canal irrigue.</summary>
+    public const int IrrigationBonus = 2;
 
     /// <summary>Jours de pousse entre le semis et la maturité (la pousse s'arrête en hiver).</summary>
     public const float GrowthDays = 7f;
@@ -90,7 +94,8 @@ public static class Farming
         for (int ty = y; ty < y + Field.Size; ty++)
         for (int tx = x; tx < x + Field.Size; tx++)
         {
-            if (!map.IsWalkable(tx, ty) || map.IsRiver(tx, ty) || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
+            if (!map.IsWalkable(tx, ty) || map.IsWaterway(tx, ty) || colony.CanalTiles.Contains((tx, ty))
+                || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
                 return null;
             if (map.GetSoil(tx, ty) == SoilType.Sand)
                 return null;

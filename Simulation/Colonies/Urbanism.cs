@@ -50,7 +50,8 @@ public static class Urbanism
         for (int ty = y; ty < y + 2; ty++)
         for (int tx = x; tx < x + 2; tx++)
         {
-            if (!map.IsWalkable(tx, ty) || map.IsRiver(tx, ty) || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
+            if (!map.IsWalkable(tx, ty) || map.IsWaterway(tx, ty) || colony.CanalTiles.Contains((tx, ty))
+                || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
                 return false;
             if (map.GetFlora(tx, ty) is FloraType.Tree or FloraType.Bush)
                 return false;
@@ -99,7 +100,7 @@ public static class Urbanism
 
     private static bool IsGraveTile(LocalMap map, Colony colony, int x, int y)
     {
-        if (!map.InBounds(x, y) || !map.IsWalkable(x, y) || map.IsRiver(x, y) || map.IsMountain(x, y) || map.GetFlora(x, y) != FloraType.None)
+        if (!map.InBounds(x, y) || !map.IsWalkable(x, y) || map.IsWaterway(x, y) || colony.CanalTiles.Contains((x, y)) || map.IsMountain(x, y) || map.GetFlora(x, y) != FloraType.None)
             return false;
         foreach (Grave grave in colony.Graves)
             if (Math.Max(Math.Abs(grave.X - x), Math.Abs(grave.Y - y)) < 2)

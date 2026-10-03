@@ -18,6 +18,7 @@ public sealed class LaborLedger
     private readonly Dictionary<ResourceType, double> _hoursPerUnit = [];
     private readonly Dictionary<ResourceType, (double Hours, int Units)> _totals = [];
     private double? _hoursPerHut;
+    private double? _hoursPerCanalTile;
 
     /// <summary>Enregistre une récolte : tant d'heures de travail ont produit tant d'unités.</summary>
     public void Record(ResourceType type, double workerHours, int units)
@@ -35,6 +36,13 @@ public sealed class LaborLedger
 
     public void RecordHut(double workerHours) =>
         _hoursPerHut = _hoursPerHut is { } previous ? previous + (workerHours - previous) * 0.5 : workerHours;
+
+    /// <summary>Un tronçon de canal creusé : tant d'heures de travail, trajet compris.</summary>
+    public void RecordCanalTile(double workerHours) =>
+        _hoursPerCanalTile = _hoursPerCanalTile is { } previous ? previous + (workerHours - previous) * 0.1 : workerHours;
+
+    /// <summary>Heures de travail pour creuser une case de canal (null tant qu'on n'en a pas creusé).</summary>
+    public double? HoursPerCanalTile => _hoursPerCanalTile;
 
     /// <summary>Heures de travail par unité, selon les conditions récentes (null tant que rien n'a été produit).</summary>
     public double? HoursPerUnit(ResourceType type) => _hoursPerUnit.TryGetValue(type, out double value) ? value : null;

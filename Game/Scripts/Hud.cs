@@ -435,6 +435,7 @@ public partial class Hud : CanvasLayer
                     ? $"Bâtit {(site.Type == BuildingType.Bloomery ? "un" : "une")} {Building.NameOf(site.Type)}"
                     : "Bâtit une hutte")
                 : "Part sur le chantier",
+            ActivityKind.Dig => there ? "Creuse un canal" : "Part creuser le canal",
             ActivityKind.Craft => activity.Building is { } workshop
                 ? $"{(there ? "Travaille" : "Part")} {(workshop.Type == BuildingType.Bloomery ? "au" : "à la")} {Building.NameOf(workshop.Type)}"
                 : "Travaille à l'atelier",

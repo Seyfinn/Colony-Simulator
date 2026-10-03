@@ -106,7 +106,7 @@ public static class ColonyFounder
         int elevation = map.GetElevation(x, y);
         for (int dy = -2; dy <= 2; dy++)
         for (int dx = -2; dx <= 2; dx++)
-            if (!map.IsWalkable(x + dx, y + dy) || map.IsRiver(x + dx, y + dy) || map.GetElevation(x + dx, y + dy) != elevation)
+            if (!map.IsWalkable(x + dx, y + dy) || map.IsWaterway(x + dx, y + dy) || map.GetElevation(x + dx, y + dy) != elevation)
                 return false;
         return true;
     }

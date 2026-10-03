@@ -25,6 +25,8 @@ public enum ActivityKind
     Harvest,
     /// <summary>Travailler dans un atelier : charbonnière, bas fourneau ou forge.</summary>
     Craft,
+    /// <summary>Creuser une case de canal d'irrigation.</summary>
+    Dig,
     /// <summary>Aller bavarder avec un autre colon.</summary>
     Chat,
     /// <summary>Un voyageur marche jusqu'au camp pour se joindre à la colonie.</summary>
@@ -82,7 +84,7 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Fish => SkillType.Fishing,
         ActivityKind.Chop => SkillType.Woodcutting,
         ActivityKind.Mine => SkillType.Mining,
-        ActivityKind.Build => SkillType.Construction,
+        ActivityKind.Build or ActivityKind.Dig => SkillType.Construction,
         ActivityKind.Craft => SkillType.Smithing,
         ActivityKind.Sow or ActivityKind.Harvest => SkillType.Farming,
         _ => null,
@@ -91,5 +93,5 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     /// <summary>Cette action réserve-t-elle sa case cible (pour éviter que deux colons visent le même arbre) ?</summary>
     public bool ReservesTarget =>
         Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine
-            or ActivityKind.Sow or ActivityKind.Harvest;
+            or ActivityKind.Sow or ActivityKind.Harvest or ActivityKind.Dig;
 }

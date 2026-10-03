@@ -17,7 +17,8 @@ public sealed record ColonySensors(
     ChainDemand Chain,
     bool HasWorkshopSite,
     bool WorkshopsReady,
-    float OrePressure)
+    float OrePressure,
+    bool CanalWork)
 {
     /// <summary>Étage 1 de la pyramide : nourriture et chauffage.</summary>
     public bool SurvivalAssured => Math.Max(FoodPressure, HeatingPressure) <= 60f;
@@ -95,7 +96,8 @@ public static class ColonyBrain
     {
         PlanFields(colony, map, clock);
         ColonySensors sensors = Sense(colony, clock);
-        if (PlanConstruction(colony, map, sensors, clock) || PlanWorkshop(colony, map, sensors, clock))
+        if (PlanConstruction(colony, map, sensors, clock) || PlanWorkshop(colony, map, sensors, clock)
+            || PlanCanal(colony, map, sensors, clock))
             sensors = Sense(colony, clock);
         colony.Sensors = sensors;
 
@@ -218,6 +220,34 @@ public static class ColonyBrain
 
     private const float ComfortHousingLimit = 25f;
 
+    /// <summary>
+    /// Étage 4 aussi : une fois tout le monde logé, la colonie creuse un canal vers un champ trop sec
+    /// quand une rivière (ou un canal en eau) est plus haute que lui. Pas en hiver : le sol est gelé.
+    /// </summary>
+    private static bool PlanCanal(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
+    {
+        if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || clock.Season == Season.Hiver
+            || colony.Fields.Count == 0 || colony.CanalsInProgress.Any())
+            return false;
+        if (Irrigation.PlanBest(map, colony) is not { } canal)
+            return false;
+
+        colony.Canals.Add(canal);
+        foreach ((int x, int y) in canal.Tiles)
+            colony.CanalTiles.Add((x, y));
+        Say(colony, clock, $"Nos champs manquent d'eau et une rivière coule plus haut : nous creusons un canal de {canal.Tiles.Count} cases.");
+        return true;
+    }
+
+    /// <summary>Le dernier tronçon est creusé : l'eau arrive au champ.</summary>
+    internal static void OnCanalComplete(Colony colony, Canal canal, LocalMap map, GameClock clock)
+    {
+        int irrigated = canal.Target.Plots.Count(p => map.IsIrrigated(p.X, p.Y));
+        Say(colony, clock, irrigated > 0
+            ? $"Le canal est achevé : l'eau arrive au champ, {irrigated} parcelles sont irriguées."
+            : "Le canal est achevé, mais l'eau n'atteint pas les parcelles.");
+    }
+
     /// <summary>Premier charbon, premier fer, premier outil : la colonie le remarque.</summary>
     internal static void OnFirstProduct(Colony colony, ResourceType product, GameClock clock) =>
         Say(colony, clock, product switch
@@ -287,7 +317,8 @@ public static class ColonyBrain
 
         return new ColonySensors(foodDays, foodPressure, heatingPressure, woodTarget, woodPressure,
             homeless, housingPressure, hasSite, stonePressure, farmShare,
-            chain, colony.ConstructionSites.Any(b => b.IsWorkshop), colony.Buildings.Any(b => b.IsWorkshop && b.IsComplete), orePressure);
+            chain, colony.ConstructionSites.Any(b => b.IsWorkshop), colony.Buildings.Any(b => b.IsWorkshop && b.IsComplete), orePressure,
+            colony.CanalsInProgress.Any());
     }
 
     /// <summary>
@@ -299,9 +330,9 @@ public static class ColonyBrain
         float food = sensors.FoodPressure / 100f * MaxFoodShare;
         float farm = sensors.FarmShare;
         float wood = sensors.WoodPressure / 100f * MaxWoodShare;
-        // Un chantier d'atelier mobilise des bras même quand tout le monde est déjà logé.
-        float construction = sensors.SurvivalAssured && sensors.HasConstructionSite
-            ? Math.Max(sensors.HasWorkshopSite ? 0.5f : 0.1f, sensors.HousingPressure / 100f) * MaxConstructionShare
+        // Un chantier d'atelier ou de canal mobilise des bras même quand tout le monde est déjà logé.
+        float construction = sensors.SurvivalAssured && (sensors.HasConstructionSite || sensors.CanalWork)
+            ? Math.Max(sensors.HasWorkshopSite || sensors.CanalWork ? 0.5f : 0.1f, sensors.HousingPressure / 100f) * MaxConstructionShare
             : 0f;
         bool comfortAssured = sensors.SurvivalAssured && sensors.HousingPressure <= ComfortHousingLimit;
         float stone = comfortAssured ? sensors.StonePressure / 100f * MaxStoneShare : 0f;
@@ -488,6 +519,8 @@ public static class ColonyBrain
         Add(ResourceType.Tools, "outil");
         if (labor.HoursPerHut is { } hut)
             parts.Add($"hutte {hut:0} h");
+        if (labor.HoursPerCanalTile is { } canal)
+            parts.Add($"canal {canal:0.0} h par case");
         return parts.Count == 0 ? "pas encore mesuré" : string.Join(", ", parts);
     }
 

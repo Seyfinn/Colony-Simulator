@@ -54,6 +54,15 @@ public sealed class Colony
     /// <summary>Les bâtiments de la colonie, achevés ou en chantier.</summary>
     public List<Building> Buildings { get; } = [];
 
+    /// <summary>Les canaux d'irrigation, achevés ou en chantier.</summary>
+    public List<Canal> Canals { get; } = [];
+
+    /// <summary>Toutes les cases de canal prévues (creusées ou non) : on n'y bâtit rien et on n'y sème pas.</summary>
+    internal HashSet<(int X, int Y)> CanalTiles { get; } = [];
+
+    /// <summary>Les canaux qu'il reste à creuser.</summary>
+    public IEnumerable<Canal> CanalsInProgress => Canals.Where(c => !c.IsComplete);
+
     /// <summary>Les ateliers achevés d'un type donné.</summary>
     public IEnumerable<Building> Workshops(BuildingType type) => Buildings.Where(b => b.Type == type && b.IsComplete);
 

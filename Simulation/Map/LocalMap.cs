@@ -69,6 +69,18 @@ public sealed class LocalMap
     /// <summary>Distance (en cases) à l'eau en deçà de laquelle une terre est fertile.</summary>
     public const int BankReach = 2;
 
+    /// <summary>Canaux creusés par les colons : 0 = rien, 1 = fossé à sec, 2 = fossé où l'eau coule.</summary>
+    private readonly byte[] _canal;
+
+    /// <summary>Pour chaque case, le nombre de canaux en eau à portée : au-dessus de 0, la terre est irriguée.</summary>
+    private readonly byte[] _irrigation;
+
+    /// <summary>Distance (en cases) jusqu'où un canal en eau irrigue les terres.</summary>
+    public const int IrrigationReach = 3;
+
+    /// <summary>On avance un peu moins vite dans un canal en eau.</summary>
+    public const float CanalMoveCost = 1.5f;
+
     /// <summary>Déclenché quand une case change d'aspect (minée, arbre coupé…).</summary>
     public event Action<int, int>? TileChanged;
 
@@ -87,6 +99,8 @@ public sealed class LocalMap
         _fish = new byte[n];
         _river = new bool[n];
         _bank = new bool[n];
+        _canal = new byte[n];
+        _irrigation = new byte[n];
     }
 
     public bool InBounds(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
@@ -99,6 +113,46 @@ public sealed class LocalMap
 
     /// <summary>Une rivière : de l'eau peu profonde, qui se traverse à pied.</summary>
     public bool IsRiver(int x, int y) => _river[Index(x, y)];
+
+    /// <summary>Un canal creusé sur cette case, à sec ou en eau.</summary>
+    public bool IsCanal(int x, int y) => _canal[Index(x, y)] != 0;
+
+    public bool IsCanalWet(int x, int y) => _canal[Index(x, y)] == 2;
+
+    /// <summary>Rivière ou canal : on n'y bâtit rien et on n'y sème pas.</summary>
+    public bool IsWaterway(int x, int y) => IsRiver(x, y) || IsCanal(x, y);
+
+    /// <summary>Un canal en eau coule à moins de trois cases : la terre est irriguée.</summary>
+    public bool IsIrrigated(int x, int y) => InBounds(x, y) && _irrigation[Index(x, y)] > 0;
+
+    /// <summary>Les colons creusent un fossé : la végétation de la case est arrachée.</summary>
+    public void DigCanal(int x, int y)
+    {
+        int i = Index(x, y);
+        _canal[i] = 1;
+        _flora[i] = FloraType.None;
+        _berries[i] = 0;
+        TileChanged?.Invoke(x, y);
+    }
+
+    /// <summary>L'eau arrive jusqu'à cette case du canal : elle irrigue les terres alentour.</summary>
+    public void FillCanal(int x, int y)
+    {
+        int i = Index(x, y);
+        if (_canal[i] != 1)
+            return;
+        _canal[i] = 2;
+        for (int dy = -IrrigationReach; dy <= IrrigationReach; dy++)
+        for (int dx = -IrrigationReach; dx <= IrrigationReach; dx++)
+        {
+            if (!InBounds(x + dx, y + dy))
+                continue;
+            int j = Index(x + dx, y + dy);
+            if (_irrigation[j] < byte.MaxValue)
+                _irrigation[j]++;
+        }
+        TileChanged?.Invoke(x, y);
+    }
 
     /// <summary>De l'eau, profonde (lac, mer) ou courante (rivière).</summary>
     public bool HasWater(int x, int y) => IsWater(x, y) || IsRiver(x, y);
@@ -228,7 +282,8 @@ public sealed class LocalMap
         IsWalkable(toX, toY) && Math.Abs(GetElevation(toX, toY) - GetElevation(fromX, fromY)) <= maxStep;
 
     /// <summary>Coût de traversée d'une case : on avance moins vite en forêt.</summary>
-    public float MoveCost(int x, int y) => GetFlora(x, y) == FloraType.Tree ? 1.6f : IsRiver(x, y) ? RiverMoveCost : 1f;
+    public float MoveCost(int x, int y) =>
+        GetFlora(x, y) == FloraType.Tree ? 1.6f : IsRiver(x, y) ? RiverMoveCost : IsCanalWet(x, y) ? CanalMoveCost : 1f;
 
     /// <summary>On avance deux fois moins vite dans l'eau d'une rivière.</summary>
     public const float RiverMoveCost = 2f;
@@ -249,8 +304,10 @@ public sealed class LocalMap
     {
         if (IsWater(x, y))
             return Surface.Water;
-        if (IsRiver(x, y))
+        if (IsRiver(x, y) || IsCanalWet(x, y))
             return Surface.River;
+        if (IsCanal(x, y))
+            return Surface.Dirt;
         return TopMaterial(x, y) switch
         {
             Material.Stone => Surface.Stone,
