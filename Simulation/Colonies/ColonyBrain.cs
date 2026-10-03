@@ -119,9 +119,31 @@ public static class ColonyBrain
             : $"Pour assurer la nourriture de l'année, nous ouvrons {fields} ({plots} parcelles en tout).");
     }
 
+    /// <summary>
+    /// Une amitié ou une rivalité vient de naître : la colonie le remarque (mais pas plus d'une fois par demi-journée,
+    /// pour ne pas noyer le reste de ses pensées).
+    /// </summary>
+    internal static void OnConversation(Colony colony, Colonist a, Colonist b, Relations.Outcome outcome, GameClock clock) =>
+        OnRelationChange(colony, a, b, outcome.Change, clock);
+
+    internal static void OnRelationChange(Colony colony, Colonist a, Colonist b, Relations.Change change, GameClock clock)
+    {
+        if (change == Relations.Change.None || clock.Ticks - colony.LastSocialThoughtTicks < SocialThoughtIntervalTicks)
+            return;
+        colony.LastSocialThoughtTicks = clock.Ticks;
+        Say(colony, clock, change == Relations.Change.BecameFriends
+            ? $"{a.Name} et {b.Name} sont devenus amis."
+            : $"{a.Name} et {b.Name} ne peuvent plus se voir : une rivalité est née.");
+    }
+
+    private static readonly long SocialThoughtIntervalTicks = (long)(12 * TimeConstants.TicksPerHour);
+
     /// <summary>Le gel de l'hiver détruit ce qui n'a pas été moissonné.</summary>
     public static void OnDayStart(Colony colony, GameClock clock)
     {
+        Relations.FadeDaily(colony);
+        foreach ((Colonist a, Colonist c, Relations.Change change) in Relations.Cohabit(colony))
+            OnRelationChange(colony, a, c, change, clock);
         int lost = Farming.DailyUpdate(colony, clock);
         if (lost > 0)
             Say(colony, clock, $"Le gel a détruit {lost} parcelles de céréales qui n'avaient pas été moissonnées !");

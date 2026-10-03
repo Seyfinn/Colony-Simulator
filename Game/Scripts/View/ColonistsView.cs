@@ -78,6 +78,15 @@ public partial class ColonistsView : Node2D
                     DrawColonist(colonist);
             foreach (Colonist traveler in colony.Transients)
                 DrawColonist(traveler);
+
+            // Une bulle au-dessus de ceux qui bavardent, et de ceux à qui l'on parle.
+            foreach (Colonist chatter in colony.Members)
+            {
+                if (chatter.Activity is not { Kind: ActivityKind.Chat, Started: true, Partner: { } partner })
+                    continue;
+                DrawBubble(chatter);
+                DrawBubble(partner);
+            }
         }
     }
 
@@ -100,6 +109,16 @@ public partial class ColonistsView : Node2D
             for (int column = 0; column < 4; column++)
                 DrawRect(new Rect2(origin + new Vector2(1 + column * 4, 4 + row * 5 - height + 3), new Vector2(2, height)), stalk);
         }
+    }
+
+    private void DrawBubble(Colonist colonist)
+    {
+        Vector2 head = DisplayPosition(colonist) + new Vector2(0, -17);
+        DrawRect(new Rect2(head + new Vector2(-5, -6), new Vector2(11, 6)), new Color(1, 1, 1, 0.92f));
+        DrawRect(new Rect2(head + new Vector2(-1, 0), new Vector2(3, 2)), new Color(1, 1, 1, 0.92f));
+        int dots = 1 + (int)(_time * 3) % 3;
+        for (int i = 0; i < dots; i++)
+            DrawRect(new Rect2(head + new Vector2(-3 + i * 3, -4), new Vector2(2, 2)), new Color(0.2f, 0.2f, 0.25f));
     }
 
     private void DrawBuilding(Building building)

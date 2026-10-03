@@ -22,7 +22,9 @@ public partial class Hud : CanvasLayer
     private Label _colonistActivity = null!;
     private Label _colonistSector = null!;
     private Label _colonistSkills = null!;
-    private NeedBar _food = null!, _rest = null!, _leisure = null!, _mood = null!;
+    private Label _colonistTraits = null!;
+    private Label _colonistRelations = null!;
+    private NeedBar _food = null!, _rest = null!, _leisure = null!, _social = null!, _comfort = null!, _mood = null!;
 
     public override void _Ready()
     {
@@ -68,7 +70,15 @@ public partial class Hud : CanvasLayer
         _food = new NeedBar(colonistColumn, "Nourriture");
         _rest = new NeedBar(colonistColumn, "Repos");
         _leisure = new NeedBar(colonistColumn, "Détente");
+        _social = new NeedBar(colonistColumn, "Compagnie");
+        _comfort = new NeedBar(colonistColumn, "Confort");
         _mood = new NeedBar(colonistColumn, "Humeur");
+        _colonistTraits = AddLabel(colonistColumn, 13, new Color(0.85f, 0.8f, 0.95f));
+        _colonistTraits.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _colonistTraits.CustomMinimumSize = new Vector2(260, 0);
+        _colonistRelations = AddLabel(colonistColumn, 13, new Color(0.95f, 0.8f, 0.85f));
+        _colonistRelations.AutowrapMode = TextServer.AutowrapMode.WordSmart;
+        _colonistRelations.CustomMinimumSize = new Vector2(260, 0);
         _colonistSector = AddLabel(colonistColumn, 14, new Color(0.95f, 0.85f, 0.6f));
         _colonistSkills = AddLabel(colonistColumn, 13, new Color(0.8f, 0.8f, 0.8f));
     }
@@ -110,6 +120,8 @@ public partial class Hud : CanvasLayer
         _food.Set(colonist.Needs.Food);
         _rest.Set(colonist.Needs.Rest);
         _leisure.Set(colonist.Needs.Leisure);
+        _social.Set(colonist.Needs.Social);
+        _comfort.Set(colonist.Needs.Comfort);
         _mood.Set(colonist.Needs.Mood);
         _colonistSector.Text = colonist.Transit switch
         {
@@ -118,6 +130,14 @@ public partial class Hud : CanvasLayer
             _ => $"Affecté à : {SectorName(colonist.Sector)}\n" +
                  (colonist.Home is null ? "Dort à la belle étoile" : "Dort dans une hutte"),
         };
+
+        // Personnalité : les traits marquants en toutes lettres ; amis et rivaux par leur nom.
+        string traits = string.Join(", ", colonist.Personality.NotableTraits(colonist.Sex));
+        _colonistTraits.Text = traits.Length == 0 ? "Caractère : modéré en tout" : "Caractère : " + traits;
+        string friends = string.Join(", ", colonist.FriendsIn(colonist.Colony).Select(f => f.Name).Take(4));
+        string rivals = string.Join(", ", colonist.RivalsIn(colonist.Colony).Select(f => f.Name).Take(3));
+        _colonistRelations.Text = (friends.Length > 0 ? "Amis : " + friends : "Pas encore d'ami")
+                                  + (rivals.Length > 0 ? "\nRivaux : " + rivals : "");
 
         // Niveau et talent : « ★ » = très doué (apprend vite), « · » = peu doué.
         var lines = new System.Text.StringBuilder("Compétences\n");
@@ -170,6 +190,7 @@ public partial class Hud : CanvasLayer
             ActivityKind.FetchMaterials => "Va chercher du bois pour le chantier",
             ActivityKind.SupplySite => "Apporte du bois au chantier",
             ActivityKind.Build => there ? "Bâtit une hutte" : "Part sur le chantier",
+            ActivityKind.Chat => there ? "Bavarde" : "Va rejoindre quelqu'un pour bavarder",
             ActivityKind.Sow => there ? "Sème" : "Part semer",
             ActivityKind.Harvest => there ? "Moissonne" : "Part moissonner",
             ActivityKind.Arrive => "Marche vers la colonie",

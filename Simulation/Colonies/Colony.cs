@@ -69,6 +69,9 @@ public sealed class Colony
     /// </summary>
     public List<Colonist> Transients { get; } = [];
 
+    /// <summary>Dernière fois qu'une amitié ou une rivalité a été notée dans les pensées.</summary>
+    internal long LastSocialThoughtTicks { get; set; } = long.MinValue / 2;
+
     /// <summary>Dernier jour où l'on a dû refuser un voyageur (pour ne pas radoter dans les pensées).</summary>
     internal long LastRefusalDay { get; set; } = -100;
 

@@ -173,7 +173,9 @@ public class MigrationTests(ITestOutputHelper output)
         unhappy.Needs.Food = 0f;
         unhappy.Needs.Rest = 0.1f;
         unhappy.Needs.Leisure = 0f;
-        unhappy.UnhappyHours = Migration.UnhappyHoursBeforeLeaving - 1;
+        unhappy.Needs.Social = 0f;
+        unhappy.Needs.Comfort = 0f;
+        unhappy.UnhappyHours = Migration.UnhappyHoursBeforeLeaving * 2; // même un enraciné a atteint sa limite
 
         Migration.Hourly(world, colony);
 

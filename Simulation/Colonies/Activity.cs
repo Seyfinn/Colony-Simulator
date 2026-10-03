@@ -23,6 +23,8 @@ public enum ActivityKind
     Sow,
     /// <summary>Moissonner une parcelle mûre.</summary>
     Harvest,
+    /// <summary>Aller bavarder avec un autre colon.</summary>
+    Chat,
     /// <summary>Un voyageur marche jusqu'au camp pour se joindre à la colonie.</summary>
     Arrive,
     /// <summary>Un colon malheureux quitte la colonie pour de bon.</summary>
@@ -43,6 +45,9 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     /// <summary>Où le colon se tient pour agir. Par défaut, sur la cible elle-même.</summary>
     public int StandX { get; init; } = targetX;
     public int StandY { get; init; } = targetY;
+
+    /// <summary>L'interlocuteur, pour une conversation.</summary>
+    public Colonist? Partner { get; init; }
 
     /// <summary>Le chantier concerné, pour les activités de construction.</summary>
     public Building? Building { get; init; }

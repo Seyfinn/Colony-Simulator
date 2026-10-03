@@ -33,6 +33,16 @@ public static class ColonistAI
     private const float SleepRecoveryPerHour = 0.12f;
     private const float BoredomPerHour = 0.03f;
     private const float RelaxRecoveryPerHour = 0.3f;
+    private const float SocialLossPerHour = 0.02f;
+    private const float ComfortChangePerHour = 0.25f;
+
+    // Conversations : on va rejoindre quelqu'un, on bavarde quelques secondes, chacun y gagne de la compagnie.
+    private const float ChatSeconds = 3.5f;
+    private const float ChatSearchRadius = 25f;
+    private const float ChatMaxGap = 4f;
+    private const float ChatSocialGain = 0.4f;
+    private const float FriendChatBonus = 0.15f;
+    private const float QuarrelSocialGain = 0.1f;
 
     private const float ColdSleepFactor = 0.6f;
     private const float ShelterSleepFactor = 1.2f;
@@ -53,6 +63,8 @@ public static class ColonistAI
         colonist.PrevX = colonist.X;
         colonist.PrevY = colonist.Y;
         UpdateNeeds(colonist, world);
+        if (colonist.ChatCooldownTicks > 0)
+            colonist.ChatCooldownTicks--;
 
         // À bout de forces, il s'endort là où il est.
         if (colonist.Needs.Rest <= 0f && colonist.Activity?.Kind != ActivityKind.Sleep)
@@ -166,8 +178,21 @@ public static class ColonistAI
         if (colonist.Activity is { Kind: ActivityKind.Relax, Started: true })
             needs.Leisure += RelaxRecoveryPerHour * hour;
         else if (!colonist.IsSleeping)
-            needs.Leisure -= BoredomPerHour * hour;
+            needs.Leisure -= BoredomPerHour * colonist.Personality.BoredomFactor * hour;
+
+        if (!colonist.IsSleeping)
+            needs.Social -= SocialLossPerHour * colonist.Personality.LonelinessFactor * hour;
+        needs.Comfort += (ComfortTarget(colonist, world) - needs.Comfort) * ComfortChangePerHour * hour;
         needs.Clamp();
+    }
+
+    /// <summary>Le confort visé : un toit, de la chaleur (un feu allumé en saison froide), et un peu plus à l'abri l'hiver.</summary>
+    private static float ComfortTarget(Colonist colonist, WorldState world)
+    {
+        bool cold = ColonyBrain.IsColdSeason(world.Clock.Season);
+        bool warm = !cold || colonist.Colony.FireLit;
+        bool housed = colonist.Home is not null;
+        return 0.2f + (housed ? 0.4f : 0f) + (warm ? 0.3f : 0f) + (housed && cold ? 0.1f : 0f);
     }
 
     /// <summary>Choisit la prochaine activité, du besoin le plus pressant au travail.</summary>
@@ -209,6 +234,14 @@ public static class ColonistAI
             && StartNearCamp(colonist, world, ActivityKind.Deliver, DeliverSeconds))
             return;
 
+        // Besoin de compagnie : les sociables en cherchent plus tôt, les solitaires se contentent de peu.
+        // Les conversations ont lieu le soir et pendant le temps libre, sauf si la solitude devient pesante.
+        float socialThreshold = 0.75f - 0.2f * colonist.Personality[Axis.Sociabilite];
+        bool leisureTime = colonist.Sector == WorkSector.Free || clock.Hour >= 17;
+        if (needs.Social < socialThreshold && (leisureTime || needs.Social < 0.2f) && !clock.IsNight
+            && colonist.ChatCooldownTicks <= 0 && TryChat(colonist, world))
+            return;
+
         if ((needs.Leisure < 0.3f || (clock.IsEvening && needs.Leisure < 0.8f))
             && StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds))
             return;
@@ -228,6 +261,45 @@ public static class ColonistAI
             return;
 
         Wander(colonist, world);
+    }
+
+    /// <summary>
+    /// Va bavarder avec quelqu'un : on préfère ses amis et les gens proches, on évite ses rivaux.
+    /// </summary>
+    private static bool TryChat(Colonist colonist, WorldState world)
+    {
+        var candidates = new List<(Colonist Colonist, float Weight)>();
+        foreach (Colonist other in colonist.Colony.Members)
+        {
+            if (other == colonist || other.IsSleeping || other.Transit != TransitState.None)
+                continue;
+            float affinity = Relations.Affinity(colonist, other);
+            float distance = MathF.Sqrt((other.X - colonist.X) * (other.X - colonist.X) + (other.Y - colonist.Y) * (other.Y - colonist.Y));
+            if (distance > ChatSearchRadius || affinity <= Relations.RivalThreshold)
+                continue;
+
+            // On va plutôt vers ses amis, vers ceux dont le caractère nous plaît, et vers ceux qui sont proches.
+            float attraction = 0.3f + 2f * MathF.Max(0f, Personality.Compatibility(colonist.Personality, other.Personality) - 0.3f);
+            candidates.Add((other, MathF.Exp(affinity / 30f) * attraction / (1f + distance / 10f)));
+        }
+
+        if (candidates.Count > 0)
+        {
+            float roll = world.Random.NextSingle() * candidates.Sum(c => c.Weight);
+            foreach ((Colonist other, float weight) in candidates)
+            {
+                roll -= weight;
+                if (roll > 0f)
+                    continue;
+                if (TryStart(colonist, world, new Activity(ActivityKind.Chat, other.TileX, other.TileY, Ticks(ChatSeconds)) { Partner = other }))
+                    return true;
+                break;
+            }
+        }
+
+        // Personne à qui parler : on réessaiera plus tard.
+        colonist.ChatCooldownTicks = (int)TimeConstants.TicksPerHour;
+        return false;
     }
 
     /// <summary>Travaille d'abord dans son secteur ; s'il n'y a rien à y faire, aide dans les autres secteurs actifs.</summary>
@@ -275,7 +347,7 @@ public static class ColonistAI
     /// <summary>Cherche le buisson chargé de baies le plus proche, que personne d'autre n'a réservé.</summary>
     private static bool TryForage(Colonist colonist, WorldState world, ActivityKind kind, int centerX, int centerY)
     {
-        float seconds = ForageSeconds / colonist.Skills.WorkSpeed(SkillType.Foraging);
+        float seconds = ForageSeconds / WorkSpeed(colonist, SkillType.Foraging);
         return NearestBushes(world.Map, colonist.Colony, centerX, centerY)
             .Take(TargetsToTry)
             .Any(b => TryStart(colonist, world, new Activity(kind, b.X, b.Y, Ticks(seconds))));
@@ -291,11 +363,11 @@ public static class ColonistAI
         LocalMap map = world.Map;
         var options = new List<(Activity Activity, float Food, float WorkSeconds)>();
 
-        float forageSeconds = ForageSeconds / colonist.Skills.WorkSpeed(SkillType.Foraging);
+        float forageSeconds = ForageSeconds / WorkSpeed(colonist, SkillType.Foraging);
         foreach ((int x, int y) in NearestBushes(map, colony, colony.CampX, colony.CampY).Take(TargetsToTry))
             options.Add((new Activity(ActivityKind.Forage, x, y, Ticks(forageSeconds)), map.GetBerries(x, y), forageSeconds));
 
-        float fishSeconds = FishSeconds / colonist.Skills.WorkSpeed(SkillType.Fishing);
+        float fishSeconds = FishSeconds / WorkSpeed(colonist, SkillType.Fishing);
         foreach ((int wx, int wy, int sx, int sy) in WorkSites.FishingSpots(map, colony).Take(TargetsToTry))
             options.Add((new Activity(ActivityKind.Fish, wx, wy, Ticks(fishSeconds)) { StandX = sx, StandY = sy }, FoodPerFish, fishSeconds));
 
@@ -324,7 +396,7 @@ public static class ColonistAI
     private static bool TryFarm(Colonist colonist, WorldState world)
     {
         Colony colony = colonist.Colony;
-        float speed = colonist.Skills.WorkSpeed(SkillType.Farming);
+        float speed = WorkSpeed(colonist, SkillType.Farming);
 
         foreach (FieldPlot plot in NearestPlots(colony, colonist, CropStage.Ripe).Take(TargetsToTry))
             if (TryStart(colonist, world, new Activity(ActivityKind.Harvest, plot.X, plot.Y, Ticks(Farming.HarvestSeconds / speed))))
@@ -336,6 +408,10 @@ public static class ColonistAI
                     return true;
         return false;
     }
+
+    /// <summary>Vitesse de travail : l'habileté du métier, modulée par l'ardeur du colon.</summary>
+    private static float WorkSpeed(Colonist colonist, SkillType skill) =>
+        colonist.Skills.WorkSpeed(skill) * colonist.Personality.WorkFactor;
 
     private static IEnumerable<FieldPlot> NearestPlots(Colony colony, Colonist colonist, CropStage stage) =>
         Farming.Plots(colony)
@@ -376,7 +452,7 @@ public static class ColonistAI
         }
 
         (int bx, int by) = site.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
-        float seconds = BuildActionSeconds / colonist.Skills.WorkSpeed(SkillType.Construction);
+        float seconds = BuildActionSeconds / WorkSpeed(colonist, SkillType.Construction);
         return TryStart(colonist, world, new Activity(ActivityKind.Build, bx, by, Ticks(seconds)) { Building = site });
     }
 
@@ -388,7 +464,7 @@ public static class ColonistAI
 
     private static bool TryChop(Colonist colonist, WorldState world)
     {
-        float seconds = ChopSeconds / colonist.Skills.WorkSpeed(SkillType.Woodcutting);
+        float seconds = ChopSeconds / WorkSpeed(colonist, SkillType.Woodcutting);
         return WorkSites.TreesToChop(world.Map, colonist.Colony)
             .Take(TargetsToTry)
             .Any(t => TryStart(colonist, world, new Activity(ActivityKind.Chop, t.X, t.Y, Ticks(seconds))));
@@ -396,7 +472,7 @@ public static class ColonistAI
 
     private static bool TryMine(Colonist colonist, WorldState world)
     {
-        float seconds = MineSeconds / colonist.Skills.WorkSpeed(SkillType.Mining);
+        float seconds = MineSeconds / WorkSpeed(colonist, SkillType.Mining);
         return WorkSites.RocksToMine(world.Map, colonist.Colony)
             .Take(TargetsToTry)
             .Any(r => TryStart(colonist, world,
@@ -544,6 +620,9 @@ public static class ColonistAI
 
             if (!CanBegin(colonist, world, activity))
             {
+                // L'interlocuteur est parti ailleurs : on réessaiera dans une heure.
+                if (activity.Kind == ActivityKind.Chat)
+                    colonist.ChatCooldownTicks = (int)TimeConstants.TicksPerHour;
                 Cancel(colonist);
                 return;
             }
@@ -552,7 +631,7 @@ public static class ColonistAI
 
         activity.ElapsedTicks++;
         if (activity.Skill is { } skill)
-            colonist.Skills.Practice(skill, 1f / TimeConstants.TicksPerSecond);
+            colonist.Skills.Practice(skill, colonist.Personality.LearningFactor / TimeConstants.TicksPerSecond);
 
         Needs needs = colonist.Needs;
         bool done = activity.Kind == ActivityKind.Sleep
@@ -568,6 +647,8 @@ public static class ColonistAI
     private static bool CanBegin(Colonist colonist, WorldState world, Activity activity) => activity.Kind switch
     {
         ActivityKind.Eat => colonist.Colony.Stock.TryTakeMeal(),
+        ActivityKind.Chat => activity.Partner is { Transit: TransitState.None, IsSleeping: false } partner
+                             && MathF.Abs(partner.X - colonist.X) + MathF.Abs(partner.Y - colonist.Y) <= ChatMaxGap,
         ActivityKind.Sow => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow }
                             && Farming.IsSowingSeason(world.Clock.Season),
         ActivityKind.Harvest => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Ripe },
@@ -637,6 +718,17 @@ public static class ColonistAI
                 plot.Growth = 0f;
                 colonist.Carrying = (ResourceType.Grain, Farming.PlotYield);
                 break;
+            case ActivityKind.Chat when activity.Partner is { } partner:
+            {
+                Relations.Outcome outcome = Relations.Converse(colonist, partner, world.Random);
+                float gain = outcome.Dispute ? QuarrelSocialGain
+                    : ChatSocialGain + (Relations.Affinity(colonist, partner) >= Relations.FriendThreshold ? FriendChatBonus : 0f);
+                colonist.Needs.Social += gain;
+                partner.Needs.Social += gain;
+                partner.Needs.Clamp();
+                ColonyBrain.OnConversation(colonist.Colony, colonist, partner, outcome, world.Clock);
+                break;
+            }
             case ActivityKind.Fish when map.CatchFish(activity.TargetX, activity.TargetY):
                 colonist.Carrying = (ResourceType.Food, FoodPerFish);
                 break;

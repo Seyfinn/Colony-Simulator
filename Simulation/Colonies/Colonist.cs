@@ -20,6 +20,19 @@ public sealed class Colonist
 
     public Skills Skills { get; }
 
+    public Personality Personality { get; init; } = Personality.Neutral;
+
+    /// <summary>Affinité avec chaque autre colon (par identifiant), de -100 à +100.</summary>
+    internal Dictionary<int, float> Affinities { get; } = [];
+    internal HashSet<int> Friends { get; } = [];
+    internal HashSet<int> Rivals { get; } = [];
+
+    public IEnumerable<Colonist> FriendsIn(Colony colony) => colony.Members.Where(m => Friends.Contains(m.Id));
+    public IEnumerable<Colonist> RivalsIn(Colony colony) => colony.Members.Where(m => Rivals.Contains(m.Id));
+
+    /// <summary>Temps à attendre avant de chercher à nouveau de la compagnie, après une tentative ratée.</summary>
+    internal int ChatCooldownTicks { get; set; }
+
     /// <summary>Le secteur auquel la colonie l'a affecté. Il y travaille en priorité, sans y être limité.</summary>
     public WorkSector Sector { get; internal set; }
 

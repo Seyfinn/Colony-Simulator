@@ -33,10 +33,15 @@ public static class ColonyFounder
             Sex sex = i % 2 == 0 ? Sex.Female : Sex.Male;
             (int x, int y) = colony.GatherSpots[random.Next(colony.GatherSpots.Count)];
             string colonistName = Names.Pick(sex, random, colony.Members.Select(m => m.Name));
-            var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random), x + 0.5f, y + 0.5f);
+            var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random), x + 0.5f, y + 0.5f)
+            {
+                Personality = Personality.Random(random),
+            };
             colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Rest = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Leisure = 0.6f + 0.35f * random.NextSingle();
+            colonist.Needs.Social = 0.6f + 0.35f * random.NextSingle();
+            colonist.Needs.Comfort = 0.5f;
             colony.Members.Add(colonist);
         }
         colony.AssignSectors();
