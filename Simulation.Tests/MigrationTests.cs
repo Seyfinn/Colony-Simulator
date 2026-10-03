@@ -48,6 +48,42 @@ public class MigrationTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Plus_la_colonie_est_prospere_plus_elle_attire_de_voyageurs()
+    {
+        var world = new WorldState(12345, startingColonists: 6, migration: false);
+        Colony colony = world.Colonies[0];
+        BuildHut(world, colony);
+
+        Set(colony, ResourceType.Food, 0);
+        Set(colony, ResourceType.Wood, 0);
+        float poor = Migration.TravelerChancePerDay(colony, world.Clock);
+
+        Set(colony, ResourceType.Food, 6 * 6);
+        Set(colony, ResourceType.Wood, 20);
+        float modest = Migration.TravelerChancePerDay(colony, world.Clock);
+
+        Set(colony, ResourceType.Food, 500);
+        Set(colony, ResourceType.Wood, 300);
+        Set(colony, ResourceType.Stone, 300);
+        float rich = Migration.TravelerChancePerDay(colony, world.Clock);
+
+        output.WriteLine($"Chance par jour : pauvre {poor:P0}, modeste {modest:P0}, prospère {rich:P0}");
+        Assert.True(poor < modest && modest < rich);
+        Assert.True(poor < 0.15f, "Un stock vide attire peu de monde (et la faim ferait vite chuter l’humeur).");
+        Assert.InRange(rich, 0.3f, Migration.MaxTravelerChancePerDay);
+
+        // Des colons malheureux font fuir les voyageurs, même dans l'abondance.
+        foreach (Colonist colonist in colony.Members)
+        {
+            colonist.Needs.Food = 0.1f;
+            colonist.Needs.Rest = 0.2f;
+            colonist.Needs.Leisure = 0.1f;
+        }
+        Assert.True(Migration.TravelerChancePerDay(colony, world.Clock) < rich / 2);
+        Assert.Equal(0, Migration.Welcome(world, colony, 1));
+    }
+
+    [Fact]
     public void Un_voyageur_est_refuse_quand_les_reserves_sont_vides()
     {
         var world = new WorldState(12345, startingColonists: 6, migration: false);

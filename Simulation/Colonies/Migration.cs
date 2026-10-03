@@ -13,9 +13,27 @@ public static class Migration
     /// <summary>Heure de la journée où un voyageur peut se présenter.</summary>
     public const int ArrivalHour = 7;
 
-    /// <summary>Chance qu'un voyageur (ou un petit groupe) se présente un jour donné ; moitié moins en hiver.</summary>
-    public const float TravelerChancePerDay = 0.45f;
+    /// <summary>
+    /// Chance maximale, par jour, qu'un voyageur (ou un petit groupe) se présente : celle d'une colonie
+    /// au sommet de son attrait. Une colonie ordinaire en reçoit bien moins, une colonie pauvre presque aucun.
+    /// </summary>
+    public const float MaxTravelerChancePerDay = 0.8f;
     private const float PairChance = 0.25f;
+
+    /// <summary>On voyage peu en hiver.</summary>
+    private const float WinterTravelFactor = 0.5f;
+
+    // Ce qui fait l'attrait d'une colonie, et son poids dans la note finale.
+    private const float MoodWeight = 0.4f;
+    private const float FoodWeight = 0.3f;
+    private const float HousingWeight = 0.15f;
+    private const float WealthWeight = 0.15f;
+
+    /// <summary>Réserves de nourriture (en jours) à partir desquelles la colonie est « bien nourrie » aux yeux d'un voyageur.</summary>
+    private const float PlentifulFoodDays = 8f;
+
+    /// <summary>Matières (bois, pierre, minerai) par colon à partir desquelles la colonie est « riche ».</summary>
+    private const float WealthyMaterialsPerColonist = 15f;
 
     /// <summary>Sous ce stock de nourriture (en jours de réserve), la colonie n'ose pas prendre une bouche de plus.</summary>
     public const float MinFoodDaysToWelcome = 3f;
@@ -34,11 +52,37 @@ public static class Migration
 
     private const int EntryAttempts = 12;
 
+    /// <summary>
+    /// L'attrait de la colonie aux yeux d'un voyageur, de 0 à 1 : humeur de ses habitants, nourriture en réserve,
+    /// toits disponibles et richesse en matériaux.
+    /// </summary>
+    public static float Attractiveness(Colony colony, GameClock clock)
+    {
+        ColonySensors sensors = ColonyBrain.Sense(colony, clock);
+        int population = Math.Max(1, colony.Members.Count);
+
+        float mood = Math.Clamp((colony.AverageMood - MinMoodToAttract) / 0.4f, 0f, 1f);
+        float food = Math.Clamp((sensors.FoodDays - MinFoodDaysToWelcome) / (PlentifulFoodDays - MinFoodDaysToWelcome), 0f, 1f);
+        float housing = 1f - Math.Clamp(sensors.Homeless / (float)Building.HutCapacity, 0f, 1f);
+        float materials = colony.Stock.Get(ResourceType.Wood) + colony.Stock.Get(ResourceType.Stone) + 2f * colony.Stock.Get(ResourceType.IronOre);
+        float wealth = Math.Clamp(materials / population / WealthyMaterialsPerColonist, 0f, 1f);
+
+        return MoodWeight * mood + FoodWeight * food + HousingWeight * housing + WealthWeight * wealth;
+    }
+
+    /// <summary>La chance qu'un voyageur se présente ce jour-là : elle croît avec l'attrait de la colonie.</summary>
+    public static float TravelerChancePerDay(Colony colony, GameClock clock)
+    {
+        float seasonFactor = clock.Season == Season.Hiver ? WinterTravelFactor : 1f;
+        float attractiveness = Attractiveness(colony, clock);
+        // Au carré : un attrait moyen n'attire qu'un voyageur de temps en temps, seuls les sommets font venir du monde.
+        return MaxTravelerChancePerDay * attractiveness * attractiveness * seasonFactor;
+    }
+
     /// <summary>Chaque matin, un voyageur peut se présenter à la colonie.</summary>
     public static void Daily(WorldState world, Colony colony)
     {
-        float chance = TravelerChancePerDay * (world.Clock.Season == Season.Hiver ? 0.5f : 1f);
-        if (world.Random.NextSingle() >= chance)
+        if (world.Random.NextSingle() >= TravelerChancePerDay(colony, world.Clock))
             return;
         int size = world.Random.NextSingle() < PairChance ? 2 : 1;
         Welcome(world, colony, size);

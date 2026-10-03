@@ -214,7 +214,7 @@ public partial class Main : Node2D
         Stockpile stock = colony.Stock;
         int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
         string population = arriving > 0 ? $"{colony.Members.Count} colons (+{arriving} en route)" : $"{colony.Members.Count} colons";
-        _hud.SetColony($"{colony.Name}  ·  {population}  ·  humeur {colony.AverageMood * 100:0} %  ·  " +
+        _hud.SetColony($"{colony.Name}  ·  {population}  ·  humeur {colony.AverageMood * 100:0} %  ·  attrait {Migration.Attractiveness(colony, clock) * 100:0} %  ·  " +
                        $"nourriture {stock.Get(ResourceType.Food)}  ·  bois {stock.Get(ResourceType.Wood)}  ·  " +
                        $"pierre {stock.Get(ResourceType.Stone)}  ·  minerai de fer {stock.Get(ResourceType.IronOre)}");
 
