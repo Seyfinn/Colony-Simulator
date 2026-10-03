@@ -1,5 +1,9 @@
 # Validation graphique T-001 — 2026-10-03
 
+## T-011 — crépuscule rose
+
+`crepuscule_rose.png` : capture en jeu à 19 h 40, avec `--advance-hours=11.5 --zoom=1.5`. Teinte rose légèrement mauve du soir, halo moins intense et rayons assortis. Build sans erreur ni avertissement ; capture inspectée.
+
 ## Extension T-001-D — diagonales
 
 - `t001_diagonales_retenue.png` : nouvelle capture avec les mêmes options de barrage et de caméra que T-001 ; les coudes artificiels sont remplacés par les segments diagonaux réels.

@@ -73,9 +73,11 @@ public partial class DayNightAmbience : Node2D
         if (!_initialized || !_profile.Detailed) return;
         Vector2 size = GetViewportRect().Size;
         float dawn = _profile.Dawn, day = _profile.Day, dusk = _profile.Dusk, night = _profile.Night;
-        float warmth = dawn * 0.16f + day * 0.06f + dusk * 0.2f;
+        float warmth = dawn * 0.16f + day * 0.06f + dusk * 0.14f;
+        Color sunsetGlow = new Color(1, 0.79f + day * 0.12f, 0.5f + day * 0.2f, warmth)
+            .Lerp(new Color(1, 0.78f, 0.92f, warmth), dusk);
         Glow(new Rect2(-size.X * 0.4f, -size.Y * 0.7f, size.X * 1.4f, size.Y * 1.8f),
-            new Color(1, 0.79f + day * 0.12f, 0.5f + day * 0.2f, warmth));
+            sunsetGlow);
         Glow(new Rect2(size.X * 0.45f, -size.Y * 0.65f, size.X, size.Y * 1.6f),
             new Color(0.58f, 0.73f, 1, night * 0.075f));
 
@@ -87,7 +89,7 @@ public partial class DayNightAmbience : Node2D
             DrawColoredPolygon([
                 new Vector2(x + drift, 0), new Vector2(x + 38 + drift, 0),
                 new Vector2(x + size.X * 0.43f + 115, size.Y), new Vector2(x + size.X * 0.43f, size.Y)],
-                new Color(1, 0.9f - dusk * 0.1f, 0.64f, rays));
+                new Color(1, 0.9f, 0.64f, rays).Lerp(new Color(1, 0.84f, 0.94f, rays), dusk));
         }
 
         // Brume basse de l'aube : nappes larges, lente dérive, faible opacité.

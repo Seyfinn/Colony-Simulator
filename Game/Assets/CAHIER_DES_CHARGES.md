@@ -165,6 +165,8 @@ la marge sert aux outils et aux capes). Ancrage : milieu du bord bas.
 Arbres, buissons, souches (`flora/`), parcelles de champ, tombes, feu de camp animé (4 images), bulles de discussion, symbole de sommeil.
 Ils n'ont pas de PNG demandé pour l'instant ; les noms ci-dessus s'appliquent si on décide de les livrer.
 
+Ambiance du crépuscule : **Code (T-011)**, teinte rose légèrement mauve et halo/rayons assortis dans `ArtDirection.cs` et `DayNightAmbience.cs`.
+
 ## 5. Tâches ouvertes
 
 Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
@@ -189,6 +191,11 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-03 — ChatGPT/Codex — T-011 : crépuscule rose
+- À la demande de l'utilisateur, crépuscule moins rouge/orange : teinte du soir rose légèrement mauve dans `Game/Scripts/View/ArtDirection.cs` (`0.96, 0.78, 0.90`). Halo et rayons de fin de journée accordés au rose dans `DayNightAmbience.cs`, avec un halo moins intense. Transition progressive vers la nuit conservée.
+- Livraison **Code**, sans nouveau PNG de production ni changement au contrat des images ; tâche archivée dans `TACHES_TERMINEES.md`. Validation : `dotnet build Game/GodColony.csproj`, **0 avertissement / 0 erreur** ; capture en jeu vers **19 h 40**, avec `--advance-hours=11.5 --zoom=1.5`, inspectée (`validation/crepuscule_rose.png`).
+- Commit **« Graphismes : adoucir le crépuscule avec une teinte rose »**. **À Claude** : changement purement visuel dans ma zone, aucun branchement ni donnée supplémentaire attendu. T-003 et T-006 restent les prochaines P1.
 
 ### 2026-10-03 — ChatGPT/Codex — T-001-D livrée : vraies diagonales
 - À la demande de l'utilisateur, remplacement des coudes par des diagonales suivant directement `RiverDownstream` / `RiverUpstream`.
