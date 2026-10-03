@@ -86,24 +86,40 @@ public static class Irrigation
         return best;
     }
 
-    /// <summary>Un canal ne doit pas passer sur un bâtiment, un champ, une tombe, le feu ou l'eau.</summary>
-    private static bool CanDig(LocalMap map, Colony colony, int x, int y)
+    /// <summary>
+    /// Ce qu'un canal ne doit pas traverser, en plus de l'eau et de la roche : les cases de canal déjà prévues, les abords du feu,
+    /// les bâtiments et le passage qui les entoure, les champs et les tombes. Marqué une fois pour tout un tracé.
+    /// </summary>
+    private static void MarkObstacles(LocalMap map, Colony colony, SearchScratch scratch)
     {
-        if (!map.InBounds(x, y) || !map.IsWalkable(x, y) || map.IsWaterway(x, y) || map.IsMountain(x, y))
-            return false;
-        if (colony.CanalTiles.Contains((x, y)) || Math.Max(Math.Abs(x - colony.CampX), Math.Abs(y - colony.CampY)) <= 2)
-            return false;
+        scratch.NewObstacles();
+        void Block(int x, int y)
+        {
+            if (map.InBounds(x, y))
+                scratch.Block(y * map.Width + x);
+        }
+
+        foreach ((int x, int y) in colony.CanalTiles)
+            Block(x, y);
+        for (int y = colony.CampY - 2; y <= colony.CampY + 2; y++)
+        for (int x = colony.CampX - 2; x <= colony.CampX + 2; x++)
+            Block(x, y);
         foreach (Building b in colony.Buildings)
-            if (x >= b.X - 1 && x <= b.X + b.Width && y >= b.Y - 1 && y <= b.Y + b.Height)
-                return false;
+            for (int y = b.Y - 1; y <= b.Y + b.Height; y++)
+            for (int x = b.X - 1; x <= b.X + b.Width; x++)
+                Block(x, y);
         foreach (Field f in colony.Fields)
-            if (f.Contains(x, y))
-                return false;
+            for (int y = f.Y; y < f.Y + Field.Size; y++)
+            for (int x = f.X; x < f.X + Field.Size; x++)
+                Block(x, y);
         foreach (Grave g in colony.Graves)
-            if (g.X == x && g.Y == y)
-                return false;
-        return true;
+            Block(g.X, g.Y);
     }
+
+    /// <summary>Un canal ne doit pas passer sur un bâtiment, un champ, une tombe, le feu ou l'eau (voir <see cref="MarkObstacles"/>).</summary>
+    private static bool CanDig(LocalMap map, SearchScratch scratch, int x, int y) =>
+        map.InBounds(x, y) && map.IsWalkable(x, y) && !map.IsWaterway(x, y) && !map.IsMountain(x, y)
+        && !scratch.IsBlocked(y * map.Width + x);
 
     /// <summary>
     /// Une source possible pour la case (x, y) : une case de rivière ou de canal en eau, voisine et au moins aussi haute.
@@ -126,47 +142,58 @@ public static class Irrigation
     /// </summary>
     public static List<(int X, int Y)>? FindRoute(LocalMap map, Colony colony, Field field)
     {
-        var cost = new Dictionary<(int X, int Y), float>();
-        var parent = new Dictionary<(int X, int Y), (int X, int Y)>();
-        var open = new PriorityQueue<(int X, int Y), float>();
+        // Les cases sont repérées par leur rang sur la carte ; une case sans précédent (-1) est un départ, au bord du champ.
+        SearchScratch scratch = map.Scratch;
+        MarkObstacles(map, colony, scratch);
+        scratch.NewSearch();
+        float[] cost = scratch.Cost;
+        int[] parent = scratch.Parent;
+        PriorityQueue<int, float> open = scratch.Open;
+        int width = map.Width;
 
         for (int y = field.Y - 1; y <= field.Y + Field.Size; y++)
         for (int x = field.X - 1; x <= field.X + Field.Size; x++)
         {
             bool border = x < field.X || x >= field.X + Field.Size || y < field.Y || y >= field.Y + Field.Size;
             bool corner = (x < field.X || x >= field.X + Field.Size) && (y < field.Y || y >= field.Y + Field.Size);
-            if (!border || corner || !CanDig(map, colony, x, y))
+            if (!border || corner || !CanDig(map, scratch, x, y))
                 continue;
-            cost[(x, y)] = StepCost(map, x, y);
-            open.Enqueue((x, y), cost[(x, y)]);
+            int index = y * width + x;
+            scratch.Visit(index);
+            cost[index] = StepCost(map, x, y);
+            parent[index] = -1;
+            open.Enqueue(index, cost[index]);
         }
 
-        while (open.TryDequeue(out (int X, int Y) tile, out float priority))
+        while (open.TryDequeue(out int tile, out float priority))
         {
             if (priority > cost[tile])
                 continue;
             if (priority > MaxLength)
                 return null;
-            if (TouchesSource(map, tile.X, tile.Y))
+            int tx = tile % width, ty = tile / width;
+            if (TouchesSource(map, tx, ty))
             {
                 // On a remonté jusqu'à l'eau : le chemin de la source au champ suit les parents.
-                var route = new List<(int X, int Y)> { tile };
-                while (parent.TryGetValue(route[^1], out (int X, int Y) next))
-                    route.Add(next);
+                var route = new List<(int X, int Y)> { (tx, ty) };
+                for (int next = parent[tile]; next >= 0; next = parent[next])
+                    route.Add((next % width, next / width));
                 return route;
             }
 
             foreach ((int dx, int dy) in Steps)
             {
-                (int X, int Y) upstream = (tile.X + dx, tile.Y + dy);
-                if (!CanDig(map, colony, upstream.X, upstream.Y))
+                int ux = tx + dx, uy = ty + dy;
+                if (!CanDig(map, scratch, ux, uy))
                     continue;
-                int rise = map.GetElevation(upstream.X, upstream.Y) - map.GetElevation(tile.X, tile.Y);
+                int rise = map.GetElevation(ux, uy) - map.GetElevation(tx, ty);
                 if (rise is < 0 or > 1)
                     continue;
-                float total = priority + StepCost(map, upstream.X, upstream.Y);
-                if (!cost.TryGetValue(upstream, out float known) || total < known)
+                float total = priority + StepCost(map, ux, uy);
+                int upstream = uy * width + ux;
+                if (!scratch.IsVisited(upstream) || total < cost[upstream])
                 {
+                    scratch.Visit(upstream);
                     cost[upstream] = total;
                     parent[upstream] = tile;
                     open.Enqueue(upstream, total);

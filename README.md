@@ -46,6 +46,10 @@ Le jeu se lance depuis Godot 4.7 (version .NET) en ouvrant `Game/project.godot`.
 `--demo-dam`, `--auto-dam`, `--focus-dam`, `--demo-workshops`, `--demo-quarry`, `--select-first`,
 `--focus-fields`, `--focus-quarry`. Les options sont lues dans l'ordre : `--auto-dam --advance-hours=1000 --focus-dam`.
 
+`--perf=N` mesure N images puis affiche le temps par image (moyenne, centiles, pire image) et la part de la simulation,
+avant de quitter. Pour comparer deux versions sur la même machine :
+`godot --path Game --fixed-fps 60 -- --advance-hours=480 --speed=30 --perf=1800`.
+
 ## Conventions
 
 - Le code et les commentaires sont en français, au plus près du vocabulaire du jeu.

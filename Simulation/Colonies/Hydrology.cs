@@ -41,67 +41,95 @@ public static class Hydrology
     /// </summary>
     public static Reservoir? FindReservoir(LocalMap map, Colony colony, int damX, int damY)
     {
+        MarkWhatToProtect(map, colony, map.Scratch);
+        return FindReservoirAround(map, damX, damY);
+    }
+
+    /// <summary>Comme <see cref="FindReservoir"/>, une fois marqué ce qu'il faut protéger (voir <see cref="MarkWhatToProtect"/>).</summary>
+    private static Reservoir? FindReservoirAround(LocalMap map, int damX, int damY)
+    {
         if (!map.InBounds(damX, damY) || !map.IsRiver(damX, damY) || map.IsFlooded(damX, damY))
             return null;
         int baseLevel = map.GetElevation(damX, damY);
         int level = baseLevel + 1;
+        int width = map.Width;
 
-        var seeds = map.RiverUpstream(damX, damY).Where(t => map.GetElevation(t.X, t.Y) <= level).ToList();
-        if (seeds.Count == 0)
+        // Les cases de rivière juste en amont, assez basses pour être noyées (dans l'ordre de RiverUpstream).
+        SearchScratch scratch = map.Scratch;
+        scratch.NewSearch();
+        List<int> queue = scratch.Queue, tiles = scratch.Found;
+        scratch.Visit(damY * width + damX);
+        foreach ((int sx, int sy) in map.RiverUpstream(damX, damY))
+        {
+            int seed = sy * width + sx;
+            if (map.GetElevation(sx, sy) <= level && !scratch.IsVisited(seed))
+            {
+                scratch.Visit(seed);
+                queue.Add(seed);
+            }
+        }
+        if (queue.Count == 0)
             return null;
 
         // Le sens du courant à la hauteur du barrage : l'eau ne gagne que le côté amont.
-        (int ux, int uy) = seeds[0];
-        int dirX = ux - damX, dirY = uy - damY;
+        int dirX = queue[0] % width - damX, dirY = queue[0] / width - damY;
 
-        var tiles = new List<(int X, int Y)>();
-        var visited = new HashSet<(int X, int Y)> { (damX, damY) };
-        var queue = new Queue<(int X, int Y)>();
-        foreach ((int X, int Y) seed in seeds)
-            if (visited.Add(seed))
-                queue.Enqueue(seed);
-
-        while (queue.Count > 0)
+        for (int head = 0; head < queue.Count; head++)
         {
-            (int x, int y) = queue.Dequeue();
-            if (HoldsSomethingToProtect(map, colony, x, y))
+            int x = queue[head] % width, y = queue[head] / width;
+            if (scratch.IsBlocked(queue[head]))
                 return null;
-            tiles.Add((x, y));
+            tiles.Add(queue[head]);
             if (tiles.Count > MaxReservoirTiles)
                 return null;
 
             foreach ((int dx, int dy) in Steps)
             {
-                (int X, int Y) next = (x + dx, y + dy);
-                if (!map.InBounds(next.X, next.Y) || visited.Contains(next))
+                int nx = x + dx, ny = y + dy;
+                if (!map.InBounds(nx, ny) || scratch.IsVisited(ny * width + nx))
                     continue;
-                if ((next.X - damX) * dirX + (next.Y - damY) * dirY <= 0)
+                if ((nx - damX) * dirX + (ny - damY) * dirY <= 0)
                     continue;
-                int elevation = map.GetElevation(next.X, next.Y);
+                int elevation = map.GetElevation(nx, ny);
                 // La retenue gagne les terres plates entre le niveau de la rivière et celui de l'eau retenue, pas la roche.
-                if (map.IsMountain(next.X, next.Y) || elevation < baseLevel || elevation > level || map.IsWater(next.X, next.Y))
+                if (map.IsMountain(nx, ny) || elevation < baseLevel || elevation > level || map.IsWater(nx, ny))
                     continue;
-                visited.Add(next);
-                queue.Enqueue(next);
+                scratch.Visit(ny * width + nx);
+                queue.Add(ny * width + nx);
             }
         }
-        return tiles.Count < MinReservoirTiles ? null : new Reservoir((damX, damY), level, tiles);
+        return tiles.Count < MinReservoirTiles
+            ? null
+            : new Reservoir((damX, damY), level, tiles.Select(t => (t % width, t / width)).ToList());
     }
 
-    private static bool HoldsSomethingToProtect(LocalMap map, Colony colony, int x, int y)
+    /// <summary>
+    /// Ce qu'une retenue ne doit pas engloutir : les cases de canal prévues, les abords du camp, les champs, les bâtiments
+    /// et les tombes. Marqué une fois pour toute une recherche de site.
+    /// </summary>
+    private static void MarkWhatToProtect(LocalMap map, Colony colony, SearchScratch scratch)
     {
-        if (colony.CanalTiles.Contains((x, y)) || Math.Max(Math.Abs(x - colony.CampX), Math.Abs(y - colony.CampY)) <= 3)
-            return true;
+        scratch.NewObstacles();
+        void Protect(int x, int y)
+        {
+            if (map.InBounds(x, y))
+                scratch.Block(y * map.Width + x);
+        }
+
+        foreach ((int x, int y) in colony.CanalTiles)
+            Protect(x, y);
+        for (int y = colony.CampY - 3; y <= colony.CampY + 3; y++)
+        for (int x = colony.CampX - 3; x <= colony.CampX + 3; x++)
+            Protect(x, y);
         foreach (Field field in colony.Fields)
-            if (field.Contains(x, y))
-                return true;
+            for (int y = field.Y; y < field.Y + Field.Size; y++)
+            for (int x = field.X; x < field.X + Field.Size; x++)
+                Protect(x, y);
         foreach (Building building in colony.Buildings)
-            if (building.Contains(x, y))
-                return true;
+            foreach ((int x, int y) in building.Tiles)
+                Protect(x, y);
         foreach (Grave grave in colony.Graves)
-            if (grave.X == x && grave.Y == y)
-                return true;
-        return false;
+            Protect(grave.X, grave.Y);
     }
 
     /// <summary>
@@ -112,16 +140,15 @@ public static class Hydrology
     {
         (int X, int Y, Reservoir Reservoir)? best = null;
         float bestScore = float.MinValue;
+        MarkWhatToProtect(map, colony, map.Scratch);
 
         for (int dy = -SearchRadius; dy <= SearchRadius; dy++)
         for (int dx = -SearchRadius; dx <= SearchRadius; dx++)
         {
             int x = colony.CampX + dx, y = colony.CampY + dy;
-            if (!map.InBounds(x, y) || !map.IsRiver(x, y))
+            if (!map.InBounds(x, y) || !map.IsRiver(x, y) || NearDam(colony, x, y))
                 continue;
-            if (colony.Buildings.Any(b => b.IsDam && Math.Max(Math.Abs(b.X - x), Math.Abs(b.Y - y)) < 6))
-                continue;
-            if (FindReservoir(map, colony, x, y) is not { } reservoir)
+            if (FindReservoirAround(map, x, y) is not { } reservoir)
                 continue;
 
             int fieldsNearby = colony.Fields.Count(f => reservoir.Tiles.Any(t =>
@@ -134,6 +161,15 @@ public static class Hydrology
             }
         }
         return best;
+    }
+
+    /// <summary>Un barrage se tient déjà à moins de six cases.</summary>
+    private static bool NearDam(Colony colony, int x, int y)
+    {
+        foreach (Building b in colony.Buildings)
+            if (b.IsDam && Math.Max(Math.Abs(b.X - x), Math.Abs(b.Y - y)) < 6)
+                return true;
+        return false;
     }
 
     /// <summary>

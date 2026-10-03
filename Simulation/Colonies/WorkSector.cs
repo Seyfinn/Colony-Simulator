@@ -25,7 +25,22 @@ public static class WorkSectors
         _ => [],
     };
 
-    /// <summary>Aptitude d'un colon pour un secteur : son niveau et son talent dans la meilleure compétence utile.</summary>
-    public static float Fitness(this WorkSector sector, Skills skills) =>
-        sector.Skills().Select(s => skills.Level(s) + skills.Talent(s) * 4f).DefaultIfEmpty(0f).Max();
+    /// <summary>Les compétences de chaque secteur, dans l'ordre de <see cref="WorkSector"/> (pour ne pas les recréer à chaque calcul).</summary>
+    private static readonly SkillType[][] SkillsBySector = All.Select(s => s.Skills()).ToArray();
+
+    /// <summary>Aptitude d'un colon pour un secteur : son niveau et son talent dans la meilleure compétence utile (0 s'il n'y en a pas).</summary>
+    public static float Fitness(this WorkSector sector, Skills skills)
+    {
+        SkillType[] useful = SkillsBySector[(int)sector];
+        if (useful.Length == 0)
+            return 0f;
+        float best = skills.Level(useful[0]) + skills.Talent(useful[0]) * 4f;
+        for (int i = 1; i < useful.Length; i++)
+        {
+            float fit = skills.Level(useful[i]) + skills.Talent(useful[i]) * 4f;
+            if (fit > best)
+                best = fit;
+        }
+        return best;
+    }
 }

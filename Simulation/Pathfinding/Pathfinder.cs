@@ -14,6 +14,18 @@ public sealed class Pathfinder
     private const float Diagonal = 1.41421356f;
     private const float UphillPenalty = 0.5f;
 
+    /// <summary>
+    /// Au-delà de ce nombre de cases explorées sans arriver, on vérifie que le but est seulement atteignable :
+    /// sans cela, un but inaccessible fait explorer toute la carte avant qu'on y renonce.
+    /// </summary>
+    private const int ExpandedBeforeCheck = 256;
+
+    /// <summary>
+    /// Un but d'où partent plus de chemins que cela n'est pas isolé : on n'en cherche pas plus et la recherche continue.
+    /// Les buts inaccessibles sont presque toujours perchés sur un petit replat (la roche que vise un mineur).
+    /// </summary>
+    private const int MaxIsolatedTiles = 1024;
+
     private readonly LocalMap _map;
     private readonly float[] _cost;
     private readonly int[] _parent;
@@ -21,6 +33,11 @@ public sealed class Pathfinder
     private readonly int[] _closed;
     private readonly PriorityQueue<int, float> _open = new();
     private int _generation;
+
+    // Pour remonter depuis le but : les cases déjà vues et la file des cases à examiner.
+    private readonly int[] _backSeen;
+    private readonly int[] _backQueue = new int[MaxIsolatedTiles];
+    private int _backGeneration;
 
     public Pathfinder(LocalMap map)
     {
@@ -30,6 +47,7 @@ public sealed class Pathfinder
         _parent = new int[n];
         _seen = new int[n];
         _closed = new int[n];
+        _backSeen = new int[n];
     }
 
     /// <summary>
@@ -61,6 +79,8 @@ public sealed class Pathfinder
                 return BuildPath(goal, width);
             if (++expanded > maxExpanded)
                 return null;
+            if (expanded == ExpandedBeforeCheck && IsCutOff(startX, startY, goalX, goalY, maxStep))
+                return null;
 
             int cx = current % width, cy = current / width;
             foreach ((int dx, int dy) in Directions)
@@ -91,6 +111,47 @@ public sealed class Pathfinder
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// Vrai si le but est hors d'atteinte : en remontant depuis lui, on recense toutes les cases d'où un pas y mène,
+    /// puis celles d'où un pas mène à celles-là, et ainsi de suite, sans jamais croiser le départ. Faux si on croise
+    /// le départ ou si l'on recense trop de cases pour conclure vite : la recherche continue alors comme si de rien n'était.
+    /// </summary>
+    private bool IsCutOff(int startX, int startY, int goalX, int goalY, int maxStep)
+    {
+        _backGeneration++;
+        int width = _map.Width;
+        int start = startY * width + startX, goal = goalY * width + goalX;
+        int head = 0, tail = 0;
+        _backSeen[goal] = _backGeneration;
+        _backQueue[tail++] = goal;
+        while (head < tail)
+        {
+            int current = _backQueue[head++];
+            int cx = current % width, cy = current / width;
+            foreach ((int dx, int dy) in Directions)
+            {
+                // Une voisine d'où l'on vient par ce pas, avec les règles de la recherche (coins compris en diagonale).
+                int px = cx - dx, py = cy - dy;
+                if (!_map.InBounds(px, py) || _backSeen[py * width + px] == _backGeneration
+                    || !_map.CanStep(px, py, cx, cy, maxStep))
+                    continue;
+                if (dx != 0 && dy != 0 && (!_map.CanStep(px, py, cx, py, maxStep) || !_map.CanStep(px, py, px, cy, maxStep)))
+                    continue;
+                int previous = py * width + px;
+                if (previous == start)
+                    return false;
+                _backSeen[previous] = _backGeneration;
+                // On ne passe jamais par l'eau : seul le départ peut s'y trouver.
+                if (!_map.IsWalkable(px, py))
+                    continue;
+                if (tail == MaxIsolatedTiles)
+                    return false;
+                _backQueue[tail++] = previous;
+            }
+        }
+        return true;
     }
 
     private List<(int X, int Y)> BuildPath(int goal, int width)
