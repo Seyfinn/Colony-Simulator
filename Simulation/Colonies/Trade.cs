@@ -283,8 +283,16 @@ public static class Trade
         caravan.Coins = coins;
         caravan.CoinsAtDeparture = coins;
 
+        // Les marchands sortent de la colonie en marchant jusqu'au bord de la carte, puis le voyage se poursuit hors écran.
         foreach (Colonist trader in traders)
+        {
             ColonistAI.DetachFromColony(trader);
+            if (Migration.FindEdgePoint(world, plan.From, trader.TileX, trader.TileY) is not null)
+            {
+                trader.Transit = TransitState.Leaving;
+                plan.From.Transients.Add(trader);
+            }
+        }
         plan.From.LastCaravanTicks = now;
         world.Caravans.Add(caravan);
 
@@ -393,15 +401,30 @@ public static class Trade
             if (amount > 0)
                 colony.Stock.Add(good, amount);
 
-        // Les colons rejoignent le camp, fatigués du voyage.
+        // Les colons reviennent, fatigués du voyage : on les voit arriver du bord de la carte et marcher jusqu'au camp.
+        // (S'ils étaient encore en train de sortir, ils s'arrêtent là et rentrent aussitôt.)
         foreach (Colonist trader in caravan.Traders)
         {
-            (int x, int y) = colony.GatherSpots[world.Random.Next(Math.Min(12, colony.GatherSpots.Count))];
-            trader.X = trader.PrevX = x + 0.5f;
-            trader.Y = trader.PrevY = y + 0.5f;
+            colony.Transients.Remove(trader);
             trader.Needs.Food = Math.Min(trader.Needs.Food, 0.7f);
             trader.Needs.Rest = Math.Min(trader.Needs.Rest, 0.6f);
-            colony.Members.Add(trader);
+            trader.Activity = null;
+            if (Migration.FindEdgePoint(world, colony, colony.CampX, colony.CampY) is { } entry)
+            {
+                trader.X = trader.PrevX = entry.X + 0.5f;
+                trader.Y = trader.PrevY = entry.Y + 0.5f;
+                trader.Transit = TransitState.Arriving;
+                trader.ReturningTrader = true;
+                colony.Transients.Add(trader);
+            }
+            else
+            {
+                (int x, int y) = colony.GatherSpots[world.Random.Next(Math.Min(12, colony.GatherSpots.Count))];
+                trader.X = trader.PrevX = x + 0.5f;
+                trader.Y = trader.PrevY = y + 0.5f;
+                trader.Transit = TransitState.None;
+                colony.Members.Add(trader);
+            }
         }
         colony.FillVacancies();
         colony.AssignSectors();

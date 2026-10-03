@@ -5,7 +5,7 @@ using Godot;
 namespace GodColony.View;
 
 /// <summary>Architecture rurale en 3/4, avec une silhouette propre à chaque métier.</summary>
-public static class BuildingSprites
+public static partial class BuildingSprites
 {
     private static readonly Dictionary<(string Kind, WoodlandBiome Biome), ImageTexture> Textures = [];
     private static readonly Color Ink = C(49, 55, 48), Wood = C(108, 72, 47), WoodLight = C(177, 126, 73);
@@ -285,17 +285,9 @@ public static class BuildingSprites
         a.Box(28, 58, 11, 16, Wood); a.Box(30, 60, 7, 14, Wood.Darkened(0.3f));
         a.Box(31, 60, 1, 14, WoodLight); a.Dot(36, 67, Brass);
         a.Box(27, 75, 14, 2, StoneLight);
-        // Roue à eau dans son coursier : couronne épaisse, douze palettes et moyeu de fer.
+        // Coursier du moulin ; la roue à aubes est une animation indépendante.
         a.Box(44, 71, 19, 6, Mortar); a.Box(46, 71, 16, 3, C(104, 170, 175));
-        a.Oval(52, 60, 11, 13, Ink); a.Oval(51, 59, 10, 12, Wood);
-        a.Oval(51, 59, 7, 9, WoodLight); a.Oval(51, 59, 6, 8, C(69, 83, 72));
-        for (int i = 0; i < 12; i++)
-        {
-            double angle = i * Math.PI / 6;
-            int x = 51 + (int)Math.Round(Math.Cos(angle) * 9), y = 59 + (int)Math.Round(Math.Sin(angle) * 11);
-            a.Line(51, 59, x, y, WoodLight); a.Box(x - 1, y - 1, 3, 2, C(207, 156, 87));
-        }
-        a.Oval(51, 59, 3, 3, Ink); a.Oval(50, 58, 2, 2, StoneLight); a.Dot(51, 59, Mortar);
+        // La roue est désormais dessinée séparément, pour tourner selon le débit réel.
         a.Line(47, 75, 51, 75, C(205, 226, 199)); a.Line(56, 73, 61, 73, C(190, 220, 204));
         Sack(a, 9, 65);
         a.Box(32, 38, 7, 9, Wood); a.Box(33, 39, 5, 7, C(73, 100, 94));

@@ -158,6 +158,12 @@ public static class Migration
         colony.FillVacancies();
         colony.AssignSectors();
 
+        if (colonist.ReturningTrader)
+        {
+            colonist.ReturningTrader = false;
+            return; // un marchand qui rentre n'est pas un nouveau venu
+        }
+
         SkillType best = Skills.All.OrderByDescending(colonist.Skills.Level).First();
         string experienced = colonist.Sex == Sex.Female ? "expérimentée" : "expérimenté";
         ColonyBrain.Say(colony, world.Clock,

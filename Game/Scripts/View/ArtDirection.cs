@@ -25,7 +25,7 @@ public static class ArtDirection
         Color night = new(0.40f, 0.50f, 0.66f);
         Color dawn = new(0.98f, 0.83f, 0.73f);
         Color day = new(1.00f, 0.99f, 0.94f);
-        Color dusk = new(0.95f, 0.69f, 0.55f);
+        Color dusk = new(0.96f, 0.78f, 0.90f); // Rose doux, légèrement mauve à l'approche de la nuit.
         if (hour < 5 || hour >= 22) return night;
         if (hour < 7) return night.Lerp(dawn, Smooth((hour - 5) / 2));
         if (hour < 9) return dawn.Lerp(day, Smooth((hour - 7) / 2));

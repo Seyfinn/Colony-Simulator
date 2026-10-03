@@ -84,7 +84,17 @@ public static class TerrainPainter
         GrassPalette pn = Palette(BiomeVisuals.At(map, x, y - 1)), ps = Palette(BiomeVisuals.At(map, x, y + 1));
         GrassPalette pw = Palette(BiomeVisuals.At(map, x - 1, y)), pe = Palette(BiomeVisuals.At(map, x + 1, y));
         int connections = canal ? WaterGeometry.Connections(map, x, y) : 0;
-        WaterGeometry.Stream[] streams = !canal ? WaterGeometry.Streams(map, x, y) : [];
+        byte[]? canalTile = canal ? RiverTiles.Get($"canal_{(wet ? "wet" : "dry")}_{connections}") : null;
+        int riverMask = RiverTiles.Connections(map, x, y);
+        int riverCorners = RiverTiles.Corners(map, x, y);
+        byte[]? riverShape = RiverTiles.River(riverMask, riverCorners, river);
+        byte[]? riverTile = !canal && surface != Surface.Water ? riverShape : null;
+        byte[]? lakeTile = surface == Surface.Water
+            ? RiverTiles.Shore(RiverTiles.LakeEdges(map, x, y, riverMask), riverShape) : null;
+        // Avec le jeu complet de PNG, les rives restent dans la case ; sans lui, garder l'ancien tracé.
+        bool pngRivers = RiverTiles.Complete;
+        WaterGeometry.Stream[] streams = !canal && ((riverTile is null && (!pngRivers || riverMask != 0 || riverCorners != 0)) || surface == Surface.Water)
+            ? WaterGeometry.Streams(map, x, y) : [];
         int north = Elevation(map, x, y - 1, height), south = Elevation(map, x, y + 1, height);
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
         Surface n = Neighbor(map, x, y - 1, surface), s = Neighbor(map, x, y + 1, surface);
@@ -157,12 +167,12 @@ public static class TerrainPainter
                         shore = Math.Min(shore, radius - MathF.Sqrt((px - 31 + radius) * (px - 31 + radius) + (py - 31 + radius) * (py - 31 + radius)));
                     float margin = 1.5f + noise.Shore.At(wx / 13f, wy / 13f) * 1.5f;
                     bool mouth = streams.Length > 0 && WaterGeometry.Nearest(streams, px, py).Distance < 10;
-                    if (!mouth && shore < margin)
+                    if (lakeTile is null && !mouth && shore < margin)
                     {
                         Rgb soil = GroundPixel(ref noise, Underlying(map, x, y), wx, wy, height, biome, grass);
                         color = Blend(soil, Underlying(map, x, y) == Surface.Sand ? WetSand : Loam, 0.25f);
                     }
-                    else if (!mouth && shore < margin + 2.5f) color = Blend(color, Foam, 0.22f);
+                    else if (lakeTile is null && !mouth && shore < margin + 2.5f) color = Blend(color, Foam, 0.22f);
                 }
                 bool streamWater = false;
                 if (streams.Length > 0 && surface != Surface.Water)
@@ -181,7 +191,7 @@ public static class TerrainPainter
                     else if (nearest.Distance < width + 3)
                         color = Blend(color, Blend(Loam, Moss, 0.35f), (width + 3 - nearest.Distance) / 4f);
                 }
-                if (canal) color = CanalPixel(ref noise, color, wx, wy, px, py, connections, wet);
+                if (canal && canalTile is null) color = CanalPixel(ref noise, color, wx, wy, px, py, connections, wet);
                 float shade = surface == Surface.Water || streamWater ? 1 : ambient;
                 int foot = py - cliff;
                 if (cliff > 0 && foot < 5) shade *= 0.74f + foot * 0.05f;
@@ -198,6 +208,14 @@ public static class TerrainPainter
             pixels[index] = color.R; pixels[index + 1] = color.G; pixels[index + 2] = color.B; pixels[index + 3] = 255;
         }
         }
+        if (riverTile is not null)
+        {
+            RiverTiles.Blend(riverTile, pixels, stride, ox, oy);
+            if (RiverTiles.Accent(map, x, y) is { } accent)
+                RiverTiles.Blend(accent, pixels, stride, ox, oy);
+        }
+        if (lakeTile is not null) RiverTiles.Blend(lakeTile, pixels, stride, ox, oy);
+        if (canalTile is not null) RiverTiles.Blend(canalTile, pixels, stride, ox, oy);
     }
 
     private static Rgb GroundPixel(ref PixelNoise noise, Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass)

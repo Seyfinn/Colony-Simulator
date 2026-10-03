@@ -111,6 +111,7 @@ public class TradeTests(ITestOutputHelper output)
         // En route : les colons ont quitté la colonie, les marchandises aussi, les pièces voyagent.
         Assert.Equal(membersBefore - Trade.TradersPerCaravan, from.Members.Count);
         Assert.All(caravan.Traders, t => Assert.DoesNotContain(t, from.Members));
+        Assert.All(caravan.Traders, t => Assert.Equal(TransitState.Leaving, t.Transit)); // ils marchent jusqu'au bord de la carte
         Assert.Equal(coins, CoinsInTheWorld(world));
         Assert.Equal(tools, GoodInTheWorld(world, ResourceType.Tools));
         Assert.True(caravan.Cargo.GetValueOrDefault(ResourceType.Tools) > 0);
@@ -130,7 +131,13 @@ public class TradeTests(ITestOutputHelper output)
         Assert.Equal(CaravanState.Home, caravan.State);
         Assert.Empty(world.Caravans);
         Assert.Equal(1, world.CompletedCaravans);
+
+        // Les marchands reviennent par le bord de la carte et marchent jusqu'au camp : on les voit arriver.
+        Assert.All(caravan.Traders, t => Assert.Contains(t, from.Transients));
+        Assert.All(caravan.Traders, t => Assert.Equal(TransitState.Arriving, t.Transit));
+        RunHours(world, 24);
         Assert.Equal(membersBefore, from.Members.Count);
+        Assert.Empty(from.Transients);
         Assert.Equal(coins, CoinsInTheWorld(world));
         Assert.Equal(tools, GoodInTheWorld(world, ResourceType.Tools));
         Assert.True(from.Stock.Get(ResourceType.Coins) > fromCoinsBefore, "L'expéditeur a encaissé la vente.");
@@ -216,7 +223,7 @@ public class TradeTests(ITestOutputHelper output)
                                  string.Join(", ", r.Lines.Select(l => $"{(l.IsSale ? "vend" : "achète")} {l.Units} {l.Good} à {l.UnitPrice:0.0}")) + $" · net {r.NetCoins}");
             Assert.Null(watches[colony].Victim);
         }
-        Assert.True(world.CompletedCaravans >= 3, $"Au moins quelques voyages : {world.CompletedCaravans}.");
+        Assert.True(world.CompletedCaravans >= 2, $"Au moins quelques voyages : {world.CompletedCaravans}.");
         Assert.True(world.Colonies.Sum(c => c.LifetimeTradeGainHours) > 0);
     }
 

@@ -34,7 +34,9 @@ public partial class MapView : Node2D
         _chunks = new ChunkView[chunksX, chunksY];
 
         // La première peinture du terrain, la plus longue, se répartit sur tous les cœurs du processeur
-        // (la simulation est arrêtée pendant ce temps, rien ne change sur la carte).
+        // (la simulation est arrêtée pendant ce temps, rien ne change sur la carte). Les tuiles PNG se chargent
+        // d'abord ici, sur le fil principal : Godot ne crée pas de texture depuis plusieurs fils à la fois.
+        RiverTiles.Preload();
         var pixels = new byte[chunksX * chunksY][];
         Parallel.For(0, pixels.Length, i => pixels[i] = TerrainPainter.Paint(map,
             i % chunksX * ChunkView.Size, i / chunksX * ChunkView.Size, ChunkView.Size, ChunkView.Size));
