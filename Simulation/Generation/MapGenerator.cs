@@ -1,3 +1,4 @@
+using GodColony.Simulation.Colonies;
 using GodColony.Simulation.Map;
 
 namespace GodColony.Simulation.Generation;
@@ -7,14 +8,11 @@ namespace GodColony.Simulation.Generation;
 /// </summary>
 public static class MapGenerator
 {
-    // Proportions visées pour chaque grande zone de la carte.
-    private const float WaterShare = 0.08f;
-    private const float MountainShare = 0.22f;
-
-    public static LocalMap Generate(int width, int height, int seed)
+    public static LocalMap Generate(int width, int height, int seed, MapStyle? style = null)
     {
+        style ??= MapStyle.Temperate;
         var map = new LocalMap(width, height, seed);
-        int[] elevation = ComputeElevation(width, height, seed);
+        int[] elevation = ComputeElevation(width, height, seed, style);
 
         for (int y = 0; y < height; y++)
         for (int x = 0; x < width; x++)
@@ -36,7 +34,7 @@ public static class MapGenerator
     /// les 8 % les plus bas deviennent de l'eau, les 22 % les plus hauts de la montagne,
     /// le reste des plaines en terrasses. Toutes les graines donnent ainsi des cartes équilibrées.
     /// </summary>
-    private static int[] ComputeElevation(int width, int height, int seed)
+    private static int[] ComputeElevation(int width, int height, int seed, MapStyle style)
     {
         int n = width * height;
         var raw = new float[n];
@@ -52,8 +50,8 @@ public static class MapGenerator
         for (int i = 0; i < n; i++) order[i] = i;
         Array.Sort(order, (a, b) => raw[a].CompareTo(raw[b]));
 
-        int waterCount = (int)(n * WaterShare);
-        int mountainStart = (int)(n * (1f - MountainShare));
+        int waterCount = (int)(n * style.WaterShare);
+        int mountainStart = (int)(n * (1f - style.MountainShare));
         int plainLow = LocalMap.WaterLevel + 1;
         int plainHigh = LocalMap.MountainElevation - 1;
 

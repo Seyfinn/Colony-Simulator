@@ -170,7 +170,7 @@ public static class ColonistAI
             (int x, int y) = colony.GatherSpots[world.Random.Next(Math.Min(12, colony.GatherSpots.Count))];
             return TryStart(colonist, world, new Activity(ActivityKind.Arrive, x, y, 0));
         }
-        return Migration.FindEdgePoint(world, colonist.TileX, colonist.TileY) is { } exit
+        return Migration.FindEdgePoint(world, colonist.Colony, colonist.TileX, colonist.TileY) is { } exit
                && TryStart(colonist, world, new Activity(ActivityKind.Depart, exit.X, exit.Y, 0));
     }
 
@@ -398,7 +398,7 @@ public static class ColonistAI
     private static bool TryForage(Colonist colonist, WorldState world, ActivityKind kind, int centerX, int centerY)
     {
         float seconds = ForageSeconds / WorkSpeed(colonist, SkillType.Foraging);
-        return NearestBushes(world.Map, colonist.Colony, centerX, centerY)
+        return NearestBushes(colonist.Colony.Map, colonist.Colony, centerX, centerY)
             .Take(TargetsToTry)
             .Any(b => TryStart(colonist, world, new Activity(kind, b.X, b.Y, Ticks(seconds))));
     }
@@ -410,7 +410,7 @@ public static class ColonistAI
     private static bool TryGatherFood(Colonist colonist, WorldState world)
     {
         Colony colony = colonist.Colony;
-        LocalMap map = world.Map;
+        LocalMap map = colonist.Colony.Map;
         var options = new List<(Activity Activity, float Food, float WorkSeconds)>();
 
         float forageSeconds = ForageSeconds / WorkSpeed(colonist, SkillType.Foraging);
@@ -528,7 +528,7 @@ public static class ColonistAI
     private static bool TryChop(Colonist colonist, WorldState world)
     {
         float seconds = ChopSeconds / WorkSpeed(colonist, SkillType.Woodcutting);
-        return WorkSites.TreesToChop(world.Map, colonist.Colony)
+        return WorkSites.TreesToChop(colonist.Colony.Map, colonist.Colony)
             .Take(TargetsToTry)
             .Any(t => TryStart(colonist, world, new Activity(ActivityKind.Chop, t.X, t.Y, Ticks(seconds))));
     }
@@ -543,7 +543,7 @@ public static class ColonistAI
         float seconds = recipe.Seconds / WorkSpeed(colonist, Crafting.SkillFor(workshop.Type));
         // Un moulin tourne au rythme de la rivière : un barrage en amont le ralentit.
         if (workshop.Type == BuildingType.Mill)
-            seconds /= MathF.Max(0.25f, Hydrology.MillFlow(world.Map, workshop));
+            seconds /= MathF.Max(0.25f, Hydrology.MillFlow(colonist.Colony.Map, workshop));
         (int x, int y) = workshop.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
         return TryStart(colonist, world, new Activity(ActivityKind.Craft, x, y, Ticks(seconds)) { Building = workshop });
     }
@@ -553,7 +553,7 @@ public static class ColonistAI
         float seconds = MineSeconds / WorkSpeed(colonist, SkillType.Mining);
         bool wantOre = colonist.Colony.Sensors?.Chain is { Active: true, OreMissing: > 0 };
         Colony colony = colonist.Colony;
-        foreach ((int rockX, int rockY, int standX, int standY) in WorkSites.RocksToMine(world.Map, colony, wantOre)
+        foreach ((int rockX, int rockY, int standX, int standY) in WorkSites.RocksToMine(colonist.Colony.Map, colony, wantOre)
                      .Where(r => !colony.UnreachableStands.Contains((r.StandX, r.StandY)))
                      .Take(TargetsToTry))
         {
@@ -589,16 +589,16 @@ public static class ColonistAI
 
     private static (List<(int X, int Y)>? Path, int MaxStep) PlanPath(Colonist colonist, WorldState world, Activity activity)
     {
-        List<(int X, int Y)>? path = world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY);
+        List<(int X, int Y)>? path = colonist.Colony.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY);
 
         // Filet de sécurité : coincé dans un trou ou sur un plateau isolé par la carrière,
         // on escalade une marche de deux niveaux pour rentrer au camp.
-        if (path is null && (IsStranded(colonist, world.Map) || IsGoingHome(activity)))
+        if (path is null && (IsStranded(colonist, colonist.Colony.Map) || IsGoingHome(activity)))
         {
             // D'abord une marche de deux niveaux ; si le colon est enfermé dans un trou plus profond, il escalade
             // la paroi à mains nues plutôt que d'y mourir de faim.
             foreach (int step in new[] { 2, LocalMap.MaxElevation })
-                if (world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, maxStep: step) is { } rescue)
+                if (colonist.Colony.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, maxStep: step) is { } rescue)
                     return (rescue, step);
             return (null, 2);
         }
@@ -662,7 +662,7 @@ public static class ColonistAI
 
     private static void Move(Colonist colonist, WorldState world)
     {
-        LocalMap map = world.Map;
+        LocalMap map = colonist.Colony.Map;
         (int nextX, int nextY) = colonist.Path[colonist.PathIndex];
 
         // Le terrain a pu changer depuis le calcul du chemin (une case minée, par exemple).
@@ -750,11 +750,11 @@ public static class ColonistAI
         ActivityKind.Sow => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow }
                             && Farming.IsSowingSeason(world.Clock.Season),
         ActivityKind.Harvest => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Ripe },
-        ActivityKind.Forage or ActivityKind.ForageToEat => world.Map.GetBerries(activity.TargetX, activity.TargetY) > 0,
-        ActivityKind.Fish => world.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
-        ActivityKind.Chop => world.Map.CanChop(activity.TargetX, activity.TargetY),
-        ActivityKind.Mine => WorkSites.CanMineFrom(world.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
-        ActivityKind.Dig => !world.Map.IsCanal(activity.TargetX, activity.TargetY),
+        ActivityKind.Forage or ActivityKind.ForageToEat => colonist.Colony.Map.GetBerries(activity.TargetX, activity.TargetY) > 0,
+        ActivityKind.Fish => colonist.Colony.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
+        ActivityKind.Chop => colonist.Colony.Map.CanChop(activity.TargetX, activity.TargetY),
+        ActivityKind.Mine => WorkSites.CanMineFrom(colonist.Colony.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
+        ActivityKind.Dig => !colonist.Colony.Map.IsCanal(activity.TargetX, activity.TargetY),
         ActivityKind.Craft => activity.Building is { IsComplete: true } workshop && TakeCraftInputs(colonist, activity, workshop),
         ActivityKind.FetchMaterials => TakeMaterials(colonist, activity.Building!),
         ActivityKind.SupplySite => activity.Building is { IsComplete: false } site && colonist.CarryingTo == site,
@@ -795,7 +795,7 @@ public static class ColonistAI
 
     private static void Finish(Colonist colonist, WorldState world, Activity activity)
     {
-        LocalMap map = world.Map;
+        LocalMap map = colonist.Colony.Map;
         if (activity.Building is { } building)
             building.LaborTicks += world.Clock.Ticks - activity.CommittedAtTicks;
         if (activity.Skill is { } usedSkill)
@@ -880,7 +880,7 @@ public static class ColonistAI
     private static void FinishDig(Colonist colonist, WorldState world, Activity activity)
     {
         Colony colony = colonist.Colony;
-        LocalMap map = world.Map;
+        LocalMap map = colonist.Colony.Map;
         map.DigCanal(activity.TargetX, activity.TargetY);
         colony.Labor.RecordCanalTile(LaborLedger.TicksToHours(world.Clock.Ticks - activity.CommittedAtTicks));
 

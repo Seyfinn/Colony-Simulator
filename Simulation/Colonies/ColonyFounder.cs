@@ -13,8 +13,9 @@ public static class ColonyFounder
     public const int MinStartingColonists = 5;
     public const int MaxStartingColonists = 10;
 
-    public static Colony Found(LocalMap map, Random random, string name, int colonistCount, Func<int> nextId, GameClock clock)
+    public static Colony Found(LocalMap map, Random random, string name, int colonistCount, Func<int> nextId, GameClock clock, Species? species = null)
     {
+        species ??= Species.Human;
         (int campX, int campY) = FindCampSite(map);
 
         // On dégage la place autour du feu.
@@ -28,6 +29,9 @@ public static class ColonyFounder
             Quarry = WorkSites.FindQuarry(map, campX, campY),
         };
         colony.Clock = clock;
+        colony.Species = species;
+        colony.Map = map;
+        colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map);
         colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount);
 
         for (int i = 0; i < colonistCount; i++)
@@ -35,11 +39,12 @@ public static class ColonyFounder
             Sex sex = i % 2 == 0 ? Sex.Female : Sex.Male;
             (int x, int y) = colony.GatherSpots[random.Next(colony.GatherSpots.Count)];
             string colonistName = Names.Pick(sex, random, colony.Members.Select(m => m.Name));
-            var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random), x + 0.5f, y + 0.5f)
+            var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random, species), x + 0.5f, y + 0.5f)
             {
-                Personality = Personality.Random(random),
+                Personality = Personality.Random(random, species),
+                Species = species,
                 // Tous des adultes, d'âges variés : la colonie ne vieillira pas d'un seul bloc.
-                BirthTicks = clock.Ticks - (long)((Colonist.AdultAge + 6f * random.NextSingle()) * TimeConstants.TicksPerYear),
+                BirthTicks = clock.Ticks - (long)((Colonist.AdultAge + 6f * random.NextSingle()) * species.LifespanScale * TimeConstants.TicksPerYear),
                 Surname = Names.PickSurname(random, colony.Members.Select(m => m.Surname)),
             };
             colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();

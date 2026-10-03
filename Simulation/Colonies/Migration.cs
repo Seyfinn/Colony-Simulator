@@ -117,7 +117,7 @@ public static class Migration
             return 0;
         }
 
-        if (FindEdgePoint(world, colony.CampX, colony.CampY) is not { } entry)
+        if (FindEdgePoint(world, colony, colony.CampX, colony.CampY) is not { } entry)
             return 0;
 
         var taken = colony.Members.Concat(colony.Transients).Select(m => m.Name).ToList();
@@ -128,12 +128,13 @@ public static class Migration
             string name = Names.Pick(sex, world.Random, taken);
             taken.Add(name);
             var traveler = new Colonist(world.NextColonistId(), name, sex, colony,
-                Skills.Veteran(world.Random, i == 0 ? specialty : Skills.All[world.Random.Next(Skills.All.Length)]),
+                Skills.Veteran(world.Random, i == 0 ? specialty : Skills.All[world.Random.Next(Skills.All.Length)], colony.Species),
                 entry.X + 0.5f, entry.Y + 0.5f)
             {
                 Transit = TransitState.Arriving,
-                Personality = Personality.Random(world.Random),
-                BirthTicks = world.Clock.Ticks - (long)((Colonist.AdultAge + 6f * world.Random.NextSingle()) * TimeConstants.TicksPerYear),
+                Personality = Personality.Random(world.Random, colony.Species),
+                Species = colony.Species,
+                BirthTicks = world.Clock.Ticks - (long)((Colonist.AdultAge + 6f * world.Random.NextSingle()) * colony.Species.LifespanScale * TimeConstants.TicksPerYear),
                 Surname = Names.PickSurname(world.Random, colony.Members.Concat(colony.Transients).Select(t => t.Surname)),
             };
             // Il arrive après une longue marche : fatigué et un peu affamé.
@@ -190,9 +191,9 @@ public static class Migration
     /// Une case marchable au bord de la carte, d'où l'on peut rejoindre (ou à laquelle on peut se rendre depuis)
     /// la case donnée. Null si aucune n'est accessible.
     /// </summary>
-    internal static (int X, int Y)? FindEdgePoint(WorldState world, int fromX, int fromY)
+    internal static (int X, int Y)? FindEdgePoint(WorldState world, Colony colony, int fromX, int fromY)
     {
-        LocalMap map = world.Map;
+        LocalMap map = colony.Map;
         for (int attempt = 0; attempt < EntryAttempts; attempt++)
         {
             int side = world.Random.Next(4);
@@ -210,7 +211,7 @@ public static class Migration
                 x += dx;
                 y += dy;
             }
-            if (map.IsWalkable(x, y) && world.Pathfinder.FindPath(fromX, fromY, x, y) is not null)
+            if (map.IsWalkable(x, y) && colony.Pathfinder.FindPath(fromX, fromY, x, y) is not null)
                 return (x, y);
         }
         return null;

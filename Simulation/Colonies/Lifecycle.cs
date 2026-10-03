@@ -86,7 +86,7 @@ public static class Lifecycle
         GiveBirths(world, colony);
         Conceive(world, colony);
         foreach (Colonist colonist in colony.Members.ToList())
-            if (world.Random.NextSingle() < OldAgeDeathChance(colonist.AgeYears))
+            if (world.Random.NextSingle() < OldAgeDeathChance(colonist.EquivalentAge))
                 Die(world, colonist, "vieillesse");
     }
 
@@ -153,7 +153,7 @@ public static class Lifecycle
         {
             if (!CanConceive(woman, due))
                 continue;
-            if (world.Random.NextSingle() >= ConceptionChancePerDay * prosperity)
+            if (world.Random.NextSingle() >= ConceptionChancePerDay * prosperity * woman.Species.Fertility)
                 continue;
             woman.PregnantUntilTicks = due;
             woman.PregnancyFather = woman.Partner;
@@ -167,10 +167,10 @@ public static class Lifecycle
     /// </summary>
     public static bool CanConceive(Colonist woman, long dueTicks) =>
         woman.Stage == LifeStage.Adult
-        && woman.AgeYears <= FertileUntilAge
+        && woman.EquivalentAge <= FertileUntilAge
         && woman.Partner is { Stage: LifeStage.Adult }
         && woman.PregnantUntilTicks is null
-        && dueTicks - woman.LastBirthTicks >= (long)(MinBirthIntervalYears * TimeConstants.TicksPerYear);
+        && dueTicks - woman.LastBirthTicks >= (long)(MinBirthIntervalYears * woman.Species.LifespanScale * TimeConstants.TicksPerYear);
 
     private static void GiveBirths(WorldState world, Colony colony)
     {
@@ -195,6 +195,7 @@ public static class Lifecycle
             Mother = mother,
             Father = father,
             Surname = father?.Surname ?? mother.Surname,
+            Species = mother.Species,
             BirthTicks = world.Clock.Ticks,
             Personality = Personality.Inherit(world.Random, mother.Personality, fatherPersonality),
         };
@@ -254,7 +255,7 @@ public static class Lifecycle
         colonist.PregnancyFather = null;
         colonist.Partner = null;
 
-        (int x, int y) = Urbanism.FindGraveSite(world.Map, colony) ?? (-1, -1);
+        (int x, int y) = Urbanism.FindGraveSite(colony.Map, colony) ?? (-1, -1);
         colony.Graves.Add(new Grave(colonist.FullName, colonist.Sex, age, cause, world.Clock.Ticks, x, y));
 
         bool female = colonist.Sex == Sex.Female;

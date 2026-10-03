@@ -38,7 +38,15 @@ public sealed class Colonist
     /// <summary>Âge en années de jeu (une année = 20 jours).</summary>
     public float AgeYears => (Colony.Clock.Ticks - BirthTicks) / (float)Time.TimeConstants.TicksPerYear;
 
-    public LifeStage Stage => AgeYears switch
+    public Species Species { get; init; } = Species.Human;
+
+    /// <summary>
+    /// L'âge qu'aurait un humain au même moment de sa vie : un nain de 12 ans a la maturité d'un humain de 6.
+    /// C'est lui qui décide de l'enfance, de la vieillesse, de la fécondité.
+    /// </summary>
+    public float EquivalentAge => AgeYears / Species.LifespanScale;
+
+    public LifeStage Stage => EquivalentAge switch
     {
         < TeenAge => LifeStage.Child,
         < AdultAge => LifeStage.Teen,

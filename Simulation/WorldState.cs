@@ -22,31 +22,47 @@ public sealed class WorldState
     /// <summary>Les âges, les couples, les naissances et la mort sont-ils actifs ?</summary>
     private readonly bool _lifecycle;
 
+    /// <summary>Écart entre les graines des cartes de deux colonies.</summary>
+    private const int MapSeedStep = 7919;
+
+    private static string ColonyName(int index, Species species) =>
+        index == 0 ? "Première colonie" : $"Colonie {species.Adjective}";
+
     internal int NextColonistId() => _nextColonistId++;
 
     public GameClock Clock { get; }
-    public LocalMap Map { get; }
-    public Pathfinder Pathfinder { get; }
     public List<Colony> Colonies { get; } = [];
+
+    /// <summary>La carte de la première colonie (la seule, dans une partie à une colonie). Chaque colonie a la sienne.</summary>
+    public LocalMap Map => Colonies[0].Map;
+
+    public Pathfinder Pathfinder => Colonies[0].Pathfinder;
 
     /// <summary>Tout le hasard de la simulation passe par ici : une même graine rejoue la même histoire.</summary>
     public Random Random { get; }
 
-    /// <param name="startingColonists">Nombre de colons fondateurs ; tiré au hasard entre 5 et 10 si l'on n'en précise pas.</param>
+    /// <param name="startingColonists">Nombre de colons fondateurs (par colonie) ; tiré au hasard entre 5 et 10 si l'on n'en précise pas.</param>
     /// <param name="migration">Faux pour couper les arrivées de voyageurs et les départs.</param>
-    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true, bool lifecycle = true)
+    /// <param name="colonyCount">
+    /// Nombre de colonies. Chacune a son espèce (humains, puis nains, elfes, orcs) et sa propre carte locale,
+    /// dont le relief convient à son peuple.
+    /// </param>
+    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true, bool lifecycle = true, int colonyCount = 1)
     {
         _migration = migration;
         _lifecycle = lifecycle;
         Random = new Random(seed);
         Clock = new GameClock(StartTicks);
-        Map = MapGenerator.Generate(mapWidth, mapHeight, seed);
-        Pathfinder = new Pathfinder(Map);
-        int founders = startingColonists
-            ?? Random.Next(ColonyFounder.MinStartingColonists, ColonyFounder.MaxStartingColonists + 1);
-        Colonies.Add(ColonyFounder.Found(Map, Random, "Première colonie", founders, NextColonistId, Clock));
+        for (int i = 0; i < colonyCount; i++)
+        {
+            Species species = Species.All[i % Species.All.Count];
+            LocalMap map = MapGenerator.Generate(mapWidth, mapHeight, seed + i * MapSeedStep, species.Biome);
+            int founders = startingColonists
+                ?? Random.Next(ColonyFounder.MinStartingColonists, ColonyFounder.MaxStartingColonists + 1);
+            Colonies.Add(ColonyFounder.Found(map, Random, ColonyName(i, species), founders, NextColonistId, Clock, species));
+        }
         foreach (Colony colony in Colonies)
-            ColonyBrain.Think(colony, Map, Clock);
+            ColonyBrain.Think(colony, colony.Map, Clock);
     }
 
     /// <summary>Le joueur répond à une prière : accord ou refus.</summary>
@@ -60,9 +76,9 @@ public sealed class WorldState
         Clock.Advance();
         if (Clock.TotalDays != day)
         {
-            Map.DailyUpdate(Clock.TotalDays, Clock.Season);
             foreach (Colony colony in Colonies)
             {
+                colony.Map.DailyUpdate(Clock.TotalDays, Clock.Season);
                 ColonyBrain.OnDayStart(colony, Clock);
                 if (_lifecycle)
                     Lifecycle.Daily(this, colony);
@@ -73,7 +89,7 @@ public sealed class WorldState
         {
             foreach (Colony colony in Colonies)
             {
-                ColonyBrain.Think(colony, Map, Clock);
+                ColonyBrain.Think(colony, colony.Map, Clock);
                 if (Clock.Hour == FireLightingHour)
                     ColonyBrain.LightFire(colony, Clock);
                 if (_lifecycle)

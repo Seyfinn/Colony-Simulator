@@ -12,6 +12,14 @@ public sealed class Colony
 
     public string Name { get; }
 
+    /// <summary>L'espèce qui peuple la colonie (celle des fondateurs et des voyageurs).</summary>
+    public Species Species { get; internal set; } = Species.Human;
+
+    /// <summary>La carte locale de la colonie : chaque colonie a la sienne, façonnée par son environnement.</summary>
+    public GodColony.Simulation.Map.LocalMap Map { get; internal set; } = null!;
+
+    public GodColony.Simulation.Pathfinding.Pathfinder Pathfinder { get; internal set; } = null!;
+
     /// <summary>L'horloge du monde, pour calculer les âges.</summary>
     internal GodColony.Simulation.Time.GameClock Clock { get; set; } = new(0);
 
