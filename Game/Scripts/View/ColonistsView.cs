@@ -61,6 +61,8 @@ public partial class ColonistsView : Node2D
     {
         foreach (Colony colony in _world.Colonies)
         {
+            foreach (Field field in colony.Fields)
+                DrawField(field);
             foreach (Building building in colony.Buildings)
                 DrawBuilding(building);
 
@@ -76,6 +78,27 @@ public partial class ColonistsView : Node2D
                     DrawColonist(colonist);
             foreach (Colonist traveler in colony.Transients)
                 DrawColonist(traveler);
+        }
+    }
+
+    /// <summary>Terre labourée ; les jeunes pousses verdissent puis les épis dorent à la maturité.</summary>
+    private void DrawField(Field field)
+    {
+        foreach (FieldPlot plot in field.Plots)
+        {
+            var origin = new Vector2(plot.X, plot.Y) * Tile;
+            DrawRect(new Rect2(origin, new Vector2(Tile, Tile)), new Color(0.42f, 0.29f, 0.17f));
+            for (int furrow = 3; furrow < Tile; furrow += 5)
+                DrawRect(new Rect2(origin + new Vector2(0, furrow), new Vector2(Tile, 1)), new Color(0.34f, 0.23f, 0.13f));
+
+            if (plot.Stage == CropStage.Fallow)
+                continue;
+            bool ripe = plot.Stage == CropStage.Ripe;
+            int height = ripe ? 9 : 2 + (int)(plot.Growth * 6);
+            Color stalk = ripe ? new Color(0.9f, 0.76f, 0.25f) : new Color(0.35f, 0.65f, 0.25f).Lerp(new Color(0.6f, 0.7f, 0.25f), plot.Growth);
+            for (int row = 0; row < 3; row++)
+            for (int column = 0; column < 4; column++)
+                DrawRect(new Rect2(origin + new Vector2(1 + column * 4, 4 + row * 5 - height + 3), new Vector2(2, height)), stalk);
         }
     }
 

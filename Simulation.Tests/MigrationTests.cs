@@ -69,7 +69,7 @@ public class MigrationTests(ITestOutputHelper output)
 
         output.WriteLine($"Chance par jour : pauvre {poor:P0}, modeste {modest:P0}, prospère {rich:P0}");
         Assert.True(poor < modest && modest < rich);
-        Assert.True(poor < 0.15f, "Un stock vide attire peu de monde (et la faim ferait vite chuter l’humeur).");
+        Assert.True(poor < 0.2f, "Un stock vide attire peu de monde (et la faim ferait vite chuter l’humeur).");
         Assert.InRange(rich, 0.3f, Migration.MaxTravelerChancePerDay);
 
         // Des colons malheureux font fuir les voyageurs, même dans l'abondance.

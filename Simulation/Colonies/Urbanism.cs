@@ -53,6 +53,9 @@ public static class Urbanism
         foreach (Building other in colony.Buildings)
             if (x < other.X + other.Width + 1 && x + 2 > other.X - 1 && y < other.Y + other.Height + 1 && y + 2 > other.Y - 1)
                 return false;
+        foreach (Field field in colony.Fields)
+            if (x < field.X + Field.Size + 1 && x + 2 > field.X - 1 && y < field.Y + Field.Size + 1 && y + 2 > field.Y - 1)
+                return false;
         return true;
     }
 

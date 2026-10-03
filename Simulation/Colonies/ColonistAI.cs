@@ -188,7 +188,7 @@ public static class ColonistAI
         bool bedtime = clock.IsNight || clock.IsEvening;
         if (needs.Food < 0.4f || (bedtime && needs.Food < 0.65f))
         {
-            if (colony.Stock.Get(ResourceType.Food) > 0 && StartNearCamp(colonist, world, ActivityKind.Eat, EatSeconds))
+            if (colony.Stock.FoodUnits > 0 && StartNearCamp(colonist, world, ActivityKind.Eat, EatSeconds))
                 return;
             if (TryForage(colonist, world, ActivityKind.ForageToEat, colonist.TileX, colonist.TileY))
                 return;
@@ -244,6 +244,7 @@ public static class ColonistAI
             bool started = sector switch
             {
                 WorkSector.Food => TryGatherFood(colonist, world),
+                WorkSector.Farm => TryFarm(colonist, world),
                 WorkSector.Wood => TryChop(colonist, world),
                 WorkSector.Stone => TryMine(colonist, world),
                 _ => TryConstruct(colonist, world),
@@ -318,6 +319,28 @@ public static class ColonistAI
         Commit(colonist, best, bestPath, bestMaxStep, world.Clock.Ticks);
         return true;
     }
+
+    /// <summary>Moissonne une parcelle mûre en priorité ; au printemps, sinon, sème la parcelle libre la plus proche.</summary>
+    private static bool TryFarm(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        float speed = colonist.Skills.WorkSpeed(SkillType.Farming);
+
+        foreach (FieldPlot plot in NearestPlots(colony, colonist, CropStage.Ripe).Take(TargetsToTry))
+            if (TryStart(colonist, world, new Activity(ActivityKind.Harvest, plot.X, plot.Y, Ticks(Farming.HarvestSeconds / speed))))
+                return true;
+
+        if (Farming.IsSowingSeason(world.Clock.Season))
+            foreach (FieldPlot plot in NearestPlots(colony, colonist, CropStage.Fallow).Take(TargetsToTry))
+                if (TryStart(colonist, world, new Activity(ActivityKind.Sow, plot.X, plot.Y, Ticks(Farming.SowSeconds / speed))))
+                    return true;
+        return false;
+    }
+
+    private static IEnumerable<FieldPlot> NearestPlots(Colony colony, Colonist colonist, CropStage stage) =>
+        Farming.Plots(colony)
+            .Where(p => p.Stage == stage && !colony.Reserved.Contains((p.X, p.Y)))
+            .OrderBy(p => Math.Abs(p.X - colonist.TileX) + Math.Abs(p.Y - colonist.TileY));
 
     private static IEnumerable<(int X, int Y)> NearestBushes(LocalMap map, Colony colony, int centerX, int centerY)
     {
@@ -512,6 +535,8 @@ public static class ColonistAI
                 if (colonist.WorkCycleStartTicks >= 0)
                 {
                     double hours = LaborLedger.TicksToHours(world.Clock.Ticks - colonist.WorkCycleStartTicks);
+                    if (load.Type == ResourceType.Grain)
+                        hours += colonist.Colony.SowHoursPerPlot;
                     colonist.Colony.Labor.Record(load.Type, hours, load.Amount);
                     colonist.WorkCycleStartTicks = -1;
                 }
@@ -542,7 +567,10 @@ public static class ColonistAI
     /// <summary>Vérifie, à l'arrivée, que l'action est toujours possible (un autre a pu cueillir le buisson entre-temps).</summary>
     private static bool CanBegin(Colonist colonist, WorldState world, Activity activity) => activity.Kind switch
     {
-        ActivityKind.Eat => colonist.Colony.Stock.TryTake(ResourceType.Food, 1),
+        ActivityKind.Eat => colonist.Colony.Stock.TryTakeMeal(),
+        ActivityKind.Sow => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow }
+                            && Farming.IsSowingSeason(world.Clock.Season),
+        ActivityKind.Harvest => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Ripe },
         ActivityKind.Forage or ActivityKind.ForageToEat => world.Map.GetBerries(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Fish => world.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Chop => world.Map.CanChop(activity.TargetX, activity.TargetY),
@@ -598,6 +626,16 @@ public static class ColonistAI
                 site.Progress = MathF.Min(1f, site.Progress + BuildActionSeconds / Building.HutWorkSeconds);
                 if (site.IsComplete)
                     ColonyBrain.OnBuildingComplete(colonist.Colony, site, world.Clock);
+                break;
+            case ActivityKind.Sow when Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow } plot:
+                plot.Stage = CropStage.Growing;
+                plot.Growth = 0f;
+                colonist.Colony.RecordSowing(world.Clock.Ticks - activity.CommittedAtTicks);
+                break;
+            case ActivityKind.Harvest when Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Ripe } plot:
+                plot.Stage = CropStage.Fallow;
+                plot.Growth = 0f;
+                colonist.Carrying = (ResourceType.Grain, Farming.PlotYield);
                 break;
             case ActivityKind.Fish when map.CatchFish(activity.TargetX, activity.TargetY):
                 colonist.Carrying = (ResourceType.Food, FoodPerFish);

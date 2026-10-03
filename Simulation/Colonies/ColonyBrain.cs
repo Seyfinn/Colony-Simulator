@@ -12,7 +12,8 @@ public sealed record ColonySensors(
     float HeatingPressure,
     float WoodTarget, float WoodPressure,
     int Homeless, float HousingPressure, bool HasConstructionSite,
-    float StonePressure)
+    float StonePressure,
+    float FarmShare)
 {
     /// <summary>Étage 1 de la pyramide : nourriture et chauffage.</summary>
     public bool SurvivalAssured => Math.Max(FoodPressure, HeatingPressure) <= 60f;
@@ -46,6 +47,10 @@ public static class ColonyBrain
     private const float MaxWoodShare = 0.5f;
     private const float MaxStoneShare = 0.4f;
     private const float MaxConstructionShare = 0.3f;
+    private const float MaxFarmShare = 0.6f;
+
+    /// <summary>On ouvre au plus ce nombre de champs d'un coup (la colonie réfléchit chaque heure).</summary>
+    private const int MaxFieldsPerThought = 2;
 
     /// <summary>Nombre de chantiers ouverts en même temps : un seul, deux si beaucoup de colons dorment dehors.</summary>
     private static int MaxConstructionSites(int homeless) => homeless > 8 ? 2 : 1;
@@ -68,6 +73,7 @@ public static class ColonyBrain
 
     public static void Think(Colony colony, LocalMap map, GameClock clock)
     {
+        PlanFields(colony, map, clock);
         ColonySensors sensors = Sense(colony, clock);
         if (PlanConstruction(colony, map, sensors, clock))
             sensors = Sense(colony, clock);
@@ -79,6 +85,46 @@ public static class ColonyBrain
         colony.AssignSectors();
 
         Narrate(colony, sensors, clock);
+    }
+
+    /// <summary>
+    /// Au printemps, la colonie défriche assez de champs pour nourrir une bonne part de ses habitants.
+    /// Plus la nourriture sauvage lui coûte d'heures de travail, plus elle cultive.
+    /// </summary>
+    private static void PlanFields(Colony colony, LocalMap map, GameClock clock)
+    {
+        if (!Farming.IsSowingSeason(clock.Season))
+            return;
+
+        // Des greniers qui débordent : inutile d'agrandir les champs.
+        float foodDays = colony.Stock.FoodUnits / (Math.Max(1, colony.Members.Count) * MealsPerColonistPerDay);
+        if (foodDays >= 2 * FoodTargetDays)
+            return;
+
+        int target = Farming.TargetPlots(colony);
+        int opened = 0;
+        while (opened < MaxFieldsPerThought && colony.Fields.Count * Field.Size * Field.Size < target
+               && Farming.FindFieldSite(map, colony) is { } site)
+        {
+            Farming.PlanField(map, colony, site.X, site.Y);
+            opened++;
+        }
+        if (opened == 0)
+            return;
+
+        int plots = colony.Fields.Count * Field.Size * Field.Size;
+        string fields = opened == 1 ? "un champ" : $"{opened} champs";
+        Say(colony, clock, colony.Labor.HoursPerUnit(ResourceType.Food) is { } wildCost
+            ? $"Baies et poisson nous coûtent {wildCost:0.0} h par unité : nous ouvrons {fields} ({plots} parcelles en tout)."
+            : $"Pour assurer la nourriture de l'année, nous ouvrons {fields} ({plots} parcelles en tout).");
+    }
+
+    /// <summary>Le gel de l'hiver détruit ce qui n'a pas été moissonné.</summary>
+    public static void OnDayStart(Colony colony, GameClock clock)
+    {
+        int lost = Farming.DailyUpdate(colony, clock);
+        if (lost > 0)
+            Say(colony, clock, $"Le gel a détruit {lost} parcelles de céréales qui n'avaient pas été moissonnées !");
     }
 
     /// <summary>
@@ -111,7 +157,7 @@ public static class ColonyBrain
         colony.FillVacancies();
         int homeless = colony.Homeless;
         Say(colony, clock, homeless > 0
-            ? $"Une hutte est achevée : {building.Residents.Count} colons y dorment désormais à l'abri ({homeless} encore dehors)."
+            ? $"Une hutte est achevée : {(building.Residents.Count == 1 ? "1 colon y dort" : $"{building.Residents.Count} colons y dorment")} désormais à l'abri ({homeless} encore dehors)."
             : "Une hutte est achevée : tout le monde dort désormais à l'abri !");
     }
 
@@ -129,7 +175,7 @@ public static class ColonyBrain
         int population = Math.Max(1, colony.Members.Count);
 
         float dailyMeals = population * MealsPerColonistPerDay;
-        float foodDays = colony.Stock.Get(ResourceType.Food) / dailyMeals;
+        float foodDays = colony.Stock.FoodUnits / dailyMeals;
         float foodTarget = clock.Season == Season.Automne ? AutumnFoodTargetDays : FoodTargetDays;
         float foodPressure = Pressure(foodTarget - foodDays, foodTarget - FoodCrisisDays);
 
@@ -151,8 +197,11 @@ public static class ColonyBrain
 
         float stonePressure = Pressure(StoneReserveTarget - colony.Stock.Get(ResourceType.Stone), StoneReserveTarget);
 
+        // Les champs réclament des bras au moment des semailles et de la moisson.
+        float farmShare = Math.Min(MaxFarmShare, Farming.WorkersNeeded(colony, clock) / (float)population);
+
         return new ColonySensors(foodDays, foodPressure, heatingPressure, woodTarget, woodPressure,
-            homeless, housingPressure, hasSite, stonePressure);
+            homeless, housingPressure, hasSite, stonePressure, farmShare);
     }
 
     /// <summary>
@@ -162,6 +211,7 @@ public static class ColonyBrain
     public static Dictionary<WorkSector, float> DecideShares(ColonySensors sensors)
     {
         float food = sensors.FoodPressure / 100f * MaxFoodShare;
+        float farm = sensors.FarmShare;
         float wood = sensors.WoodPressure / 100f * MaxWoodShare;
         float construction = sensors.SurvivalAssured && sensors.HasConstructionSite
             ? Math.Max(0.1f, sensors.HousingPressure / 100f) * MaxConstructionShare
@@ -173,7 +223,7 @@ public static class ColonyBrain
         float vital = food + wood;
         if (!sensors.SurvivalAssured && vital > 0f)
         {
-            float spare = 1f - (food + wood + construction + stone);
+            float spare = 1f - (food + farm + wood + construction + stone);
             if (spare > 0f)
             {
                 food += spare * food / vital;
@@ -181,10 +231,11 @@ public static class ColonyBrain
             }
         }
 
-        float total = food + wood + construction + stone;
+        float total = food + farm + wood + construction + stone;
         if (total > 1f)
         {
             food /= total;
+            farm /= total;
             wood /= total;
             construction /= total;
             stone /= total;
@@ -193,6 +244,7 @@ public static class ColonyBrain
         return new Dictionary<WorkSector, float>
         {
             [WorkSector.Food] = food,
+            [WorkSector.Farm] = farm,
             [WorkSector.Wood] = wood,
             [WorkSector.Stone] = stone,
             [WorkSector.Construction] = construction,
@@ -208,6 +260,7 @@ public static class ColonyBrain
     private static void Narrate(Colony colony, ColonySensors sensors, GameClock clock)
     {
         int Workers(WorkSector sector) => colony.Members.Count(m => m.Sector == sector);
+        string People(WorkSector sector) => Workers(sector) == 1 ? "1 colon" : $"{Workers(sector)} colons";
 
         string foodBand = sensors.FoodDays < 2 ? "crise"
             : sensors.FoodDays < 3.5f ? "basse"
@@ -217,8 +270,8 @@ public static class ColonyBrain
         {
             Say(colony, clock, foodBand switch
             {
-                "crise" => $"Il ne reste que {sensors.FoodDays:0.#} jours de nourriture ! {Workers(WorkSector.Food)} colons partent cueillir.",
-                "basse" => $"Les réserves de nourriture baissent ({sensors.FoodDays:0} jours) : {Workers(WorkSector.Food)} colons à la cueillette.",
+                "crise" => $"Il ne reste que {sensors.FoodDays:0.#} jours de nourriture ! {People(WorkSector.Food)} à la cueillette.",
+                "basse" => $"Les réserves de nourriture baissent ({sensors.FoodDays:0} jours) : {People(WorkSector.Food)} à la cueillette.",
                 _ => $"Nos réserves de nourriture sont confortables ({sensors.FoodDays:0} jours).",
             });
         }
@@ -232,11 +285,11 @@ public static class ColonyBrain
             Say(colony, clock, woodBand switch
             {
                 "manque-automne" =>
-                    $"L'hiver approche et le bois manque : {Workers(WorkSector.Wood)} colons coupent du bois de chauffage.",
-                "manque" => $"Nous manquons de bois : {Workers(WorkSector.Wood)} colons partent en forêt.",
+                    $"L'hiver approche et le bois manque : {People(WorkSector.Wood)} en forêt pour le bois de chauffage.",
+                "manque" => $"Nous manquons de bois : {People(WorkSector.Wood)} en forêt.",
                 "besoin-automne" =>
                     $"L'hiver approche : nous faisons des réserves de bois ({colony.Stock.Get(ResourceType.Wood)} sur {sensors.WoodTarget:0}).",
-                "besoin" => $"Il nous faudra un peu plus de bois : {Workers(WorkSector.Wood)} colons y travaillent.",
+                "besoin" => $"Il nous faudra un peu plus de bois : {People(WorkSector.Wood)} en forêt.",
                 _ => "Nous avons assez de bois pour nous chauffer.",
             });
         }
@@ -247,8 +300,31 @@ public static class ColonyBrain
         if (Changed(colony, "pierre", stoneBand))
         {
             Say(colony, clock, stoneBand == "carrière"
-                ? $"Nos besoins vitaux sont couverts : {Workers(WorkSector.Stone)} colons travaillent à la carrière."
+                ? $"Nos besoins vitaux sont couverts : {People(WorkSector.Stone)} à la carrière."
                 : "La carrière attendra : les besoins vitaux passent d'abord.");
+        }
+
+        // Les champs : semailles, pousse, moisson, repos hivernal.
+        if (colony.Fields.Count > 0)
+        {
+            var plots = Farming.Plots(colony).ToList();
+            int fallow = plots.Count(p => p.Stage == CropStage.Fallow);
+            int ripe = plots.Count(p => p.Stage == CropStage.Ripe);
+            string fieldBand = clock.Season == Season.Hiver ? "repos"
+                : ripe > 0 ? "moisson"
+                : fallow > 0 && Farming.IsSowingSeason(clock.Season) ? "semis"
+                : plots.Any(p => p.Stage == CropStage.Growing) ? "pousse"
+                : "repos";
+            if (Changed(colony, "champs", fieldBand))
+            {
+                Say(colony, clock, fieldBand switch
+                {
+                    "semis" => $"C'est le temps des semailles : {fallow} parcelles à ensemencer.",
+                    "pousse" => "Les semailles sont faites : les céréales poussent.",
+                    "moisson" => $"Les céréales sont mûres : c'est la moisson ({ripe} parcelles prêtes).",
+                    _ => "Les champs se reposent.",
+                });
+            }
         }
 
         // Bilan de saison : ce que coûte chaque ressource en heures de travail.
@@ -275,7 +351,8 @@ public static class ColonyBrain
             if (labor.HoursPerUnit(type) is { } hours)
                 parts.Add($"{name} {hours:0.0} h");
         }
-        Add(ResourceType.Food, "nourriture");
+        Add(ResourceType.Food, "nourriture sauvage");
+        Add(ResourceType.Grain, "céréales");
         Add(ResourceType.Wood, "bois");
         Add(ResourceType.Stone, "pierre");
         Add(ResourceType.IronOre, "minerai de fer");

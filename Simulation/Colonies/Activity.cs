@@ -19,6 +19,10 @@ public enum ActivityKind
     /// <summary>Apporter les matériaux sur le chantier.</summary>
     SupplySite,
     Build,
+    /// <summary>Semer une parcelle de champ.</summary>
+    Sow,
+    /// <summary>Moissonner une parcelle mûre.</summary>
+    Harvest,
     /// <summary>Un voyageur marche jusqu'au camp pour se joindre à la colonie.</summary>
     Arrive,
     /// <summary>Un colon malheureux quitte la colonie pour de bon.</summary>
@@ -52,7 +56,7 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     public long CommittedAtTicks { get; set; }
 
     /// <summary>Activité qui produit une ressource : on mesure son coût en travail.</summary>
-    public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine;
+    public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest;
 
     /// <summary>Vrai une fois que le colon est arrivé et a commencé l'action.</summary>
     public bool Started { get; set; }
@@ -65,10 +69,12 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Chop => SkillType.Woodcutting,
         ActivityKind.Mine => SkillType.Mining,
         ActivityKind.Build => SkillType.Construction,
+        ActivityKind.Sow or ActivityKind.Harvest => SkillType.Farming,
         _ => null,
     };
 
     /// <summary>Cette action réserve-t-elle sa case cible (pour éviter que deux colons visent le même arbre) ?</summary>
     public bool ReservesTarget =>
-        Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine;
+        Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine
+            or ActivityKind.Sow or ActivityKind.Harvest;
 }

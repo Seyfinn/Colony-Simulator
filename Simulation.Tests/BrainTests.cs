@@ -58,6 +58,7 @@ public class BrainTests(ITestOutputHelper output)
     {
         (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 1000);
         HouseEveryone(world, colony);
+        colony.Fields.Clear(); // les champs réclameraient des bras pour les semailles : on teste ici la pyramide seule
         ThinkSeveralHours(colony, world, world.Clock);
 
         Assert.True(colony.WorkShares[WorkSector.Free] > 0.9f);

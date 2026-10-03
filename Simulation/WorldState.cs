@@ -52,7 +52,11 @@ public sealed class WorldState
         int hour = Clock.Hour;
         Clock.Advance();
         if (Clock.TotalDays != day)
+        {
             Map.DailyUpdate(Clock.TotalDays, Clock.Season);
+            foreach (Colony colony in Colonies)
+                ColonyBrain.OnDayStart(colony, Clock);
+        }
 
         if (Clock.Hour != hour)
         {

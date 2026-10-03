@@ -38,6 +38,7 @@ public partial class Main : Node2D
     //   --advance-hours=N      fait avancer la simulation de N heures au démarrage
     //   --demo-quarry          creuse une carrière de démonstration
     //   --select-first         sélectionne le premier colon
+    //   --focus-fields         centre la caméra sur le premier champ
     private string? _capturePath;
     private int _framesBeforeCapture = 20;
 
@@ -90,6 +91,12 @@ public partial class Main : Node2D
                 // Centre la caméra sur la carrière et suit un mineur.
                 camera.Position = new Vector2(quarry.X + 0.5f, quarry.Y + 0.5f) * TerrainPainter.TileSize;
                 Select(_world.Colonies[0].Members.Find(m => m.Sector == WorkSector.Stone));
+            }
+            else if (arg == "--focus-fields" && _world.Colonies[0].Fields.Count > 0)
+            {
+                // Centre la caméra sur les champs.
+                Field field = _world.Colonies[0].Fields[0];
+                camera.Position = new Vector2(field.X + Field.Size / 2f, field.Y + Field.Size / 2f) * TerrainPainter.TileSize;
             }
             else if (arg == "--demo-quarry")
             {
@@ -215,7 +222,7 @@ public partial class Main : Node2D
         int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
         string population = arriving > 0 ? $"{colony.Members.Count} colons (+{arriving} en route)" : $"{colony.Members.Count} colons";
         _hud.SetColony($"{colony.Name}  ·  {population}  ·  humeur {colony.AverageMood * 100:0} %  ·  attrait {Migration.Attractiveness(colony, clock) * 100:0} %  ·  " +
-                       $"nourriture {stock.Get(ResourceType.Food)}  ·  bois {stock.Get(ResourceType.Wood)}  ·  " +
+                       $"nourriture {stock.Get(ResourceType.Food)}  ·  céréales {stock.Get(ResourceType.Grain)}  ·  bois {stock.Get(ResourceType.Wood)}  ·  " +
                        $"pierre {stock.Get(ResourceType.Stone)}  ·  minerai de fer {stock.Get(ResourceType.IronOre)}");
 
         (int x, int y) = TileUnderMouse();

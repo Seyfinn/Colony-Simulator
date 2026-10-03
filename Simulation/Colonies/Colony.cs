@@ -32,6 +32,7 @@ public sealed class Colony
     public Dictionary<WorkSector, float> WorkShares { get; } = new()
     {
         [WorkSector.Food] = 0.5f,
+        [WorkSector.Farm] = 0f,
         [WorkSector.Wood] = 0.3f,
         [WorkSector.Stone] = 0.2f,
         [WorkSector.Construction] = 0f,
@@ -40,6 +41,22 @@ public sealed class Colony
 
     /// <summary>Les bâtiments de la colonie, achevés ou en chantier.</summary>
     public List<Building> Buildings { get; } = [];
+
+    /// <summary>Les champs de la colonie.</summary>
+    public List<Field> Fields { get; } = [];
+
+    /// <summary>Temps passé à semer, pour que le coût des céréales inclue les semailles.</summary>
+    private long _sowTicks;
+    private int _plotsSown;
+
+    internal void RecordSowing(long ticks)
+    {
+        _sowTicks += ticks;
+        _plotsSown++;
+    }
+
+    /// <summary>Heures de travail qu'il faut pour semer une parcelle (0 tant qu'on n'a rien semé).</summary>
+    public double SowHoursPerPlot => _plotsSown == 0 ? 0 : LaborLedger.TicksToHours(_sowTicks) / _plotsSown;
 
     public IEnumerable<Building> ConstructionSites => Buildings.Where(b => !b.IsComplete);
 

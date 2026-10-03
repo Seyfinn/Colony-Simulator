@@ -132,7 +132,8 @@ public partial class Hud : CanvasLayer
 
     public static string SectorName(WorkSector sector) => sector switch
     {
-        WorkSector.Food => "nourriture",
+        WorkSector.Food => "cueillette et pêche",
+        WorkSector.Farm => "agriculture",
         WorkSector.Wood => "bois",
         WorkSector.Stone => "pierre",
         WorkSector.Construction => "construction",
@@ -145,6 +146,7 @@ public partial class Hud : CanvasLayer
         SkillType.Fishing => "Pêche",
         SkillType.Woodcutting => "Bûcheronnage",
         SkillType.Mining => "Minage",
+        SkillType.Farming => "Agriculture",
         _ => "Construction",
     };
 
@@ -168,6 +170,8 @@ public partial class Hud : CanvasLayer
             ActivityKind.FetchMaterials => "Va chercher du bois pour le chantier",
             ActivityKind.SupplySite => "Apporte du bois au chantier",
             ActivityKind.Build => there ? "Bâtit une hutte" : "Part sur le chantier",
+            ActivityKind.Sow => there ? "Sème" : "Part semer",
+            ActivityKind.Harvest => there ? "Moissonne" : "Part moissonner",
             ActivityKind.Arrive => "Marche vers la colonie",
             ActivityKind.Depart => "Quitte la colonie pour de bon",
             _ => "Se promène",

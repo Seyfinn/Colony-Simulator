@@ -1,6 +1,7 @@
 namespace GodColony.Simulation.Colonies;
 
-public enum ResourceType { Food, Wood, Stone, IronOre }
+/// <summary>Nourriture sauvage (baies, poisson), céréales de la moisson, bois, pierre et minerai de fer.</summary>
+public enum ResourceType { Food, Grain, Wood, Stone, IronOre }
 
 /// <summary>Le stock commun de la colonie : tout appartient à la colonie, rien aux colons.</summary>
 public sealed class Stockpile
@@ -8,6 +9,12 @@ public sealed class Stockpile
     private readonly Dictionary<ResourceType, int> _amounts = [];
 
     public int Get(ResourceType type) => _amounts.GetValueOrDefault(type);
+
+    /// <summary>Tout ce qui se mange : nourriture sauvage et céréales.</summary>
+    public int FoodUnits => Get(ResourceType.Food) + Get(ResourceType.Grain);
+
+    /// <summary>Prend un repas : la nourriture sauvage d'abord (elle se garde mal), les céréales ensuite.</summary>
+    public bool TryTakeMeal() => TryTake(ResourceType.Food, 1) || TryTake(ResourceType.Grain, 1);
 
     public void Add(ResourceType type, int amount) => _amounts[type] = Get(type) + amount;
 
