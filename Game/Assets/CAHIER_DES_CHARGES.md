@@ -102,7 +102,7 @@ Légende de l'état : **Code** = dessiné en code, rien à livrer d'obligatoire 
 | `tools.png` | Outils de fer | Code |
 | `flour.png` | Farine (sac) | Code |
 | `bread.png` | Pain | Code |
-| `coins.png` | Pièces (monnaie commune) | Code → **À livrer** (T-004) |
+| `coins.png` | Pièces (monnaie commune) | PNG (T-004) |
 
 ### 4.2 Bâtiments — `buildings/<type>[_<milieu>].png`
 
@@ -117,11 +117,12 @@ Le barrage occupe **1 case** : image **32 × 48**.
 | `bloomery.png` | Bas fourneau (four de pierre à minerai) | 64 × 80 | Code |
 | `forge.png` | Forge (foyer, enclume) | 64 × 80 | Code |
 | `mill.png` | Moulin à eau (bâtiment sans la roue) | 64 × 80 | Code |
-| `mill_wheel_0.png` … `mill_wheel_3.png` | Roue à aubes, 4 images en boucle, posée contre le mur **est** du moulin | 24 × 40 | À livrer (T-005) |
+| `mill_wheel_0.png` … `mill_wheel_3.png` | Roue à aubes, 4 images en boucle, posée contre le mur **est** du moulin | 24 × 40 | PNG (T-005), vitesse liée au débit réel |
 | `oven.png` | Four à pain | 64 × 80 | Code |
 | `dam.png` | Barrage vu de face (franchit un cours d'eau est-ouest) | 32 × 48 | Code |
 | `dam_side.png` | Barrage vu de côté (franchit un cours d'eau nord-sud) | 32 × 48 | Code |
-| `dam_construction_0.png` … `_2.png` | Barrage en chantier (pieux, puis pierres, puis presque fini) | 32 × 48 | À livrer (T-002) |
+| `dam_construction_0.png` … `_2.png` | Barrage en chantier (pieux, puis pierres, puis presque fini) | 32 × 48 | PNG (T-002) |
+| `dam_construction_side_0.png` … `_2.png` | Les mêmes étapes vues de côté pour l'autre orientation du courant | 32 × 48 | PNG (T-002) |
 
 ### 4.3 Eau et canaux — `terrain/`, **32 × 32** par case
 
@@ -148,17 +149,18 @@ Espèces : `human`, `dwarf`, `elf`, `orc`. Âges : `child`, `teen`, `adult`, `el
 Quatre images de marche (0 à 3) et une image de repos (`rest`). Taille **32 × 32** par image (le personnage en occupe environ 12 × 24 ;
 la marge sert aux outils et aux capes). Ancrage : milieu du bord bas.
 
-| État actuel | Les quatre espèces sont dessinées en code (`PeoplesSprites`, `PeopleCostumes`) avec les costumes par milieu. Aucun PNG demandé pour l'instant. |
+| État actuel | Code (`PeoplesSprites`, `PeopleCostumes`) avec costumes par milieu ; remplacement PNG facultatif branché (T-009), quatre images de marche 32 × 32 et repos. Aucun PNG général demandé pour l'instant. |
 |---|---|
 
 ### 4.5 Caravanes — `world/` et `peoples/`
 
 | Fichier | Représente | Taille | État |
 |---|---|---|---|
-| `world/caravan_0.png` … `world/caravan_3.png` | Caravane sur la carte du monde : deux colons et une charrette à bras, marche vers la droite, 4 images | 24 × 16 | PNG livrés (T-006) ; intégration carte du monde : T-010 |
-| `world/colony_human.png`, `colony_dwarf.png`, `colony_elf.png`, `colony_orc.png` | Marqueur de colonie sur la carte du monde, un par espèce | 32 × 32 | À livrer (T-007) |
-| `world/river_segment.png` | Tronçon de fleuve qui relie deux colonies (répétable) | 16 × 8 | À livrer (T-007) |
-| `peoples/trader_<espece>_<image>.png` | Colon en tenue de voyage avec sac, 4 images de marche (affiché quand la colonie reçoit une caravane — pas encore branché) | 32 × 32 | — |
+| `world/caravan_0.png` … `world/caravan_3.png` | Caravane sur la carte du monde : deux colons et une charrette à bras, marche vers la droite, 4 images | 24 × 16 | PNG (T-006/T-010), branchés sur la carte |
+| `world/colony_human.png`, `colony_dwarf.png`, `colony_elf.png`, `colony_orc.png` | Marqueur de colonie sur la carte du monde, un par espèce | 32 × 32 | PNG (T-007/T-010) |
+| `world/river_segment.png` | Tronçon de fleuve qui relie deux colonies (répétable) | 16 × 8 | PNG (T-007/T-010) |
+| `world/map_background.png` | Fond sobre de carte, sans géographie inventée | 1024 × 640 | PNG (T-007/T-010), fond opaque |
+| `peoples/trader_<espece>_<image>.png` | Colons de passage et marchands avec sac et bâton, quatre images de marche par espèce | 32 × 32 | PNG (T-008), branchés dans la vue locale |
 
 ### 4.6 Autres éléments du monde (déjà dessinés en code)
 
@@ -173,13 +175,8 @@ Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
 
 | N° | Priorité | Tâche | Détail | Qui | État |
 |---|---|---|---|---|---|
-| T-002 | P2 | Barrage en chantier | 3 étapes visibles de la construction. | ChatGPT | À faire |
-| T-004 | P2 | Pièces | Icône `coins.png` 16 × 16 : une pile de pièces dorées, lisible en petit. | ChatGPT | À faire |
-| T-005 | P2 | Roue du moulin animée | 4 images en boucle ; la vitesse de rotation sera pilotée par le débit (donnée `GetFlow`). | ChatGPT puis Claude pour la vitesse | À faire |
-| T-007 | P2 | Carte du monde | Marqueurs de colonie par espèce, fleuve, fond de carte. Le moteur fournit une version rudimentaire (`WorldMapView`). | ChatGPT | À faire |
-| T-008 | P3 | Colons voyageurs | Tenue de voyage pour les colons de passage et les marchands. | ChatGPT | À faire |
-| T-009 | P2 | Brancher les images sur les éléments restants | Étendre `AssetLibrary` aux dossiers `terrain/`, `world/`, `peoples/` si ChatGPT préfère livrer des PNG plutôt que du dessin en code. | ChatGPT | À faire |
-| T-010 | P2 | Dessiner les caravanes sur la carte du monde | Remplacer les carrés de `WorldMapView` par les images de T-006/T-007 dès qu'elles existent. | Claude | À faire — T-006 disponible ; T-007 à livrer |
+
+Aucune tâche ouverte. Les sept dernières tâches ont été déplacées dans `TACHES_TERMINEES.md` le 2026-10-04.
 
 ## 6. Fil des échanges
 
@@ -189,6 +186,22 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — ChatGPT/Codex — toutes les tâches restantes livrées et branchées
+- **T-002/T-004/T-005/T-007/T-008/T-009/T-010 terminées et archivées**. Livraison de 33 PNG aux noms et dimensions annoncés : six chantiers de barrage (deux orientations, trois étapes), une icône de pièces, quatre roues de moulin, quatre marqueurs de colonie, un fleuve répétable, un fond de carte et seize voyageurs. Palette native crème/sauge/laiton/charbon, filtre nearest ; fond de carte opaque, autres assets transparents.
+- `BuildingSprites.Construction.cs` sélectionne les tiers de `Building.Progress`, avec l'orientation du barrage fini. `ColonistsView` dessine la roue séparément sur le mur est et intègre la vitesse selon **`Hydrology.MillFlow` existant** : même débit que la production, prenant en compte rivière, canal rempli et retenue ; arrêt sans débit et en pause. Le moulin procédural ne contient plus de roue fixe. Voyageurs sélectionnés parmi les `Transients` ou les marchands présents dans `WorldState.Caravans`, sans changer leur état ou leur trajet.
+- `WorldMapView.cs` affiche les marqueurs, le fond, le fleuve et les caravanes T-006. Coordonnées, interpolation `RoutePosition`, distances et clics conservés. Animation liée à l'horloge simulée, miroir selon le sens aller/retour ; texte des carrés remplacé. T-010 réalisée par Codex conformément à la demande de l'utilisateur de terminer toutes les tâches.
+- `PeoplesSprites` accepte les PNG facultatifs du contrat (espèce/âge/sexe, quatre poses et repos), y compris portraits et emprise ; animation incomplète ou mauvaise taille : retour au dessin natif. Les branchements terrain étaient déjà livrés ; les dossiers terrain/world/peoples sont désormais tous couverts. Exports explicites seulement via `validation/art_restant.tscn -- --export-art`, jamais pendant une partie normale.
+- Validation : build **0 avertissement / 0 erreur**, contrôle des 33 PNG par `tools/verifier_livraison.py`, relance de la planche sans export et captures inspectées. `validation/ouvrages.png` utilise les vrais `MapView`/`ColonistsView` (moulin et chantier), `carte_monde.png` le vrai `WorldMapView` avec trois voyages de démonstration. La scène vérifie aussi remplacement PNG des personnages, repos, portrait et secours natif lorsqu'une pose manque ; fichiers de test retirés automatiquement. `taches_en_jeu.png` contrôle le lancement normal et les pièces dans l'interface. Détail reproductible dans `validation/README.md`.
+- Commit **« Graphismes : terminer les chantiers, le moulin, les voyageurs et la carte »** (commit portant cette entrée). **À Claude** : aucun branchement restant attendu ; les sept tâches sont closes. `Simulation/` et `Simulation.Tests/` inchangés. Les scènes de validation restent isolées de la scène principale.
+
+### 2026-10-04 — ChatGPT/Codex — suite complète autorisée par l'utilisateur
+- L'utilisateur demande de terminer toutes les tâches restantes, sans validation intermédiaire. Les branchements graphiques T-005/T-008/T-009/T-010 seront réalisés, y compris l'apparence de `WorldMapView`, sans changer les trajets, clics ou règles de jeu.
+- **Annonce avant livraison** : fond de carte `world/map_background.png`, **1024 × 640**, PNG RGBA 8 bits, sobre et sans géographie fictive. Les autres noms et tailles des tâches restantes sont conservés. Les tenues T-008 utilisent `peoples/trader_<espece>_0.png` à `_3.png` en **32 × 32**, les quatre espèces du catalogue.
+
+### 2026-10-04 — ChatGPT/Codex — annonce T-002 : chantier de barrage
+- Trois étapes 32 × 48 aux noms prévus `buildings/dam_construction_0.png` à `_2.png`, sélectionnées selon `Building.Progress`.
+- **Annonce avant livraison** : ajout de trois variantes `buildings/dam_construction_side_0.png` à `_2.png`, également PNG RGBA 8 bits, **32 × 48** et ancrage milieu du bord bas, pour conserver l'orientation du barrage fini. Aucun nouveau comportement de simulation.
 
 ### 2026-10-04 — ChatGPT/Codex — T-006 livrée : caravane animée
 - Livré `world/caravan_0.png` à `caravan_3.png`, **24 × 16, PNG RGBA 8 bits transparent**, aux noms et tailles du catalogue. Deux voyageurs en tenue sauge/lin, chapeaux et sacs, charrette chargée, marche vers la droite. Quatre poses distinctes, pas décalés et roues animées ; palette du système de personnages natif, pixels nets et silhouette complète dans le canevas.
