@@ -68,6 +68,9 @@ public static class ColonyBrain
 
     private const int MaxThoughts = 30;
 
+    /// <summary>Part de foi qui revient chaque jour vers le niveau naturel du colon.</summary>
+    private const float FaithRecoveryPerDay = 0.02f;
+
     /// <summary>Bois brûlé par colon et par nuit pour se chauffer, selon la saison.</summary>
     public static float FirewoodPerColonist(Season season) => season switch
     {
@@ -164,6 +167,12 @@ public static class ColonyBrain
     public static void OnDayStart(Colony colony, GameClock clock)
     {
         colony.UnreachableStands.Clear();
+        foreach (Colonist colonist in colony.Members)
+        {
+            // La foi revient doucement vers le tempérament du colon.
+            float baseline = Needs.NeutralFaith + 0.2f * colonist.Personality[Axis.Piete];
+            colonist.Needs.Faith += Math.Clamp(baseline - colonist.Needs.Faith, -FaithRecoveryPerDay, FaithRecoveryPerDay);
+        }
         Relations.FadeDaily(colony);
         foreach ((Colonist a, Colonist c, Relations.Change change) in Relations.Cohabit(colony))
             OnRelationChange(colony, a, c, change, clock);

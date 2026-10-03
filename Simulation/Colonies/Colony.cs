@@ -54,6 +54,10 @@ public sealed class Colony
     /// <summary>Les bâtiments de la colonie, achevés ou en chantier.</summary>
     public List<Building> Buildings { get; } = [];
 
+    /// <summary>Les décisions que la colonie soumet au joueur.</summary>
+    public PrayerBook Prayers => _prayers ??= new PrayerBook(this);
+    private PrayerBook? _prayers;
+
     /// <summary>Les canaux d'irrigation, achevés ou en chantier.</summary>
     public List<Canal> Canals { get; } = [];
 

@@ -27,6 +27,7 @@ public partial class Main : Node2D
     private WorldState _world = null!;
     private ColonistsView _colonistsView = null!;
     private CanvasModulate _daylight = null!;
+    private PrayerPanel _prayerPanel = null!;
     private DayNightAmbience _ambience = null!;
     private Hud _hud = null!;
 
@@ -40,6 +41,7 @@ public partial class Main : Node2D
     //   --advance-hours=N      fait avancer la simulation de N heures au démarrage
     //   --speed=1|4|30         choisit la vitesse pour vérifier les ambiances
     //   --demo-quarry          creuse une carrière de démonstration
+    //   --demo-prayer          soumet une prière factice pour voir le panneau
     //   --zoom=N               règle le zoom de la caméra (0.2 montre presque toute la carte)
     //   --select-first         sélectionne le premier colon
     //   --focus-fields         centre la caméra sur le premier champ
@@ -77,6 +79,13 @@ public partial class Main : Node2D
         atmosphereLayer.AddChild(_ambience);
         _ambience.Init(_world.Map);
 
+        _prayerPanel = new PrayerPanel();
+        AddChild(_prayerPanel);
+        _prayerPanel.Init(_world);
+        // Une prière qui arrive met le jeu en pause : le joueur doit pouvoir répondre sans que le temps passe.
+        foreach (Colony c in _world.Colonies)
+            c.Prayers.Asked += _ => PauseForPrayer();
+
         _hud = new Hud();
         AddChild(_hud);
         _hud.SpeedRequested += SetSpeed;
@@ -100,6 +109,12 @@ public partial class Main : Node2D
                 int ticks = (int)(float.Parse(arg["--advance-hours=".Length..], CultureInfo.InvariantCulture) * TimeConstants.TicksPerHour);
                 for (int i = 0; i < ticks; i++)
                     _world.Step();
+            }
+            else if (arg == "--demo-prayer")
+            {
+                // Une prière factice, pour voir le panneau.
+                _world.Colonies[0].Prayers.Ask(DecisionKind.Dam, "demo", "Construire un barrage sur la rivière ?",
+                    "Nos champs manquent d'eau et le débit de la rivière est fort : un barrage formerait un lac en amont.", () => { }, _world.Clock);
             }
             else if (arg.StartsWith("--zoom="))
                 camera.Zoom = Vector2.One * float.Parse(arg["--zoom=".Length..], System.Globalization.CultureInfo.InvariantCulture);
@@ -218,6 +233,12 @@ public partial class Main : Node2D
         _speed = speed;
         if (speed != GameSpeed.Pause)
             _speedBeforePause = speed;
+    }
+
+    private void PauseForPrayer()
+    {
+        if (_speed != GameSpeed.Pause)
+            TogglePause();
     }
 
     private void TogglePause()

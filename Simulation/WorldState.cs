@@ -49,6 +49,9 @@ public sealed class WorldState
             ColonyBrain.Think(colony, Map, Clock);
     }
 
+    /// <summary>Le joueur répond à une prière : accord ou refus.</summary>
+    public void AnswerPrayer(Prayer prayer, bool approve) => prayer.Colony.Prayers.Answer(prayer, approve, Clock);
+
     /// <summary>Avance la simulation d'un tick.</summary>
     public void Step()
     {
