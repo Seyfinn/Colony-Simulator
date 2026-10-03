@@ -124,12 +124,13 @@ public static class ColonistAI
         if (colonist.Carrying is { } load)
         {
             if (colonist.CarryingTo is { } site)
-                site.WoodInTransit -= load.Amount;
+                site.AddInTransit(load.Type, -load.Amount);
             colony.Stock.Add(load.Type, load.Amount);
             colonist.Carrying = null;
             colonist.CarryingTo = null;
         }
         colonist.WorkCycleStartTicks = -1;
+        colonist.WorkCycleExtraHours = 0;
 
         colony.Members.Remove(colonist);
         if (colonist.Home is { } home)
@@ -366,6 +367,7 @@ public static class ColonistAI
                 WorkSector.Farm => TryFarm(colonist, world),
                 WorkSector.Wood => TryChop(colonist, world),
                 WorkSector.Stone => TryMine(colonist, world),
+                WorkSector.Craft => TryCraft(colonist, world),
                 _ => TryConstruct(colonist, world),
             };
             if (started)
@@ -458,7 +460,8 @@ public static class ColonistAI
 
     /// <summary>Vitesse de travail : l'habileté du métier, modulée par l'ardeur du colon.</summary>
     private static float WorkSpeed(Colonist colonist, SkillType skill) =>
-        colonist.Skills.WorkSpeed(skill) * colonist.Personality.WorkFactor * MathF.Max(0.1f, WorkFactorOf(colonist.Stage));
+        colonist.Skills.WorkSpeed(skill) * colonist.Personality.WorkFactor * MathF.Max(0.1f, WorkFactorOf(colonist.Stage))
+        * ToolChain.SpeedFactor(colonist.Colony, skill);
 
     private static IEnumerable<FieldPlot> NearestPlots(Colony colony, Colonist colonist, CropStage stage) =>
         Farming.Plots(colony)
@@ -487,7 +490,7 @@ public static class ColonistAI
         Colony colony = colonist.Colony;
         Building? site = colony.ConstructionSites
             .OrderBy(b => Math.Abs(b.X - colonist.TileX) + Math.Abs(b.Y - colonist.TileY))
-            .FirstOrDefault(b => b.HasAllMaterials || (b.WoodStillToBring > 0 && colony.Stock.Get(ResourceType.Wood) > 0));
+            .FirstOrDefault(b => b.HasAllMaterials || b.MaterialToFetch(colony.Stock) is not null);
         if (site is null)
             return false;
 
@@ -517,13 +520,32 @@ public static class ColonistAI
             .Any(t => TryStart(colonist, world, new Activity(ActivityKind.Chop, t.X, t.Y, Ticks(seconds))));
     }
 
+    /// <summary>Va travailler dans l'atelier que la chaîne du fer réclame en ce moment, s'il y en a un.</summary>
+    private static bool TryCraft(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        if (ToolChain.PickJob(colony, (int)ColonyBrain.HeatingTarget(colony, world.Clock.Season)) is not { } workshop)
+            return false;
+        Recipe recipe = ToolChain.RecipeFor(workshop.Type);
+        float seconds = recipe.Seconds / WorkSpeed(colonist, SkillType.Smithing);
+        (int x, int y) = workshop.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        return TryStart(colonist, world, new Activity(ActivityKind.Craft, x, y, Ticks(seconds)) { Building = workshop });
+    }
+
     private static bool TryMine(Colonist colonist, WorldState world)
     {
         float seconds = MineSeconds / WorkSpeed(colonist, SkillType.Mining);
-        return WorkSites.RocksToMine(world.Map, colonist.Colony)
-            .Take(TargetsToTry)
-            .Any(r => TryStart(colonist, world,
-                new Activity(ActivityKind.Mine, r.RockX, r.RockY, Ticks(seconds)) { StandX = r.StandX, StandY = r.StandY }));
+        bool wantOre = colonist.Colony.Sensors?.Chain is { Active: true, OreMissing: > 0 };
+        Colony colony = colonist.Colony;
+        foreach ((int rockX, int rockY, int standX, int standY) in WorkSites.RocksToMine(world.Map, colony, wantOre)
+                     .Where(r => !colony.UnreachableStands.Contains((r.StandX, r.StandY)))
+                     .Take(TargetsToTry))
+        {
+            if (TryStart(colonist, world, new Activity(ActivityKind.Mine, rockX, rockY, Ticks(seconds)) { StandX = standX, StandY = standY }))
+                return true;
+            colony.UnreachableStands.Add((standX, standY));
+        }
+        return false;
     }
 
     private static void Wander(Colonist colonist, WorldState world)
@@ -572,7 +594,10 @@ public static class ColonistAI
         if (activity.IsHarvest && colonist.WorkCycleStartTicks < 0)
             colonist.WorkCycleStartTicks = now;
         else if (!activity.IsHarvest && colonist.Carrying is null)
+        {
             colonist.WorkCycleStartTicks = -1;
+            colonist.WorkCycleExtraHours = 0;
+        }
 
         colonist.Activity = activity;
         colonist.Path = path;
@@ -660,6 +685,9 @@ public static class ColonistAI
                     double hours = LaborLedger.TicksToHours(world.Clock.Ticks - colonist.WorkCycleStartTicks);
                     if (load.Type == ResourceType.Grain)
                         hours += colonist.Colony.SowHoursPerPlot;
+                    // Un produit fabriqué porte aussi le travail de ses matières premières.
+                    hours += colonist.WorkCycleExtraHours;
+                    colonist.WorkCycleExtraHours = 0;
                     colonist.Colony.Labor.Record(load.Type, hours, load.Amount);
                     colonist.WorkCycleStartTicks = -1;
                 }
@@ -703,23 +731,35 @@ public static class ColonistAI
         ActivityKind.Fish => world.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Chop => world.Map.CanChop(activity.TargetX, activity.TargetY),
         ActivityKind.Mine => WorkSites.CanMineFrom(world.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
+        ActivityKind.Craft => activity.Building is { IsComplete: true } workshop && TakeCraftInputs(colonist, activity, workshop),
         ActivityKind.FetchMaterials => TakeMaterials(colonist, activity.Building!),
         ActivityKind.SupplySite => activity.Building is { IsComplete: false } site && colonist.CarryingTo == site,
         ActivityKind.Build => activity.Building is { IsComplete: false, HasAllMaterials: true },
         _ => true,
     };
 
-    /// <summary>Prend au stock le bois qui manque encore au chantier, dans la limite de ce qu'on peut porter.</summary>
+    /// <summary>À l'arrivée à l'atelier, on prend au stock les matières de la recette ; elles manquent peut-être déjà.</summary>
+    private static bool TakeCraftInputs(Colonist colonist, Activity activity, Building workshop)
+    {
+        if (!ToolChain.TryTakeInputs(colonist.Colony, ToolChain.RecipeFor(workshop.Type), out double inputHours))
+            return false;
+        activity.InputsTaken = true;
+        activity.InputLaborHours = inputHours;
+        colonist.WorkCycleExtraHours = inputHours;
+        return true;
+    }
+
+    /// <summary>Prend au stock le matériau qui manque encore au chantier (bois d'abord, puis pierre), dans la limite de ce qu'on peut porter.</summary>
     private static bool TakeMaterials(Colonist colonist, Building site)
     {
-        if (site.IsComplete || colonist.Carrying is not null)
+        if (site.IsComplete || colonist.Carrying is not null || site.MaterialToFetch(colonist.Colony.Stock) is not { } type)
             return false;
-        int amount = Math.Min(CarryCapacity, Math.Min(site.WoodStillToBring, colonist.Colony.Stock.Get(ResourceType.Wood)));
-        if (amount <= 0 || !colonist.Colony.Stock.TryTake(ResourceType.Wood, amount))
+        int amount = Math.Min(CarryCapacity, Math.Min(site.StillToBring(type), colonist.Colony.Stock.Get(type)));
+        if (amount <= 0 || !colonist.Colony.Stock.TryTake(type, amount))
             return false;
-        colonist.Carrying = (ResourceType.Wood, amount);
+        colonist.Carrying = (type, amount);
         colonist.CarryingTo = site;
-        site.WoodInTransit += amount;
+        site.AddInTransit(type, amount);
         return true;
     }
 
@@ -728,6 +768,8 @@ public static class ColonistAI
         LocalMap map = world.Map;
         if (activity.Building is { } building)
             building.LaborTicks += world.Clock.Ticks - activity.CommittedAtTicks;
+        if (activity.Skill is { } usedSkill)
+            ToolChain.RecordUse(colonist.Colony, usedSkill);
 
         switch (activity.Kind)
         {
@@ -745,13 +787,12 @@ public static class ColonistAI
                 colonist.Needs.Food += BerryValue * map.HarvestBerries(activity.TargetX, activity.TargetY);
                 break;
             case ActivityKind.SupplySite when colonist.Carrying is { } load && activity.Building is { } site:
-                site.WoodDelivered += load.Amount;
-                site.WoodInTransit -= load.Amount;
+                site.Deliver(load.Type, load.Amount);
                 colonist.Carrying = null;
                 colonist.CarryingTo = null;
                 break;
             case ActivityKind.Build when activity.Building is { IsComplete: false } site:
-                site.Progress = MathF.Min(1f, site.Progress + BuildActionSeconds / Building.HutWorkSeconds);
+                site.Progress = MathF.Min(1f, site.Progress + BuildActionSeconds / site.WorkSeconds);
                 if (site.IsComplete)
                     ColonyBrain.OnBuildingComplete(colonist.Colony, site, world.Clock);
                 break;
@@ -765,6 +806,16 @@ public static class ColonistAI
                 plot.Growth = 0f;
                 colonist.Carrying = (ResourceType.Grain, Farming.PlotYield);
                 break;
+            case ActivityKind.Craft when activity.InputsTaken && activity.Building is { } workshop:
+            {
+                Recipe recipe = ToolChain.RecipeFor(workshop.Type);
+                bool first = colonist.Colony.AnnouncedProducts.Add(recipe.Output);
+                colonist.Carrying = (recipe.Output, recipe.OutputAmount);
+                activity.InputsTaken = false;
+                if (first)
+                    ColonyBrain.OnFirstProduct(colonist.Colony, recipe.Output, world.Clock);
+                break;
+            }
             case ActivityKind.Chat when activity.Partner is { } partner:
             {
                 Relations.Outcome outcome = Relations.Converse(colonist, partner, world.Random);
@@ -797,7 +848,16 @@ public static class ColonistAI
     private static void EndActivity(Colonist colonist)
     {
         if (colonist.Activity is { } activity)
+        {
             Release(colonist.Colony, activity);
+            // Une fabrication interrompue rend les matières à la colonie.
+            if (activity is { Kind: ActivityKind.Craft, InputsTaken: true, Building: { } workshop })
+            {
+                ToolChain.Refund(colonist.Colony, ToolChain.RecipeFor(workshop.Type));
+                activity.InputsTaken = false;
+                colonist.WorkCycleExtraHours = 0;
+            }
+        }
         colonist.Activity = null;
         colonist.Path = [];
         colonist.PathIndex = 0;

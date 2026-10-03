@@ -13,7 +13,11 @@ public sealed record ColonySensors(
     float WoodTarget, float WoodPressure,
     int Homeless, float HousingPressure, bool HasConstructionSite,
     float StonePressure,
-    float FarmShare)
+    float FarmShare,
+    ChainDemand Chain,
+    bool HasWorkshopSite,
+    bool WorkshopsReady,
+    float OrePressure)
 {
     /// <summary>Étage 1 de la pyramide : nourriture et chauffage.</summary>
     public bool SurvivalAssured => Math.Max(FoodPressure, HeatingPressure) <= 60f;
@@ -48,6 +52,9 @@ public static class ColonyBrain
     private const float MaxStoneShare = 0.4f;
     private const float MaxConstructionShare = 0.3f;
     private const float MaxFarmShare = 0.6f;
+    private const float MaxCraftShare = 0.25f;
+    /// <summary>Part des bras qu'on envoie fouiller la roche pour y trouver du minerai (plus modeste que la carrière).</summary>
+    private const float MaxOreShare = 0.25f;
 
     /// <summary>On ouvre au plus ce nombre de champs d'un coup (la colonie réfléchit chaque heure).</summary>
     private const int MaxFieldsPerThought = 2;
@@ -69,13 +76,26 @@ public static class ColonyBrain
         _ => 0.4f,
     };
 
+    /// <summary>
+    /// Le bois qu'on garde pour se chauffer : une réserve de base plus trois nuits, et en automne tout l'hiver.
+    /// Ce qui dépasse peut servir à autre chose (charbon de bois).
+    /// </summary>
+    public static float HeatingTarget(Colony colony, Season season)
+    {
+        int population = Math.Max(1, colony.Members.Count);
+        float target = WoodBaseReserve + 3 * population * FirewoodPerColonist(season);
+        if (season == Season.Automne)
+            target += TimeConstants.DaysPerSeason * population * FirewoodPerColonist(Season.Hiver);
+        return target;
+    }
+
     public static bool IsColdSeason(Season season) => season is Season.Automne or Season.Hiver;
 
     public static void Think(Colony colony, LocalMap map, GameClock clock)
     {
         PlanFields(colony, map, clock);
         ColonySensors sensors = Sense(colony, clock);
-        if (PlanConstruction(colony, map, sensors, clock))
+        if (PlanConstruction(colony, map, sensors, clock) || PlanWorkshop(colony, map, sensors, clock))
             sensors = Sense(colony, clock);
         colony.Sensors = sensors;
 
@@ -141,6 +161,7 @@ public static class ColonyBrain
     /// <summary>Le gel de l'hiver détruit ce qui n'a pas été moissonné.</summary>
     public static void OnDayStart(Colony colony, GameClock clock)
     {
+        colony.UnreachableStands.Clear();
         Relations.FadeDaily(colony);
         foreach ((Colonist a, Colonist c, Relations.Change change) in Relations.Cohabit(colony))
             OnRelationChange(colony, a, c, change, clock);
@@ -157,7 +178,7 @@ public static class ColonyBrain
     {
         if (!sensors.SurvivalAssured || sensors.Homeless == 0)
             return false;
-        int sites = colony.ConstructionSites.Count();
+        int sites = colony.ConstructionSites.Count(b => b.IsHut);
         // Les places des huttes en chantier comptent déjà comme des toits à venir.
         int stillUnplanned = sensors.Homeless - sites * Building.HutCapacity;
         if (stillUnplanned <= 0 || sites >= MaxConstructionSites(sensors.Homeless))
@@ -166,15 +187,56 @@ public static class ColonyBrain
             return false;
 
         Urbanism.PlanHut(map, colony, site.X, site.Y);
-        Say(colony, clock, colony.Buildings.Count == 1
+        Say(colony, clock, colony.Buildings.Count(b => b.IsHut) == 1
             ? $"{sensors.Homeless} colons dorment à la belle étoile : nous décidons de bâtir notre première hutte."
             : $"Encore {sensors.Homeless} {(sensors.Homeless > 1 ? "colons sans toit" : "colon sans toit")} : nous ouvrons le chantier d'une nouvelle hutte.");
         return true;
     }
 
-    /// <summary>Une hutte vient d'être achevée : des colons s'y installent.</summary>
+    /// <summary>
+    /// Étage 4 de la pyramide : tout le monde est à l'abri ; si la colonie a vu du fer et manque d'outils,
+    /// elle bâtit l'atelier suivant de la chaîne (un seul chantier à la fois).
+    /// </summary>
+    private static bool PlanWorkshop(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
+    {
+        if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || colony.ConstructionSites.Any())
+            return false;
+        if (ToolChain.NextWorkshopToBuild(colony) is not { } type)
+            return false;
+        if (Urbanism.FindWorkshopSite(map, colony) is not { } site)
+            return false;
+
+        Urbanism.PlanBuilding(map, colony, type, site.X, site.Y);
+        Say(colony, clock, type switch
+        {
+            BuildingType.Kiln => "Nous avons trouvé du fer, mais pas d'outils pour le travailler : il nous faut d'abord du charbon de bois. Nous bâtissons une charbonnière.",
+            BuildingType.Bloomery => "Le charbon de bois est là : nous bâtissons un bas fourneau pour tirer le fer du minerai.",
+            _ => "Nous aurons du fer : nous bâtissons une forge pour en faire des outils.",
+        });
+        return true;
+    }
+
+    private const float ComfortHousingLimit = 25f;
+
+    /// <summary>Premier charbon, premier fer, premier outil : la colonie le remarque.</summary>
+    internal static void OnFirstProduct(Colony colony, ResourceType product, GameClock clock) =>
+        Say(colony, clock, product switch
+        {
+            ResourceType.Charcoal => "Notre premier charbon de bois sort de la charbonnière : de quoi chauffer la forge.",
+            ResourceType.Iron => "Un premier lingot de fer sort du bas fourneau !",
+            _ => "Notre premier outil de fer est forgé : le travail ira plus vite.",
+        });
+
+    /// <summary>Un bâtiment vient d'être achevé : des colons s'installent dans une hutte, un atelier se met au travail.</summary>
     public static void OnBuildingComplete(Colony colony, Building building, GameClock clock)
     {
+        if (building.IsWorkshop)
+        {
+            Say(colony, clock, building.Type == BuildingType.Bloomery
+                ? "Le bas fourneau est achevé : on peut y fondre le minerai."
+                : $"La {Building.NameOf(building.Type)} est achevée : on peut s'y mettre.");
+            return;
+        }
         colony.Labor.RecordHut(LaborLedger.TicksToHours(building.LaborTicks));
         colony.FillVacancies();
         int homeless = colony.Homeless;
@@ -203,27 +265,29 @@ public static class ColonyBrain
 
         // Chauffage : trois nuits d'avance, plus tout l'hiver si l'on est en automne (anticipation).
         int wood = colony.Stock.Get(ResourceType.Wood);
-        float nightly = population * FirewoodPerColonist(clock.Season);
-        float heatingTarget = WoodBaseReserve + 3 * nightly;
-        if (clock.Season == Season.Automne)
-            heatingTarget += TimeConstants.DaysPerSeason * population * FirewoodPerColonist(Season.Hiver);
+        float heatingTarget = HeatingTarget(colony, clock.Season);
         float heatingPressure = Pressure(heatingTarget - wood, heatingTarget);
 
-        // Bois total : le chauffage plus ce que les chantiers attendent encore.
-        float woodTarget = heatingTarget + colony.ConstructionSites.Sum(b => b.WoodStillToBring);
+        // Bois total : le chauffage, ce que les chantiers attendent encore, et celui que la charbonnière va brûler.
+        ChainDemand chain = ToolChain.Demand(colony);
+        float woodTarget = heatingTarget + colony.ConstructionSites.Sum(b => b.WoodStillToBring) + chain.WoodForCharcoal;
         float woodPressure = Pressure(woodTarget - wood, woodTarget);
 
         int homeless = colony.Homeless;
         float housingPressure = homeless * 100f / population;
         bool hasSite = colony.ConstructionSites.Any();
 
-        float stonePressure = Pressure(StoneReserveTarget - colony.Stock.Get(ResourceType.Stone), StoneReserveTarget);
+        // Pierre : la réserve, plus ce que les chantiers de fours attendent encore.
+        float stoneTarget = StoneReserveTarget + colony.ConstructionSites.Sum(b => b.StoneStillToBring);
+        float stonePressure = Pressure(stoneTarget - colony.Stock.Get(ResourceType.Stone), stoneTarget);
+        float orePressure = chain.Active ? Math.Min(1f, chain.OreMissing / 6f) * 100f : 0f;
 
         // Les champs réclament des bras au moment des semailles et de la moisson.
         float farmShare = Math.Min(MaxFarmShare, Farming.WorkersNeeded(colony, clock) / (float)population);
 
         return new ColonySensors(foodDays, foodPressure, heatingPressure, woodTarget, woodPressure,
-            homeless, housingPressure, hasSite, stonePressure, farmShare);
+            homeless, housingPressure, hasSite, stonePressure, farmShare,
+            chain, colony.ConstructionSites.Any(b => b.IsWorkshop), colony.Buildings.Any(b => b.IsWorkshop && b.IsComplete), orePressure);
     }
 
     /// <summary>
@@ -235,17 +299,25 @@ public static class ColonyBrain
         float food = sensors.FoodPressure / 100f * MaxFoodShare;
         float farm = sensors.FarmShare;
         float wood = sensors.WoodPressure / 100f * MaxWoodShare;
+        // Un chantier d'atelier mobilise des bras même quand tout le monde est déjà logé.
         float construction = sensors.SurvivalAssured && sensors.HasConstructionSite
-            ? Math.Max(0.1f, sensors.HousingPressure / 100f) * MaxConstructionShare
+            ? Math.Max(sensors.HasWorkshopSite ? 0.5f : 0.1f, sensors.HousingPressure / 100f) * MaxConstructionShare
             : 0f;
-        bool comfortAssured = sensors.SurvivalAssured && sensors.HousingPressure <= 25f;
+        bool comfortAssured = sensors.SurvivalAssured && sensors.HousingPressure <= ComfortHousingLimit;
         float stone = comfortAssured ? sensors.StonePressure / 100f * MaxStoneShare : 0f;
+
+        // La chaîne du fer : on fouille la roche pour le minerai manquant, et l'on travaille dans les ateliers.
+        if (comfortAssured && sensors.Chain.Active)
+            stone = Math.Max(stone, sensors.OrePressure / 100f * MaxOreShare);
+        float craft = comfortAssured && sensors.Chain.Active && sensors.WorkshopsReady
+            ? Math.Max(0.1f, MaxCraftShare * sensors.Chain.ToolShortfall / Math.Max(1, sensors.Chain.ToolsWanted))
+            : 0f;
 
         // Survie menacée : pas de temps libre, tous les bras disponibles vont aux besoins vitaux.
         float vital = food + wood;
         if (!sensors.SurvivalAssured && vital > 0f)
         {
-            float spare = 1f - (food + farm + wood + construction + stone);
+            float spare = 1f - (food + farm + wood + construction + stone + craft);
             if (spare > 0f)
             {
                 food += spare * food / vital;
@@ -253,7 +325,7 @@ public static class ColonyBrain
             }
         }
 
-        float total = food + farm + wood + construction + stone;
+        float total = food + farm + wood + construction + stone + craft;
         if (total > 1f)
         {
             food /= total;
@@ -261,6 +333,7 @@ public static class ColonyBrain
             wood /= total;
             construction /= total;
             stone /= total;
+            craft /= total;
             total = 1f;
         }
         return new Dictionary<WorkSector, float>
@@ -270,6 +343,7 @@ public static class ColonyBrain
             [WorkSector.Wood] = wood,
             [WorkSector.Stone] = stone,
             [WorkSector.Construction] = construction,
+            [WorkSector.Craft] = craft,
             [WorkSector.Free] = 1f - total,
         };
     }
@@ -364,6 +438,22 @@ public static class ColonyBrain
             }
         }
 
+        // L'équipement : les outils font gagner du temps, mais s'usent.
+        float coverage = ToolChain.Coverage(colony);
+        string toolBand = coverage >= 0.9f ? "équipés"
+            : coverage > 0f ? "quelques"
+            : colony.Labor.TotalProduced(ResourceType.Tools) > 0 ? "usés"
+            : "";
+        if (toolBand.Length > 0 && Changed(colony, "outils", toolBand))
+        {
+            Say(colony, clock, toolBand switch
+            {
+                "équipés" => $"Nous sommes bien équipés : {colony.Stock.Get(ResourceType.Tools)} outils de fer pour {colony.Workers.Count()} travailleurs.",
+                "quelques" => $"Nous avons {colony.Stock.Get(ResourceType.Tools)} outils de fer, mais pas pour tout le monde.",
+                _ => "Tous nos outils sont usés : il faut en forger de nouveaux.",
+            });
+        }
+
         // Bilan de saison : ce que coûte chaque ressource en heures de travail.
         if (Changed(colony, "saison", clock.Season.ToString()) && colony.Labor.HoursPerUnit(ResourceType.Food) is not null)
             Say(colony, clock, "Bilan de saison, en heures de travail par unité : " + CostSummary(colony.Labor) + ".");
@@ -393,6 +483,9 @@ public static class ColonyBrain
         Add(ResourceType.Wood, "bois");
         Add(ResourceType.Stone, "pierre");
         Add(ResourceType.IronOre, "minerai de fer");
+        Add(ResourceType.Charcoal, "charbon de bois");
+        Add(ResourceType.Iron, "fer");
+        Add(ResourceType.Tools, "outil");
         if (labor.HoursPerHut is { } hut)
             parts.Add($"hutte {hut:0} h");
         return parts.Count == 0 ? "pas encore mesuré" : string.Join(", ", parts);

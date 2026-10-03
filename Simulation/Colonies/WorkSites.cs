@@ -67,7 +67,7 @@ public static class WorkSites
     /// Roches à miner autour de la carrière, les plus proches de son centre d'abord,
     /// avec pour chacune une case d'où la travailler.
     /// </summary>
-    public static IEnumerable<(int RockX, int RockY, int StandX, int StandY)> RocksToMine(LocalMap map, Colony colony)
+    public static IEnumerable<(int RockX, int RockY, int StandX, int StandY)> RocksToMine(LocalMap map, Colony colony, bool preferOre = false)
     {
         if (colony.Quarry is not { } quarry)
             yield break;
@@ -84,7 +84,11 @@ public static class WorkSites
                 rocks.Add((x, y, dx * dx + dy * dy));
         }
 
-        foreach ((int x, int y, _) in rocks.OrderBy(r => r.Distance))
+        // Quand la colonie manque de minerai, les veines de fer visibles passent avant la pierre ordinaire.
+        IEnumerable<(int X, int Y, int Distance)> ordered = preferOre
+            ? rocks.OrderBy(r => map.TopMaterial(r.X, r.Y) == Material.IronOre ? 0 : 1).ThenBy(r => r.Distance)
+            : rocks.OrderBy(r => r.Distance);
+        foreach ((int x, int y, _) in ordered)
         {
             // On préfère se tenir du côté du camp, sur une case que personne d'autre n'a réservée.
             foreach ((int dx, int dy) in Neighbors.OrderBy(n => Distance(x + n.Dx, y + n.Dy, colony.CampX, colony.CampY)))

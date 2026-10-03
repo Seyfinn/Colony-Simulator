@@ -1,7 +1,10 @@
 namespace GodColony.Simulation.Colonies;
 
-/// <summary>Nourriture sauvage (baies, poisson), céréales de la moisson, bois, pierre et minerai de fer.</summary>
-public enum ResourceType { Food, Grain, Wood, Stone, IronOre }
+/// <summary>
+/// Nourriture sauvage (baies, poisson), céréales de la moisson, bois, pierre, minerai de fer,
+/// et les produits de la chaîne du fer : charbon de bois, fer, outils.
+/// </summary>
+public enum ResourceType { Food, Grain, Wood, Stone, IronOre, Charcoal, Iron, Tools }
 
 /// <summary>Le stock commun de la colonie : tout appartient à la colonie, rien aux colons.</summary>
 public sealed class Stockpile

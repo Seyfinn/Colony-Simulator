@@ -23,6 +23,8 @@ public enum ActivityKind
     Sow,
     /// <summary>Moissonner une parcelle mûre.</summary>
     Harvest,
+    /// <summary>Travailler dans un atelier : charbonnière, bas fourneau ou forge.</summary>
+    Craft,
     /// <summary>Aller bavarder avec un autre colon.</summary>
     Chat,
     /// <summary>Un voyageur marche jusqu'au camp pour se joindre à la colonie.</summary>
@@ -61,7 +63,14 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     public long CommittedAtTicks { get; set; }
 
     /// <summary>Activité qui produit une ressource : on mesure son coût en travail.</summary>
-    public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest;
+    public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest
+            or ActivityKind.Craft;
+
+    /// <summary>Pour une fabrication : les matières sont prises au stock, le produit n'est pas encore sorti.</summary>
+    public bool InputsTaken { get; set; }
+
+    /// <summary>Pour une fabrication : le coût en heures de travail des matières premières consommées.</summary>
+    public double InputLaborHours { get; set; }
 
     /// <summary>Vrai une fois que le colon est arrivé et a commencé l'action.</summary>
     public bool Started { get; set; }
@@ -74,6 +83,7 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Chop => SkillType.Woodcutting,
         ActivityKind.Mine => SkillType.Mining,
         ActivityKind.Build => SkillType.Construction,
+        ActivityKind.Craft => SkillType.Smithing,
         ActivityKind.Sow or ActivityKind.Harvest => SkillType.Farming,
         _ => null,
     };

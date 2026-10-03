@@ -47,11 +47,27 @@ public sealed class Colony
         [WorkSector.Wood] = 0.3f,
         [WorkSector.Stone] = 0.2f,
         [WorkSector.Construction] = 0f,
+        [WorkSector.Craft] = 0f,
         [WorkSector.Free] = 0f,
     };
 
     /// <summary>Les bâtiments de la colonie, achevés ou en chantier.</summary>
     public List<Building> Buildings { get; } = [];
+
+    /// <summary>Les ateliers achevés d'un type donné.</summary>
+    public IEnumerable<Building> Workshops(BuildingType type) => Buildings.Where(b => b.Type == type && b.IsComplete);
+
+    /// <summary>
+    /// Des postes de mineur où aucun chemin n'a mené aujourd'hui (roche isolée sur un plateau) : on passe aux suivants
+    /// au lieu de rester bloqué sur les plus proches. Vidé chaque jour, car la carrière change.
+    /// </summary>
+    internal HashSet<(int X, int Y)> UnreachableStands { get; } = [];
+
+    /// <summary>Les produits dont la colonie a déjà annoncé la première fabrication.</summary>
+    internal HashSet<ResourceType> AnnouncedProducts { get; } = [];
+
+    /// <summary>Usure des outils : à chaque fois qu'elle atteint 1, un outil casse.</summary>
+    internal float ToolWear { get; set; }
 
     /// <summary>Les champs de la colonie.</summary>
     public List<Field> Fields { get; } = [];
@@ -89,7 +105,7 @@ public sealed class Colony
     /// <summary>Les places libres des huttes achevées vont aux colons qui dormaient dehors.</summary>
     internal void FillVacancies()
     {
-        foreach (Building building in Buildings.Where(b => b.IsComplete))
+        foreach (Building building in Buildings.Where(b => b.IsComplete && b.IsHut))
         foreach (Colonist colonist in Members.Where(m => m.Home is null).Take(Building.HutCapacity - building.Residents.Count).ToList())
         {
             colonist.Home = building;

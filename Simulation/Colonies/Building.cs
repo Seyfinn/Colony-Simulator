@@ -1,10 +1,16 @@
 namespace GodColony.Simulation.Colonies;
 
-public enum BuildingType { Hut }
+/// <summary>
+/// Les bâtiments de la colonie : des huttes pour dormir, puis les ateliers de la chaîne du fer.
+/// La charbonnière brûle du bois en charbon de bois, le bas fourneau tire du fer du minerai,
+/// la forge fait des outils de ce fer.
+/// </summary>
+public enum BuildingType { Hut, Kiln, Bloomery, Forge }
 
 /// <summary>
-/// Un bâtiment de la colonie, du chantier à l'achèvement. Pour l'instant, seulement des huttes
-/// de 2 × 2 cases : elles coûtent du bois et abritent 4 colons, un par case.
+/// Un bâtiment de la colonie, du chantier à l'achèvement. Tous font 2 × 2 cases ; ils coûtent du bois
+/// (et de la pierre pour les ateliers qui montent en température) et de la peine.
+/// Une hutte abrite 4 colons, un par case.
 /// </summary>
 public sealed class Building
 {
@@ -23,20 +29,85 @@ public sealed class Building
 
     public BuildingType Type { get; }
 
+    public bool IsHut => Type == BuildingType.Hut;
+    public bool IsWorkshop => Type != BuildingType.Hut;
+
     /// <summary>Case en haut à gauche du bâtiment.</summary>
     public int X { get; }
     public int Y { get; }
     public int Width => 2;
     public int Height => 2;
 
-    public int WoodRequired => HutWood;
-    public int WoodDelivered { get; internal set; }
+    public int WoodRequired => Type switch
+    {
+        BuildingType.Kiln => 8,
+        BuildingType.Bloomery => 6,
+        BuildingType.Forge => 10,
+        _ => HutWood,
+    };
 
-    /// <summary>Bois en route vers le chantier, pour ne pas en faire apporter plus que nécessaire.</summary>
+    /// <summary>Un four de pierre tient la chaleur : le bas fourneau et la forge réclament de la pierre.</summary>
+    public int StoneRequired => Type switch
+    {
+        BuildingType.Bloomery => 24,
+        BuildingType.Forge => 12,
+        _ => 0,
+    };
+
+    public float WorkSeconds => Type switch
+    {
+        BuildingType.Kiln => 14f,
+        BuildingType.Bloomery => 26f,
+        BuildingType.Forge => 24f,
+        _ => HutWorkSeconds,
+    };
+
+    public int WoodDelivered { get; internal set; }
+    public int StoneDelivered { get; internal set; }
+
+    /// <summary>Matériaux en route vers le chantier, pour ne pas en faire apporter plus que nécessaire.</summary>
     public int WoodInTransit { get; internal set; }
+    public int StoneInTransit { get; internal set; }
 
     public int WoodStillToBring => Math.Max(0, WoodRequired - WoodDelivered - WoodInTransit);
-    public bool HasAllMaterials => WoodDelivered >= WoodRequired;
+    public int StoneStillToBring => Math.Max(0, StoneRequired - StoneDelivered - StoneInTransit);
+    public bool HasAllMaterials => WoodDelivered >= WoodRequired && StoneDelivered >= StoneRequired;
+
+    /// <summary>Ce qu'il faut encore apporter de ce matériau.</summary>
+    public int StillToBring(ResourceType type) => type switch
+    {
+        ResourceType.Wood => WoodStillToBring,
+        ResourceType.Stone => StoneStillToBring,
+        _ => 0,
+    };
+
+    /// <summary>Le premier matériau qui manque et dont la colonie a en stock, ou null.</summary>
+    internal ResourceType? MaterialToFetch(Stockpile stock)
+    {
+        foreach (ResourceType type in new[] { ResourceType.Wood, ResourceType.Stone })
+            if (StillToBring(type) > 0 && stock.Get(type) > 0)
+                return type;
+        return null;
+    }
+
+    /// <summary>Un colon part avec ce matériau vers le chantier (ou y renonce) : on le compte « en route ».</summary>
+    internal void AddInTransit(ResourceType type, int amount)
+    {
+        if (type == ResourceType.Wood)
+            WoodInTransit += amount;
+        else if (type == ResourceType.Stone)
+            StoneInTransit += amount;
+    }
+
+    /// <summary>Le matériau est arrivé sur le chantier.</summary>
+    internal void Deliver(ResourceType type, int amount)
+    {
+        AddInTransit(type, -amount);
+        if (type == ResourceType.Wood)
+            WoodDelivered += amount;
+        else if (type == ResourceType.Stone)
+            StoneDelivered += amount;
+    }
 
     /// <summary>Avancement des travaux, de 0 à 1.</summary>
     public float Progress { get; internal set; }
@@ -61,4 +132,12 @@ public sealed class Building
 
     /// <summary>La case où dort un résident : chacun a la sienne.</summary>
     public (int X, int Y) BedOf(Colonist colonist) => Tiles.ElementAt(Math.Max(0, Residents.IndexOf(colonist)) % HutCapacity);
+
+    public static string NameOf(BuildingType type) => type switch
+    {
+        BuildingType.Kiln => "charbonnière",
+        BuildingType.Bloomery => "bas fourneau",
+        BuildingType.Forge => "forge",
+        _ => "hutte",
+    };
 }

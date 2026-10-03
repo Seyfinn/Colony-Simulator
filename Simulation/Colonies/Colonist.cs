@@ -135,4 +135,7 @@ public sealed class Colonist
 
     /// <summary>Moment où il est parti récolter ce qu'il rapporte, pour mesurer le coût en travail (-1 sinon).</summary>
     internal long WorkCycleStartTicks { get; set; } = -1;
+
+    /// <summary>Heures de travail des matières premières d'une fabrication, à ajouter au coût de ce qu'il rapporte.</summary>
+    internal double WorkCycleExtraHours { get; set; }
 }

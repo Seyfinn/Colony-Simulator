@@ -12,7 +12,14 @@ public static class Urbanism
     private const int MaxDistanceFromFire = 14;
 
     /// <summary>Renvoie la case en haut à gauche d'un emplacement libre pour une hutte de 2 × 2, ou null s'il n'y en a pas.</summary>
-    public static (int X, int Y)? FindHutSite(LocalMap map, Colony colony)
+    public static (int X, int Y)? FindHutSite(LocalMap map, Colony colony) => FindSite(map, colony, MinDistanceFromFire);
+
+    /// <summary>Un atelier se tient un peu plus loin du feu que les huttes : fumée et étincelles.</summary>
+    public static (int X, int Y)? FindWorkshopSite(LocalMap map, Colony colony) => FindSite(map, colony, WorkshopMinDistance);
+
+    private const int WorkshopMinDistance = 5;
+
+    private static (int X, int Y)? FindSite(LocalMap map, Colony colony, int minDistance)
     {
         (int X, int Y)? best = null;
         float bestScore = float.MaxValue;
@@ -26,7 +33,7 @@ public static class Urbanism
 
             // Au plus près du feu, sans empiéter sur le cercle où l'on mange et se détend.
             float distance = MathF.Sqrt((dx + 0.5f) * (dx + 0.5f) + (dy + 0.5f) * (dy + 0.5f));
-            if (distance < MinDistanceFromFire)
+            if (distance < minDistance)
                 continue;
             if (distance < bestScore)
             {
@@ -107,12 +114,14 @@ public static class Urbanism
     }
 
     /// <summary>Ouvre un chantier : on dégage le terrain (souches comprises) et on pose les fondations.</summary>
-    public static Building PlanHut(LocalMap map, Colony colony, int x, int y)
+    public static Building PlanHut(LocalMap map, Colony colony, int x, int y) => PlanBuilding(map, colony, BuildingType.Hut, x, y);
+
+    public static Building PlanBuilding(LocalMap map, Colony colony, BuildingType type, int x, int y)
     {
-        var hut = new Building(BuildingType.Hut, x, y);
-        foreach ((int tx, int ty) in hut.Tiles)
+        var building = new Building(type, x, y);
+        foreach ((int tx, int ty) in building.Tiles)
             map.ClearFlora(tx, ty);
-        colony.Buildings.Add(hut);
-        return hut;
+        colony.Buildings.Add(building);
+        return building;
     }
 }

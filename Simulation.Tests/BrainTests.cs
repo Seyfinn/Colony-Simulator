@@ -139,7 +139,7 @@ public class BrainTests(ITestOutputHelper output)
 
         Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.05f, $"{c.Name} meurt de faim."));
         Assert.Equal(0, coldNightsWithoutFire);
-        Assert.True(colony.Stock.Get(ResourceType.Stone) > 0, "La carrière devrait avoir été exploitée à un moment.");
+        Assert.True(colony.Labor.TotalProduced(ResourceType.Stone) > 0, "La carrière devrait avoir été exploitée à un moment.");
         Assert.True(colony.Buildings.Count(b => b.IsComplete) >= 4, "La colonie devrait s'être bâti des huttes.");
         Assert.True(colony.Homeless <= 4, "Presque tout le monde devrait dormir à l'abri au bout d'un an.");
     }
