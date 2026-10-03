@@ -39,11 +39,10 @@ public partial class MapView : Node2D
     /// <summary>Une case modifiée change aussi l'aspect de ses voisines (falaises, bords).</summary>
     private void OnTileChanged(int x, int y)
     {
-        MarkDirty(x, y);
-        MarkDirty(x, y - 1);
-        MarkDirty(x, y + 1);
-        MarkDirty(x - 1, y);
-        MarkDirty(x + 1, y);
+        // Les coudes des rivières diagonales peuvent aussi modifier un morceau en diagonale.
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            MarkDirty(x + dx, y + dy);
     }
 
     private void MarkDirty(int x, int y)

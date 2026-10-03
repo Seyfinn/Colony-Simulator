@@ -52,5 +52,9 @@ public static class AssetLibrary
     }
 
     /// <summary>Oublie les images chargées (pour recharger des fichiers modifiés pendant le développement).</summary>
-    public static void Reload() => Cache.Clear();
+    public static void Reload()
+    {
+        Cache.Clear();
+        RiverTiles.Reload();
+    }
 }

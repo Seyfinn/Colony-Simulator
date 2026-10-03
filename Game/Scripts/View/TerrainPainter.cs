@@ -54,7 +54,15 @@ public static class TerrainPainter
         GrassPalette pn = Palette(BiomeVisuals.At(map, x, y - 1)), ps = Palette(BiomeVisuals.At(map, x, y + 1));
         GrassPalette pw = Palette(BiomeVisuals.At(map, x - 1, y)), pe = Palette(BiomeVisuals.At(map, x + 1, y));
         int connections = canal ? WaterGeometry.Connections(map, x, y) : 0;
-        WaterGeometry.Stream[] streams = !canal ? WaterGeometry.Streams(map, x, y) : [];
+        int riverMask = RiverTiles.Connections(map, x, y);
+        byte[]? riverTile = !canal && surface != Surface.Water && (riverMask != 0 || river)
+            ? RiverTiles.Get($"river_{riverMask}") : null;
+        byte[]? lakeTile = surface == Surface.Water
+            ? RiverTiles.Get($"lake_edge_{RiverTiles.LakeEdges(map, x, y, riverMask)}") : null;
+        // Avec le jeu complet de PNG, les rives restent dans la case ; sans lui, garder l'ancien tracé.
+        bool pngRivers = RiverTiles.Complete;
+        WaterGeometry.Stream[] streams = !canal && (riverTile is null && !pngRivers || surface == Surface.Water)
+            ? WaterGeometry.Streams(map, x, y) : [];
         int north = Elevation(map, x, y - 1, height), south = Elevation(map, x, y + 1, height);
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
         Surface n = Neighbor(map, x, y - 1, surface), s = Neighbor(map, x, y + 1, surface);
@@ -122,12 +130,12 @@ public static class TerrainPainter
                         shore = Math.Min(shore, radius - MathF.Sqrt((px - 31 + radius) * (px - 31 + radius) + (py - 31 + radius) * (py - 31 + radius)));
                     float margin = 1.5f + Noise.Value2D(wx / 13f, wy / 13f, 193) * 1.5f;
                     bool mouth = streams.Length > 0 && WaterGeometry.Nearest(streams, px, py).Distance < 10;
-                    if (!mouth && shore < margin)
+                    if (lakeTile is null && !mouth && shore < margin)
                     {
                         Rgb soil = GroundPixel(Underlying(map, x, y), wx, wy, height, biome, grass);
                         color = Blend(soil, Underlying(map, x, y) == Surface.Sand ? WetSand : Loam, 0.25f);
                     }
-                    else if (!mouth && shore < margin + 2.5f) color = Blend(color, Foam, 0.22f);
+                    else if (lakeTile is null && !mouth && shore < margin + 2.5f) color = Blend(color, Foam, 0.22f);
                 }
                 bool streamWater = false;
                 if (streams.Length > 0 && surface != Surface.Water)
@@ -162,6 +170,13 @@ public static class TerrainPainter
             int index = ((oy + py) * stride + ox + px) * 4;
             pixels[index] = color.R; pixels[index + 1] = color.G; pixels[index + 2] = color.B; pixels[index + 3] = 255;
         }
+        if (riverTile is not null)
+        {
+            RiverTiles.Blend(riverTile, pixels, stride, ox, oy);
+            if (RiverTiles.Accent(map, x, y) is { } accent)
+                RiverTiles.Blend(accent, pixels, stride, ox, oy);
+        }
+        if (lakeTile is not null) RiverTiles.Blend(lakeTile, pixels, stride, ox, oy);
     }
 
     private static Rgb GroundPixel(Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass)
