@@ -128,10 +128,10 @@ public partial class WorldPanel : CanvasLayer
             BgColor = Panel, BorderColor = Edge,
             BorderWidthLeft = 1, BorderWidthRight = 1, BorderWidthTop = 1, BorderWidthBottom = 1,
             CornerRadiusTopLeft = 9, CornerRadiusTopRight = 9, CornerRadiusBottomLeft = 9, CornerRadiusBottomRight = 9,
-            ContentMarginLeft = 14, ContentMarginRight = 14, ContentMarginTop = 10, ContentMarginBottom = 10,
+            ContentMarginLeft = 14, ContentMarginRight = 14, ContentMarginTop = 8, ContentMarginBottom = 8,
         });
         var column = new VBoxContainer();
-        column.AddThemeConstantOverride("separation", 5);
+        column.AddThemeConstantOverride("separation", 3);
         card.AddChild(column);
 
         column.AddChild(Text($"Économie de {colony.Name}", 15, Gold));
@@ -140,7 +140,7 @@ public partial class WorldPanel : CanvasLayer
         // Chaque bien : ce que la colonie en a, ce qu'il lui coûte à produire, ce qu'il vaut pour elle en ce moment.
         var grid = new GridContainer { Columns = 4 };
         grid.AddThemeConstantOverride("h_separation", 14);
-        grid.AddThemeConstantOverride("v_separation", 2);
+        grid.AddThemeConstantOverride("v_separation", 0);
         foreach (string header in new[] { "Bien", "Stock", "Coût (h)", "Valeur (h)" })
             grid.AddChild(Text(header, 11, Muted));
         foreach (ResourceType good in Economy.Tradable)
@@ -177,7 +177,7 @@ public partial class WorldPanel : CanvasLayer
         }
 
         // Les derniers échanges de la colonie.
-        var records = colony.Trades.TakeLast(4).Reverse().ToList();
+        var records = colony.Trades.TakeLast(3).Reverse().ToList();
         if (records.Count > 0)
             column.AddChild(Text("Derniers échanges", 12, Muted));
         foreach (TradeRecord record in records)
