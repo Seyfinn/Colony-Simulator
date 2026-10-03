@@ -52,6 +52,9 @@ public sealed class Caravan
     /// <summary>Le travail que l'échange devait épargner, si tout se passait comme prévu.</summary>
     public double PlanGainHours { get; }
 
+    /// <summary>Les pièces emportées au départ (pour calculer ce que le voyage a vraiment rapporté).</summary>
+    public int CoinsAtDeparture { get; internal set; }
+
     /// <summary>Ce qu'elle transporte en ce moment : au départ, les marchandises à vendre ; au retour, ce qu'elle rapporte.</summary>
     public Dictionary<ResourceType, int> Cargo { get; } = [];
 
@@ -259,6 +262,7 @@ public static class Trade
         coins = Math.Min(coins, plan.From.Stock.Get(ResourceType.Coins));
         plan.From.Stock.TryTake(ResourceType.Coins, coins);
         caravan.Coins = coins;
+        caravan.CoinsAtDeparture = coins;
 
         foreach (Colonist trader in traders)
             ColonistAI.DetachFromColony(trader);
@@ -383,7 +387,8 @@ public static class Trade
         colony.FillVacancies();
         colony.AssignSectors();
 
-        int net = caravan.Settled.Sum(l => (int)Math.Round(l.IsSale ? l.Total : -l.Total));
+        // Ce que le voyage a vraiment rapporté en pièces (les arrondis des lignes ne comptent pas).
+        int net = caravan.Coins - caravan.CoinsAtDeparture;
         var record = new TradeRecord(world.Clock.Ticks, caravan.To.Name, caravan.Settled.ToList(), net, WeSent: true);
         colony.Trades.Add(record);
         if (colony.Trades.Count > MaxRecords)
