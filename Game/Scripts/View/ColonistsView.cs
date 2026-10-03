@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using Noise = GodColony.Simulation.Generation.Noise;
 using GodColony.Simulation;
@@ -14,6 +15,7 @@ public partial class ColonistsView : Node2D
 
     private WorldState _world = null!;
     private double _time;
+    private readonly Dictionary<Building, (double Time, double Phase)> _wheelPhases = [];
     private readonly List<(Colony Colony, PointLight2D Light)> _fireLights = [];
 
     /// <summary>Avancement entre le tick précédent et le suivant (0 à 1), pour lisser le mouvement.</summary>
@@ -268,25 +270,14 @@ public partial class ColonistsView : Node2D
     private void DrawDam(Building dam)
     {
         var origin = new Vector2(dam.X, dam.Y) * Tile;
-        Color timber = Color.Color8(111, 77, 49), light = Color.Color8(172, 127, 78);
-        Color stone = Color.Color8(138, 148, 142), stoneLight = Color.Color8(190, 198, 187), stoneDark = Color.Color8(86, 99, 98);
+        var downstream = _colony.Map.RiverDownstream(dam.X, dam.Y);
+        bool side = downstream is { } to && Math.Abs(to.X - dam.X) > Math.Abs(to.Y - dam.Y);
         if (!dam.IsComplete)
         {
-            // Des pieux plantés au fil des travaux, et les pierres déjà apportées.
-            int posts = 1 + (int)(dam.Progress * 5);
-            for (int i = 0; i < posts && i < 6; i++)
-            {
-                DrawRect(new Rect2(origin + new Vector2(2 + i * 5, 6), new Vector2(3, 20)), timber);
-                DrawRect(new Rect2(origin + new Vector2(2 + i * 5, 6), new Vector2(1, 20)), light);
-            }
-            int rocks = dam.StoneDelivered * 6 / Math.Max(1, dam.StoneRequired);
-            for (int i = 0; i < rocks; i++)
-                DrawRect(new Rect2(origin + new Vector2(3 + i * 5, 26), new Vector2(4, 4)), stone);
+            DrawTexture(BuildingSprites.DamConstruction(dam.Progress, side), origin + new Vector2(0, Tile - 48));
             return;
         }
         DrawGroundShadow(origin + new Vector2(16, 28), 17, 3, 0.25f);
-        var downstream = _colony.Map.RiverDownstream(dam.X, dam.Y);
-        bool side = downstream is { } to && Math.Abs(to.X - dam.X) > Math.Abs(to.Y - dam.Y);
         DrawTexture(SpriteFactory.BuildingSprite(side ? "DamSide" : "Dam"), origin + new Vector2(0, Tile - 48));
     }
 
@@ -305,6 +296,15 @@ public partial class ColonistsView : Node2D
             DrawGroundShadow(basePoint + new Vector2(34, -1), 29, 5, 0.22f);
             Texture2D sprite = SpriteFactory.BuildingSprite(building.Type.ToString(), BiomeVisuals.At(_colony.Map, building.X, building.Y));
             DrawTexture(sprite, basePoint - new Vector2(0, sprite.GetHeight()));
+            if (building.Type == BuildingType.Mill)
+            {
+                float flow = Hydrology.MillFlow(_colony.Map, building);
+                // Intégrer le débit évite un saut de pose quand le courant change ; le temps se fige en pause.
+                var previous = _wheelPhases.GetValueOrDefault(building, (WaterAnimationTime, 0d));
+                double phase = (previous.Item2 + Math.Max(0, WaterAnimationTime - previous.Item1) * Math.Clamp(flow, 0, 1) * 6) % 4;
+                _wheelPhases[building] = (WaterAnimationTime, phase);
+                DrawTexture(RemainingArt.WheelFrame((int)phase), basePoint + new Vector2(40, -40));
+            }
             return;
         }
         if (building.IsWorkshop)
@@ -391,7 +391,8 @@ public partial class ColonistsView : Node2D
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
         Vector2 feet = DisplayPosition(colonist).Round();
         var appearance = PeoplesSprites.Describe(colonist, BiomeVisuals.At(_colony.Map, colonist.TileX, colonist.TileY));
-        ImageTexture[] frames = PeoplesSprites.Get(appearance);
+        bool traveler = _colony.Transients.Contains(colonist) || _world.Caravans.Exists(c => c.Traders.Contains(colonist));
+        ImageTexture[] frames = traveler ? RemainingArt.TraderFrames(appearance.People) : PeoplesSprites.Get(appearance);
         Vector2 spriteOffset = new(-frames[0].GetWidth() / 2f, -frames[0].GetHeight());
         float scale = colonist.Stage == LifeStage.Child ? 0.7f : 1f;
         DrawGroundShadow(feet, (int)(PeoplesSprites.ShadowRadius(appearance.People) * scale), 2, 0.24f);

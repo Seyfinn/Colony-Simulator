@@ -12,7 +12,7 @@ public enum OutfitTrade { Everyday, Field, Woodland, Stonework, Workshop }
 public readonly record struct ColonistAppearance(int Id, PeopleLook People, WoodlandBiome Biome,
     LifeStage Stage = LifeStage.Adult, Sex Sex = Sex.Male, OutfitTrade Trade = OutfitTrade.Everyday);
 
-/// <summary>Trois peuples sur des canevas de 32 pixels, les pieds alignés, avec leurs propres proportions.</summary>
+/// <summary>Quatre peuples, les pieds alignés, avec leurs propres proportions.</summary>
 public static partial class PeoplesSprites
 {
     public const int AppearanceCount = 24;
@@ -48,17 +48,30 @@ public static partial class PeoplesSprites
         Trade = appearance.Stage == LifeStage.Child ? OutfitTrade.Everyday : appearance.Trade,
     };
 
-    public static ImageTexture[] Get(ColonistAppearance appearance) => appearance.People == PeopleLook.Human
+    private static string AssetStem(ColonistAppearance a) => $"peoples/{a.People.ToString().ToLowerInvariant()}_{a.Stage.ToString().ToLowerInvariant()}_{(a.Sex == Sex.Female ? "f" : "m")}";
+    private static ImageTexture[]? Supplied(ColonistAppearance a)
+    {
+        var frames = AssetLibrary.Frames(AssetStem(a) + "_{0}.png", 4);
+        if (frames is not null)
+            foreach (var frame in frames) if (frame.GetWidth() != 32 || frame.GetHeight() != 32) return null;
+        return frames;
+    }
+    public static ImageTexture[] Get(ColonistAppearance appearance) => Supplied(appearance) ?? (appearance.People == PeopleLook.Human
         ? SpriteFactory.Colonist(appearance.Id, appearance.Stage == LifeStage.Elder, appearance.Biome)
-        : GetAssets(appearance).Frames;
-    public static ImageTexture Rest(ColonistAppearance appearance) => appearance.People == PeopleLook.Human
-        ? Get(appearance)[0] : GetAssets(appearance).Rest;
-    public static Rect2I Bounds(ColonistAppearance appearance) => appearance.People == PeopleLook.Human
-        ? new Rect2I(2, 0, 12, 24) : GetAssets(appearance).Bounds;
+        : GetAssets(appearance).Frames);
+    public static ImageTexture Rest(ColonistAppearance appearance)
+    {
+        var rest = AssetLibrary.Get(AssetStem(appearance) + "_rest.png");
+        if (rest is not null && rest.GetWidth() == 32 && rest.GetHeight() == 32) return rest;
+        return Supplied(appearance)?[0] ?? (appearance.People == PeopleLook.Human ? Get(appearance)[0] : GetAssets(appearance).Rest);
+    }
+    public static Rect2I Bounds(ColonistAppearance appearance) => Supplied(appearance) is { } supplied ? supplied[0].GetImage().GetUsedRect()
+        : appearance.People == PeopleLook.Human ? new Rect2I(2, 0, 12, 24) : GetAssets(appearance).Bounds;
 
     public static ImageTexture Portrait(ColonistAppearance appearance)
     {
         if (appearance.People != PeopleLook.Human) return Get(appearance)[0];
+        if (Supplied(appearance) is { } supplied) return supplied[0];
         if (HumanPortraits.TryGetValue(appearance, out var portrait)) return portrait;
         // La même échelle pour les quatre peuples dans le portrait, y compris l'humain historique de 16 × 24.
         var art = new PixelArt(32, 32);

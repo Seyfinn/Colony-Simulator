@@ -78,6 +78,9 @@ public sealed class LocalMap
     /// <summary>Débit relatif de la rivière sur chaque case : 1 au naturel, moins en aval d'un barrage.</summary>
     private readonly float[] _flow;
 
+    /// <summary>Les filons de fer déjà calculés, couche par couche (voir <see cref="IsIronVein"/>).</summary>
+    private readonly uint[] _veins;
+
     /// <summary>Canaux creusés par les colons : 0 = rien, 1 = fossé à sec, 2 = fossé où l'eau coule.</summary>
     private readonly byte[] _canal;
 
@@ -90,8 +93,17 @@ public sealed class LocalMap
     /// <summary>On avance un peu moins vite dans un canal en eau.</summary>
     public const float CanalMoveCost = 1.5f;
 
-    /// <summary>Déclenché quand une case change d'aspect (minée, arbre coupé…).</summary>
+    /// <summary>
+    /// Déclenché quand le sol d'une case change d'aspect (minée, noyée, canal creusé ou mis en eau, rivière qui faiblit) ;
+    /// sa végétation a pu changer aussi.
+    /// </summary>
     public event Action<int, int>? TileChanged;
+
+    /// <summary>
+    /// Déclenché quand seule la végétation d'une case change (baies cueillies ou repoussées, arbre coupé ou qui grandit) :
+    /// le sol est intact, l'affichage n'a pas à repeindre le terrain.
+    /// </summary>
+    public event Action<int, int>? FloraChanged;
 
     internal LocalMap(int width, int height, int seed)
     {
@@ -115,7 +127,12 @@ public sealed class LocalMap
         Array.Fill(_downstream, -1);
         _flow = new float[n];
         Array.Fill(_flow, 1f);
+        _veins = new uint[n];
     }
+
+    /// <summary>Tableaux de travail des recherches sur cette carte (canaux, barrages).</summary>
+    internal SearchScratch Scratch => _scratch ??= new SearchScratch(Width * Height);
+    private SearchScratch? _scratch;
 
     public bool InBounds(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
 
@@ -177,11 +194,18 @@ public sealed class LocalMap
     {
         for (int i = 0; i < _flow.Length; i++)
             if (_river[i])
+            {
                 _flow[i] *= factor;
+                TileChanged?.Invoke(i % Width, i / Width);
+            }
     }
 
     /// <summary>Un barrage fait baisser le débit en aval.</summary>
-    public void ReduceFlow(int x, int y, float factor) => _flow[Index(x, y)] *= factor;
+    public void ReduceFlow(int x, int y, float factor)
+    {
+        _flow[Index(x, y)] *= factor;
+        TileChanged?.Invoke(x, y);
+    }
 
     /// <summary>Une rivière : de l'eau peu profonde, qui se traverse à pied.</summary>
     public bool IsRiver(int x, int y) => _river[Index(x, y)];
@@ -263,7 +287,7 @@ public sealed class LocalMap
         if (count == 0)
             return 0;
         _berries[i] = 0;
-        TileChanged?.Invoke(x, y);
+        FloraChanged?.Invoke(x, y);
         return count;
     }
 
@@ -275,7 +299,7 @@ public sealed class LocalMap
             return;
         _flora[i] = FloraType.None;
         _berries[i] = 0;
-        TileChanged?.Invoke(x, y);
+        FloraChanged?.Invoke(x, y);
     }
 
     /// <summary>Un arbre doit avoir atteint cette croissance pour être abattu.</summary>
@@ -296,7 +320,7 @@ public sealed class LocalMap
         int wood = (int)MathF.Round(3 + 7 * _floraGrowth[i]);
         _flora[i] = FloraType.Stump;
         _floraGrowth[i] = 0f;
-        TileChanged?.Invoke(x, y);
+        FloraChanged?.Invoke(x, y);
         return wood;
     }
 
@@ -320,7 +344,7 @@ public sealed class LocalMap
             {
                 case FloraType.Bush when !winter && _berries[i] < MaxBerries:
                     _berries[i]++;
-                    TileChanged?.Invoke(x, y);
+                    FloraChanged?.Invoke(x, y);
                     break;
                 case FloraType.Tree when _floraGrowth[i] < 1f:
                 {
@@ -328,13 +352,13 @@ public sealed class LocalMap
                     int before = (int)(_floraGrowth[i] * 10);
                     _floraGrowth[i] = MathF.Min(1f, _floraGrowth[i] + TreeGrowthPerDay);
                     if ((int)(_floraGrowth[i] * 10) != before)
-                        TileChanged?.Invoke(x, y);
+                        FloraChanged?.Invoke(x, y);
                     break;
                 }
                 case FloraType.Stump when Noise.Hash01(x, y, (int)day, Seed + 77) < StumpRegrowthChancePerDay:
                     _flora[i] = FloraType.Tree;
                     _floraGrowth[i] = 0.05f;
-                    TileChanged?.Invoke(x, y);
+                    FloraChanged?.Invoke(x, y);
                     break;
             }
         }
@@ -436,8 +460,28 @@ public sealed class LocalMap
         return extracted;
     }
 
-    /// <summary>Les filons de fer forment des veines en 3D à l'intérieur de la roche.</summary>
-    private bool IsIronVein(int x, int y, int level) =>
+    /// <summary>
+    /// Les filons de fer forment des veines en 3D à l'intérieur de la roche. Le bruit qui les dessine coûte cher et ne change
+    /// jamais : chaque couche n'est calculée qu'une fois, puis gardée dans <see cref="_veins"/> (deux bits par couche :
+    /// « déjà calculée », puis « filon »). Une couche perdue par deux calculs simultanés (peinture en parallèle) est
+    /// simplement recalculée : la réponse est toujours la même.
+    /// </summary>
+    private bool IsIronVein(int x, int y, int level)
+    {
+        if ((uint)level >= MaxElevation)
+            return ComputeIronVein(x, y, level);
+        int i = Index(x, y);
+        uint veins = _veins[i];
+        uint known = 1u << (2 * level), vein = 2u << (2 * level);
+        if ((veins & known) == 0)
+        {
+            veins |= known | (ComputeIronVein(x, y, level) ? vein : 0u);
+            _veins[i] = veins;
+        }
+        return (veins & vein) != 0;
+    }
+
+    private bool ComputeIronVein(int x, int y, int level) =>
         Noise.Fractal3D(x * 0.11f, y * 0.11f, level * 0.45f, Seed + 500, 3) > 0.64f;
 
     /// <summary>Utilisé par le générateur : trace une rivière sur la case (sans plante, poissonneuse).</summary>

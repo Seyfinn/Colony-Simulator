@@ -51,6 +51,20 @@ public static class AssetLibrary
         return frames;
     }
 
+    /// <summary>Les noms, sans extension, des images PNG d'un dossier (par exemple <c>terrain</c>).</summary>
+    public static IEnumerable<string> Names(string folder)
+    {
+        string path = ProjectSettings.GlobalizePath(Root + folder);
+        if (!Directory.Exists(path))
+            yield break;
+        foreach (string file in Directory.GetFiles(path, "*.png"))
+            yield return Path.GetFileNameWithoutExtension(file);
+    }
+
     /// <summary>Oublie les images chargées (pour recharger des fichiers modifiés pendant le développement).</summary>
-    public static void Reload() => Cache.Clear();
+    public static void Reload()
+    {
+        Cache.Clear();
+        RiverTiles.Reload();
+    }
 }

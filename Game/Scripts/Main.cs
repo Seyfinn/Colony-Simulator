@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using Godot;
@@ -21,8 +22,17 @@ public partial class Main : Node2D
     /// <summary>Nombre de peuples au départ : humains, nains, elfes et orques, chacun sur sa carte.</summary>
     private const int ColonyCount = 4;
 
-    /// <summary>Limite de ticks par image, pour que le jeu ne fige pas si la simulation prend du retard.</summary>
-    private const int MaxTicksPerFrame = 2000;
+    /// <summary>
+    /// Temps de calcul accordé à la simulation à chaque image. Si la machine ne suit pas (vitesse ×30 sur de grosses
+    /// colonies, par exemple), le temps du jeu ralentit un peu au lieu de figer l'image pour rattraper son retard.
+    /// </summary>
+    private const double SimulationBudgetMs = 10;
+
+    /// <summary>
+    /// Retard maximal gardé en réserve, en secondes de jeu : au-delà (après un gel de la fenêtre, par exemple),
+    /// on l'oublie plutôt que de le rattraper par à-coups, image après image.
+    /// </summary>
+    private const double MaxBacklogSeconds = 0.25;
 
     /// <summary>Distance maximale (en cases) entre le clic et un colon pour le sélectionner.</summary>
     private const float SelectRadius = 0.8f;
@@ -46,6 +56,10 @@ public partial class Main : Node2D
     private double _pendingTicks;
     private Colonist? _selected;
 
+    /// <summary>L'interface se met à jour dix fois par seconde : assez pour l'œil, bien moins de travail qu'à chaque image.</summary>
+    private const double HudRefreshSeconds = 0.1;
+    private double _hudCooldown;
+
     // Outils de développement, passés en ligne de commande après "--" :
     //   --capture=chemin.png   enregistre une capture puis quitte le jeu
     //   --advance-hours=N      fait avancer la simulation de N heures au démarrage
@@ -57,8 +71,10 @@ public partial class Main : Node2D
     //   --zoom=N               règle le zoom de la caméra (0.2 montre presque toute la carte)
     //   --select-first         sélectionne le premier colon
     //   --focus-fields         centre la caméra sur le premier champ
+    //   --perf=N               mesure N images (durée, part de la simulation), affiche le résumé puis quitte
     private string? _capturePath;
     private int _framesBeforeCapture = 20;
+    private PerfProbe? _perf;
 
     public override void _Ready()
     {
@@ -133,6 +149,7 @@ public partial class Main : Node2D
 
         _ambience.Init(colony.Map);
         _camera.Position = new Vector2(colony.CampX + 0.5f, colony.CampY + 0.5f) * TerrainPainter.TileSize;
+        _hudCooldown = 0;
     }
 
     private void ApplyDevArguments(CameraController camera)
@@ -141,6 +158,8 @@ public partial class Main : Node2D
         {
             if (arg.StartsWith("--capture="))
                 _capturePath = arg["--capture=".Length..];
+            else if (arg.StartsWith("--perf=") && int.TryParse(arg["--perf=".Length..], out int frames) && frames > 0)
+                _perf = new PerfProbe(frames);
             else if (arg.StartsWith("--speed=") && int.TryParse(arg["--speed=".Length..], out int speed)
                 && speed is 1 or 4 or 30)
                 SetSpeed((GameSpeed)speed);
@@ -202,11 +221,18 @@ public partial class Main : Node2D
 
     public override void _Process(double delta)
     {
-        _pendingTicks += delta * (int)_speed * TimeConstants.TicksPerSecond;
-        int ticks = Math.Min((int)_pendingTicks, MaxTicksPerFrame);
-        _pendingTicks -= ticks;
-        for (int i = 0; i < ticks; i++)
+        double ticksPerSecond = (int)_speed * TimeConstants.TicksPerSecond;
+        _pendingTicks = Math.Min(_pendingTicks + delta * ticksPerSecond, ticksPerSecond * MaxBacklogSeconds + 1);
+        long simulationStart = Stopwatch.GetTimestamp();
+        long budget = (long)(SimulationBudgetMs / 1000 * Stopwatch.Frequency);
+        while (_pendingTicks >= 1)
+        {
             _world.Step();
+            _pendingTicks--;
+            if (Stopwatch.GetTimestamp() - simulationStart > budget)
+                break;
+        }
+        double simulationMs = Stopwatch.GetElapsedTime(simulationStart).TotalMilliseconds;
         _colonistsView.Alpha = (float)Math.Clamp(_pendingTicks, 0, 1);
 
         GameSpeed atmosphereSpeed = _speed == GameSpeed.Pause ? _speedBeforePause : _speed;
@@ -215,11 +241,22 @@ public partial class Main : Node2D
         _colonistsView.AmbientEffectsEnabled = _ambience.DetailedEffects;
         _colonistsView.WaterAnimationTime = _ambience.AnimationTime;
 
-        UpdateHud();
+        _hudCooldown -= delta;
+        if (_hudCooldown <= 0)
+        {
+            _hudCooldown = HudRefreshSeconds;
+            UpdateHud();
+        }
 
         if (_capturePath is not null && --_framesBeforeCapture == 0)
         {
             GetViewport().GetTexture().GetImage().SavePng(_capturePath);
+            GetTree().Quit();
+        }
+        if (_perf?.Frame(simulationMs) == true)
+        {
+            GD.Print(_perf.Summary());
+            _perf = null;
             GetTree().Quit();
         }
     }
@@ -272,6 +309,7 @@ public partial class Main : Node2D
     {
         _selected = colonist;
         _colonistsView.Selected = colonist;
+        _hudCooldown = 0;
     }
 
     private void HandleKey(Key key)
@@ -293,6 +331,7 @@ public partial class Main : Node2D
         _speed = speed;
         if (speed != GameSpeed.Pause)
             _speedBeforePause = speed;
+        _hudCooldown = 0;
     }
 
     private void TogglePause()
@@ -304,6 +343,7 @@ public partial class Main : Node2D
             _speedBeforePause = _speed;
             _speed = GameSpeed.Pause;
         }
+        _hudCooldown = 0;
     }
 
     private (int X, int Y) TileUnderMouse()

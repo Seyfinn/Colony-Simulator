@@ -18,6 +18,32 @@ public static class Noise
         return Lerp(Lerp(a, b, u), Lerp(c, d, u), v);
     }
 
+    /// <summary>
+    /// <see cref="Value2D"/> pour un parcours point par point (une image, par exemple) : on garde les quatre coins de la
+    /// dernière cellule, qu'on n'a pas à recalculer tant que les points suivants y tombent. Même résultat, au bit près.
+    /// </summary>
+    public struct Value2DCursor(int seed)
+    {
+        private int _xi, _yi;
+        private bool _ready;
+        private float _a, _b, _c, _d;
+
+        public float At(float x, float y)
+        {
+            int xi = (int)MathF.Floor(x), yi = (int)MathF.Floor(y);
+            if (!_ready || xi != _xi || yi != _yi)
+            {
+                (_xi, _yi, _ready) = (xi, yi, true);
+                _a = Hash01(xi, yi, 0, seed);
+                _b = Hash01(xi + 1, yi, 0, seed);
+                _c = Hash01(xi, yi + 1, 0, seed);
+                _d = Hash01(xi + 1, yi + 1, 0, seed);
+            }
+            float u = Smooth(x - xi), v = Smooth(y - yi);
+            return Lerp(Lerp(_a, _b, u), Lerp(_c, _d, u), v);
+        }
+    }
+
     public static float Value3D(float x, float y, float z, int seed)
     {
         int xi = (int)MathF.Floor(x), yi = (int)MathF.Floor(y), zi = (int)MathF.Floor(z);

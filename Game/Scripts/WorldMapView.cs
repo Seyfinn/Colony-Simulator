@@ -9,8 +9,7 @@ using GodColony.View;
 namespace GodColony;
 
 /// <summary>
-/// La carte du monde, très rudimentaire : les colonies sont des pastilles, le fleuve qui les relie est tracé en bleu,
-/// et les caravanes marchent d'une colonie à l'autre sous forme de petits carrés. À refaire avec les illustrations.
+/// La carte du monde : marqueurs par peuple, fleuve et caravanes animées avec secours procédural.
 /// Un clic sur une colonie la fait observer.
 /// </summary>
 public partial class WorldMapView : Control
@@ -61,15 +60,31 @@ public partial class WorldMapView : Control
             return;
         var font = ArtDirection.BodyFont;
         DrawRect(new Rect2(Vector2.Zero, Size), Panel);
+        if (AssetLibrary.Get("world/map_background.png") is { } background)
+            DrawTextureRect(background, new Rect2(Vector2.Zero, Size), false);
+        TextureFilter = TextureFilterEnum.Nearest;
         DrawRect(new Rect2(Vector2.Zero, Size), Edge, false, 2);
         DrawString(ArtDirection.HeadingFont, new Vector2(20, 30), "Carte du monde", HorizontalAlignment.Left, -1, 18, ArtDirection.Brass);
-        DrawString(font, new Vector2(20, 50), "Les carrés sont des caravanes en marche · cliquez sur une colonie pour l'observer", HorizontalAlignment.Left, -1, 12, Muted);
+        DrawString(font, new Vector2(20, 50), "Caravanes en marche · cliquez sur une colonie pour l'observer", HorizontalAlignment.Left, -1, 12, Muted);
 
         List<Vector2> points = Layout();
 
         // Le fleuve : il traverse les colonies dans l'ordre, chacune étant en amont de la suivante.
         for (int i = 0; i + 1 < points.Count; i++)
-            DrawDashedLine(points[i], points[i + 1], River, 3, 9);
+        {
+            if (AssetLibrary.Get("world/river_segment.png") is { } segment)
+            {
+                Vector2 delta = points[i + 1] - points[i];
+                DrawSetTransform(points[i], delta.Angle());
+                for (float along = 0; along < delta.Length(); along += 16)
+                {
+                    float width = Math.Min(16, delta.Length() - along);
+                    DrawTextureRectRegion(segment, new Rect2(along, -4, width, 8), new Rect2(0, 0, width, 8));
+                }
+                DrawSetTransform(Vector2.Zero);
+            }
+            else DrawDashedLine(points[i], points[i + 1], River, 3, 9);
+        }
         // Les distances (jours de marche) entre colonies voisines.
         for (int i = 0; i < points.Count; i++)
         for (int j = i + 1; j < points.Count; j++)
@@ -92,6 +107,8 @@ public partial class WorldMapView : Control
             Color color = ColorOf(colony.Species);
             DrawCircle(points[i], DotRadius, color.Darkened(0.35f));
             DrawCircle(points[i], DotRadius - 3, color);
+            if (AssetLibrary.Get($"world/colony_{PeoplesSprites.LookOf(colony.Species).ToString().ToLowerInvariant()}.png") is { } marker)
+                DrawTexture(marker, points[i] - new Vector2(16, 16));
             if (i == Observed)
                 DrawArc(points[i], DotRadius + 5, 0, Mathf.Tau, 32, ArtDirection.Brass, 2);
             DrawString(font, points[i] + new Vector2(-100, DotRadius + 18), colony.Name, HorizontalAlignment.Center, 200, 13, Ink);
@@ -100,7 +117,7 @@ public partial class WorldMapView : Control
                 HorizontalAlignment.Center, 200, 10, Muted);
         }
 
-        // Les caravanes : un carré à la couleur de la colonie qui l'envoie, qui avance sur la route.
+        // Les caravanes suivent la position simulée ; seul leur dessin change.
         long now = _world.Clock.Ticks;
         foreach (Caravan caravan in _world.Caravans)
         {
@@ -108,11 +125,10 @@ public partial class WorldMapView : Control
             Vector2 direction = (to - from).Normalized();
             Vector2 side = new Vector2(-direction.Y, direction.X) * 7f;
             Vector2 position = from.Lerp(to, caravan.RoutePosition(now)) + side;
-            Color color = ColorOf(caravan.From.Species);
-            DrawRect(new Rect2(position - new Vector2(5, 5), new Vector2(10, 10)), Ink);
-            DrawRect(new Rect2(position - new Vector2(4, 4), new Vector2(8, 8)), color);
+            bool left = (to.X - from.X) * (caravan.State == CaravanState.Outbound ? 1 : -1) < 0;
+            CaravanSprites.Draw(this, position, now / (double)GodColony.Simulation.Time.TimeConstants.TicksPerSecond, left);
             string state = caravan.State == CaravanState.Outbound ? "→" : "←";
-            DrawString(font, position + new Vector2(8, 4), $"{state} {caravan.Traders.Count} colons", HorizontalAlignment.Left, -1, 10, Ink);
+            DrawString(font, position + new Vector2(18, -6), $"{state} {caravan.Traders.Count} colons", HorizontalAlignment.Left, -1, 10, Ink);
         }
         if (_world.Caravans.Count == 0)
             DrawString(font, new Vector2(20, Size.Y - 16), "Aucune caravane en route.", HorizontalAlignment.Left, -1, 12, Muted);

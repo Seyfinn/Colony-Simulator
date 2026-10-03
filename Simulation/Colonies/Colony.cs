@@ -193,26 +193,39 @@ public sealed class Colony
     /// </summary>
     public void AssignSectors()
     {
-        List<Colonist> workers = Workers.ToList();
-        foreach (Colonist child in Members.Where(m => m.Stage == LifeStage.Child))
-            child.Sector = WorkSector.Free;
-        Dictionary<WorkSector, int> quotas = ComputeQuotas(workers.Count);
-        // Le temps libre revient à ceux qui restent une fois les postes productifs pourvus.
-        var candidates =
-            from colonist in workers
-            from sector in WorkSectors.All
-            let fit = sector.Fitness(colonist.Skills) + (colonist.Sector == sector ? 3f : 0f)
-            orderby fit descending
-            select (colonist, sector);
-
-        var assigned = new HashSet<Colonist>();
-        foreach ((Colonist colonist, WorkSector sector) in candidates.ToList())
+        var workers = new List<Colonist>(Members.Count);
+        foreach (Colonist member in Members)
         {
-            if (assigned.Contains(colonist) || quotas[sector] <= 0)
+            if (member.Stage == LifeStage.Child)
+                member.Sector = WorkSector.Free;
+            else
+                workers.Add(member);
+        }
+        Dictionary<WorkSector, int> quotas = ComputeQuotas(workers.Count);
+
+        // Chaque couple (colon, secteur), du plus apte au moins apte ; à aptitude égale, dans l'ordre des colons puis des secteurs.
+        // Le temps libre revient à ceux qui restent une fois les postes productifs pourvus.
+        WorkSector[] sectors = WorkSectors.All;
+        var candidates = new (float Fit, int Index)[workers.Count * sectors.Length];
+        for (int w = 0; w < workers.Count; w++)
+        for (int s = 0; s < sectors.Length; s++)
+        {
+            Colonist colonist = workers[w];
+            candidates[w * sectors.Length + s] =
+                (sectors[s].Fitness(colonist.Skills) + (colonist.Sector == sectors[s] ? 3f : 0f), w * sectors.Length + s);
+        }
+        Array.Sort(candidates, (a, b) => b.Fit.CompareTo(a.Fit) is var byFit and not 0 ? byFit : a.Index.CompareTo(b.Index));
+
+        var assigned = new bool[workers.Count];
+        foreach ((float _, int index) in candidates)
+        {
+            int w = index / sectors.Length;
+            WorkSector sector = sectors[index % sectors.Length];
+            if (assigned[w] || quotas[sector] <= 0)
                 continue;
-            colonist.Sector = sector;
+            workers[w].Sector = sector;
             quotas[sector]--;
-            assigned.Add(colonist);
+            assigned[w] = true;
         }
     }
 

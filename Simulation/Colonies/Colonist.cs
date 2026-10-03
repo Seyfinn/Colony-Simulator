@@ -110,6 +110,9 @@ public sealed class Colonist
     public int TileX => (int)X;
     public int TileY => (int)Y;
 
+    /// <summary>Un marchand de retour de voyage : il marche du bord de la carte jusqu'au camp, sans que la colonie « accueille un voyageur ».</summary>
+    internal bool ReturningTrader { get; set; }
+
     /// <summary>Tant qu'il n'est pas arrivé (ou une fois parti), il ne compte pas parmi les membres de la colonie.</summary>
     public TransitState Transit { get; internal set; }
 
