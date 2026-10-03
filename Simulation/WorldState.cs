@@ -76,7 +76,12 @@ public sealed class WorldState
             Colonies.Add(ColonyFounder.Found(map, Random, ColonyName(i, species), founders, NextColonistId, Clock, species));
         }
         for (int i = 0; i < Colonies.Count; i++)
+        {
             WorldMap.Place(Colonies[i], i, Colonies.Count);
+            // Le même fleuve traverse les colonies dans l'ordre : chacune est en amont de la suivante.
+            if (i > 0)
+                Colonies[i - 1].Downstream = Colonies[i];
+        }
         foreach (Colony colony in Colonies)
             ColonyBrain.Think(colony, colony.Map, Clock);
     }

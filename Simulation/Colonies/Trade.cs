@@ -98,6 +98,9 @@ public static class Trade
     /// <summary>Jours à attendre après un départ avant d'en préparer un autre.</summary>
     public const int DaysBetweenCaravans = 2;
 
+    /// <summary>Chaque point de rancune ajoute ce multiple du coût de voyage à ce qu'un échange doit rapporter (un barrage : trois fois plus).</summary>
+    public const double GrudgeCostFactor = 2.0;
+
     /// <summary>Colons minimum pour oser en envoyer en voyage.</summary>
     public const int MinColonistsToTrade = 6;
 
@@ -148,8 +151,10 @@ public static class Trade
         lines = FitPurse(lines, isSale: false, available: from.Stock.Get(ResourceType.Coins));
         lines = FitPurse(lines, isSale: true, available: to.Stock.Get(ResourceType.Coins));
 
+        // La rancune (d'un côté ou de l'autre) rend le voyage moins tentant : il faut qu'il rapporte bien plus.
+        double grudge = Math.Max(from.GrudgeAgainst(to), to.GrudgeAgainst(from));
         double gainHours = lines.Sum(l => l.Line.Units * l.Gain);
-        if (lines.Count == 0 || gainHours < cost * RequiredGainOverCost)
+        if (lines.Count == 0 || gainHours < cost * RequiredGainOverCost * (1 + GrudgeCostFactor * grudge))
             return null;
         return new TradePlan(from, to, lines.Select(l => l.Line).ToList(), gainHours, cost, tripDays);
     }

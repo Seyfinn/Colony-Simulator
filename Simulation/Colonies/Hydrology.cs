@@ -22,6 +22,13 @@ public static class Hydrology
     /// <summary>Nombre de cases de rivière, en aval, dont le débit baisse.</summary>
     public const int DownstreamReach = 25;
 
+    /// <summary>Part du débit des rivières qui reste à une colonie voisine, plus bas sur le fleuve, quand on bâtit un barrage plus haut.</summary>
+    public const float NeighborFlowFactor = 0.75f;
+
+    /// <summary>Rancune qu'un barrage fait naître chez la colonie d'aval, et son maximum.</summary>
+    public const float GrudgePerDam = 1f;
+    public const float MaxGrudge = 3f;
+
     /// <summary>Part du débit qui reste en aval d'un barrage.</summary>
     public const float DownstreamFlowFactor = 0.5f;
 
@@ -182,6 +189,14 @@ public static class Hydrology
         {
             map.ReduceFlow(tile.X, tile.Y, DownstreamFlowFactor);
             next = map.RiverDownstream(tile.X, tile.Y);
+        }
+
+        // Plus bas sur le même fleuve, une autre colonie reçoit moins d'eau : elle s'en plaint.
+        if (colony.Downstream is { } neighbor)
+        {
+            neighbor.Map.ScaleRiverFlows(NeighborFlowFactor);
+            neighbor.Grudges[colony] = Math.Min(MaxGrudge, neighbor.GrudgeAgainst(colony) + GrudgePerDam);
+            ColonyBrain.Say(neighbor, colony.Clock, $"Le barrage de {colony.Name} retient l'eau : notre rivière coule moins fort. On leur en veut.");
         }
         return reservoir;
     }

@@ -91,6 +91,9 @@ public static class ColonyBrain
 
     private const int MaxThoughts = 30;
 
+    /// <summary>Part de rancune qui s'estompe chaque jour : un barrage est pardonné en un an de jeu environ (20 jours).</summary>
+    private const float GrudgeFadePerDay = 0.05f;
+
     /// <summary>Part de foi qui revient chaque jour vers le niveau naturel du colon.</summary>
     private const float FaithRecoveryPerDay = 0.02f;
 
@@ -215,6 +218,12 @@ public static class ColonyBrain
     public static void OnDayStart(Colony colony, GameClock clock)
     {
         colony.UnreachableStands.Clear();
+        foreach (Colony other in colony.Grudges.Keys.ToList())
+        {
+            colony.Grudges[other] = Math.Max(0f, colony.Grudges[other] - GrudgeFadePerDay);
+            if (colony.Grudges[other] == 0f)
+                colony.Grudges.Remove(other);
+        }
         foreach (Colonist colonist in colony.Members)
         {
             // La foi revient doucement vers le tempérament du colon.

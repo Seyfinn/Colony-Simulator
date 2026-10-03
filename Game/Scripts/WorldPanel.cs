@@ -162,6 +162,10 @@ public partial class WorldPanel : CanvasLayer
         }
         column.AddChild(grid);
 
+        // Les rancunes : un barrage en amont en fait naître chez la colonie d'aval.
+        foreach ((Colony other, float grudge) in colony.Grudges.OrderByDescending(g => g.Value))
+            column.AddChild(Text($"Rancune envers {other.Name} : {grudge:0.0} (le commerce coûte plus cher)", 12, Gold));
+
         // Les caravanes en route, tous peuples confondus.
         long now = _world.Clock.Ticks;
         var caravans = _world.Caravans.ToList();

@@ -160,4 +160,42 @@ public class DamTests(ITestOutputHelper output)
         Assert.Single(colony.Prayers.All);
         Assert.DoesNotContain(colony.Buildings, b => b.IsDam);
     }
+
+    [Fact]
+    public void Un_barrage_prive_d_eau_la_colonie_d_aval_qui_en_garde_rancune_puis_pardonne()
+    {
+        var world = new WorldState(12345, startingColonists: 8, migration: false, lifecycle: false, colonyCount: 2, trade: false);
+        Colony upstream = world.Colonies[0], downstream = world.Colonies[1];
+        Assert.Same(downstream, upstream.Downstream);
+        Assert.Null(downstream.Downstream);
+
+        (int rx, int ry) = Enumerable.Range(0, downstream.Map.Width * downstream.Map.Height)
+            .Select(i => (X: i % downstream.Map.Width, Y: i / downstream.Map.Width))
+            .First(t => downstream.Map.IsRiver(t.X, t.Y));
+        float flowBefore = downstream.Map.GetFlow(rx, ry);
+
+        Hydrology.BuildInstantly(upstream.Map, upstream);
+
+        Assert.Equal(flowBefore * Hydrology.NeighborFlowFactor, downstream.Map.GetFlow(rx, ry), 3);
+        Assert.Equal(Hydrology.GrudgePerDam, downstream.GrudgeAgainst(upstream));
+        Assert.Equal(0f, upstream.GrudgeAgainst(downstream));
+        Assert.Contains(downstream.Thoughts, t => t.Text.Contains("barrage") && t.Text.Contains(upstream.Name));
+
+        // La rancune fait hésiter à commercer : le même échange doit rapporter bien plus pour valoir le voyage.
+        upstream.Stock.TryTake(ResourceType.Tools, upstream.Stock.Get(ResourceType.Tools));
+        upstream.Stock.Add(ResourceType.Tools, 30);
+        downstream.Stock.TryTake(ResourceType.Tools, downstream.Stock.Get(ResourceType.Tools));
+        downstream.Stock.TryTake(ResourceType.Coins, downstream.Stock.Get(ResourceType.Coins));
+        downstream.Stock.Add(ResourceType.Coins, 600);
+        downstream.Grudges[upstream] = 0f;
+        Assert.NotNull(Trade.Plan(world, upstream, downstream));
+        downstream.Grudges[upstream] = Hydrology.MaxGrudge;
+        Assert.Null(Trade.Plan(world, upstream, downstream));
+
+        // Avec le temps, on pardonne.
+        downstream.Grudges[upstream] = Hydrology.GrudgePerDam;
+        for (long i = 0; i < 25 * TimeConstants.TicksPerDay; i++)
+            world.Step();
+        Assert.Equal(0f, downstream.GrudgeAgainst(upstream));
+    }
 }

@@ -77,6 +77,17 @@ public sealed class Colony
     /// <summary>Dernier départ d'une de ses caravanes.</summary>
     internal long LastCaravanTicks { get; set; } = long.MinValue / 2;
 
+    /// <summary>La colonie située en aval, sur le même fleuve : ce que celle-ci retient lui manque (null s'il n'y en a pas).</summary>
+    public Colony? Downstream { get; internal set; }
+
+    /// <summary>
+    /// La rancune envers d'autres colonies, de 0 (rien) à 3 : un barrage qui assèche notre rivière en fait naître.
+    /// Elle s'estompe lentement et rend les échanges moins attrayants.
+    /// </summary>
+    public Dictionary<Colony, float> Grudges { get; } = [];
+
+    public float GrudgeAgainst(Colony other) => Grudges.GetValueOrDefault(other);
+
     /// <summary>Les décisions que la colonie soumet au joueur.</summary>
     public PrayerBook Prayers => _prayers ??= new PrayerBook(this);
     private PrayerBook? _prayers;

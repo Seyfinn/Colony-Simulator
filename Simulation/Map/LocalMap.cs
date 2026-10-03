@@ -172,6 +172,14 @@ public sealed class LocalMap
         ComputeBanks();
     }
 
+    /// <summary>Toutes les rivières de la carte coulent moins fort (un barrage, plus haut sur le même fleuve, retient l'eau).</summary>
+    public void ScaleRiverFlows(float factor)
+    {
+        for (int i = 0; i < _flow.Length; i++)
+            if (_river[i])
+                _flow[i] *= factor;
+    }
+
     /// <summary>Un barrage fait baisser le débit en aval.</summary>
     public void ReduceFlow(int x, int y, float factor) => _flow[Index(x, y)] *= factor;
 
