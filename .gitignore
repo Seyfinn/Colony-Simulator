@@ -1,0 +1,9 @@
+# Fichiers générés par Godot et par la compilation .NET
+.godot/
+bin/
+obj/
+*.user
+.vs/
+.vscode/
+mono_crash.*
+TestResults/

@@ -1,0 +1,34 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GodColony", "GodColony.csproj", "{D9C21199-86C8-4777-B058-97518B758D9A}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulation", "..\Simulation\Simulation.csproj", "{5457458B-C557-4BA1-851B-5379D4F1391F}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Simulation.Tests", "..\Simulation.Tests\Simulation.Tests.csproj", "{24D34E18-66F9-4EA8-B3F8-5329BAC675EF}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{D9C21199-86C8-4777-B058-97518B758D9A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D9C21199-86C8-4777-B058-97518B758D9A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D9C21199-86C8-4777-B058-97518B758D9A}.Release|Any CPU.ActiveCfg = Debug|Any CPU
+		{D9C21199-86C8-4777-B058-97518B758D9A}.Release|Any CPU.Build.0 = Debug|Any CPU
+		{5457458B-C557-4BA1-851B-5379D4F1391F}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5457458B-C557-4BA1-851B-5379D4F1391F}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5457458B-C557-4BA1-851B-5379D4F1391F}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5457458B-C557-4BA1-851B-5379D4F1391F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{24D34E18-66F9-4EA8-B3F8-5329BAC675EF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{24D34E18-66F9-4EA8-B3F8-5329BAC675EF}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{24D34E18-66F9-4EA8-B3F8-5329BAC675EF}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{24D34E18-66F9-4EA8-B3F8-5329BAC675EF}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

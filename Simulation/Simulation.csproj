@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Le cœur du jeu : simulation pure, sans aucune dépendance à Godot. -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>GodColony.Simulation</RootNamespace>
+    <AssemblyName>GodColony.Simulation</AssemblyName>
+  </PropertyGroup>
+
+</Project>
