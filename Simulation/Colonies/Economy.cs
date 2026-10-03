@@ -27,9 +27,6 @@ public static class Economy
         ResourceType.IronOre, ResourceType.Charcoal, ResourceType.Iron, ResourceType.Tools,
     ];
 
-    /// <summary>Pièces par heure de travail : l'ancre de toute la monnaie.</summary>
-    public const double CoinsPerHour = 1.0;
-
     /// <summary>Un bien qu'on n'a jamais produit coûterait plus cher que la normale à qui s'y mettrait : on l'apprend sur le tas.</summary>
     private const double UnprovenFactor = 1.5;
 

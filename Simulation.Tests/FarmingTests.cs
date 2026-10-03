@@ -103,7 +103,6 @@ public class FarmingTests(ITestOutputHelper output)
         WorldState world = ClosedColony(colonists);
         Colony colony = world.Colonies[0];
         var watch = new StarvationWatch();
-        int coldNights = 0;
 
         for (int day = 1; day <= 40; day++)
         {

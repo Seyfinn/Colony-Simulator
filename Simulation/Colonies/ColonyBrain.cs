@@ -7,6 +7,18 @@ namespace GodColony.Simulation.Colonies;
 /// Ce que la colonie mesure d'elle-même à un instant donné. Le chauffage ne compte que le bois à brûler ;
 /// le bois total inclut aussi celui qu'attendent les chantiers.
 /// </summary>
+/// <param name="FoodDays">Jours de repas en réserve (nourriture sauvage, grain et pain).</param>
+/// <param name="HasConstructionSite">Une hutte ou un atelier est en chantier.</param>
+/// <param name="StonePressure">Manque de pierre, réserve et chantiers de fours compris.</param>
+/// <param name="FarmShare">Part des bras que réclament les semailles et la moisson.</param>
+/// <param name="Chain">Ce que réclame la chaîne du fer (outils, fer, charbon, minerai).</param>
+/// <param name="HasWorkshopSite">Un chantier qui n'est pas une hutte (atelier, barrage, moulin…).</param>
+/// <param name="WorkshopsReady">Un atelier de la chaîne du fer est achevé.</param>
+/// <param name="OrePressure">Urgence de trouver du minerai pour la chaîne du fer.</param>
+/// <param name="CanalWork">Un canal d'irrigation est en cours de creusement.</param>
+/// <param name="Bread">Ce que réclame la chaîne du blé (pain, farine, grain en surplus).</param>
+/// <param name="FoodWorkshopsReady">Le moulin ou le four est achevé.</param>
+/// <param name="Prospecting">On cherche encore du fer en creusant la roche, dans la limite d'un budget.</param>
 public sealed record ColonySensors(
     float FoodDays, float FoodPressure,
     float HeatingPressure,
@@ -34,7 +46,8 @@ public sealed record Thought(long Ticks, string Text);
 /// Le cerveau de la colonie, consulté chaque heure de jeu :
 /// 1. les capteurs mesurent les réserves et les transforment en pressions de 0 à 100 ;
 /// 2. la pyramide des priorités décide quels secteurs ont le droit d'avoir des bras :
-///    survie (nourriture, chauffage), puis logement, puis réserves de pierre ;
+///    survie (nourriture, chauffage), puis logement, puis réserves de pierre et recherche du fer, puis prospérité
+///    (ateliers du fer et du blé, canaux, demandes au joueur comme le barrage) ;
 /// 3. la main-d'œuvre est répartie en pourcentages, puis chaque poste va au plus doué ;
 /// 4. la colonie explique ses décisions dans ses pensées.
 /// </summary>
