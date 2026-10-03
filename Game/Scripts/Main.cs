@@ -61,13 +61,16 @@ public partial class Main : Node2D
         var camera = new CameraController
         {
             Position = new Vector2(colony.CampX + 0.5f, colony.CampY + 0.5f) * TerrainPainter.TileSize,
-            Zoom = new Vector2(2.5f, 2.5f),
+            Zoom = new Vector2(1.25f, 1.25f),
         };
         AddChild(camera);
         camera.MakeCurrent();
 
         _hud = new Hud();
         AddChild(_hud);
+        _hud.SpeedRequested += SetSpeed;
+        _hud.PauseRequested += TogglePause;
+        _hud.SelectionClosed += () => Select(null);
 
         ApplyDevArguments(camera);
     }
@@ -102,7 +105,7 @@ public partial class Main : Node2D
             {
                 (int x, int y) = DevTools.DigDemoQuarry(_world.Map);
                 camera.Position = new Vector2(x + 0.5f, y + 0.5f) * TerrainPainter.TileSize;
-                camera.Zoom = new Vector2(3f, 3f);
+                camera.Zoom = new Vector2(1.5f, 1.5f);
             }
         }
     }
@@ -116,9 +119,7 @@ public partial class Main : Node2D
             _world.Step();
         _colonistsView.Alpha = (float)Math.Clamp(_pendingTicks, 0, 1);
 
-        // Nuit bleutée, jour normal.
-        float light = _world.Clock.Daylight;
-        _daylight.Color = new Color(0.32f, 0.36f, 0.55f).Lerp(Colors.White, light);
+        _daylight.Color = ArtDirection.DayTint(_world.Clock);
 
         UpdateHud();
 
@@ -152,7 +153,7 @@ public partial class Main : Node2D
         foreach (Colonist colonist in colony.Members.Concat(colony.Transients))
         {
             // On vise le corps du colon, un peu au-dessus de ses pieds.
-            Vector2 body = _colonistsView.DisplayPosition(colonist) - new Vector2(0, 6);
+            Vector2 body = _colonistsView.DisplayPosition(colonist) - new Vector2(0, 12);
             float distance = body.DistanceTo(mouse);
             if (distance < bestDistance)
             {
@@ -184,18 +185,30 @@ public partial class Main : Node2D
         switch (key)
         {
             case Key.Space:
-                if (_speed == GameSpeed.Pause)
-                    _speed = _speedBeforePause;
-                else
-                {
-                    _speedBeforePause = _speed;
-                    _speed = GameSpeed.Pause;
-                }
+                TogglePause();
                 break;
-            case Key.Key1: _speed = GameSpeed.Observation; break;
-            case Key.Key2: _speed = GameSpeed.Rapide; break;
-            case Key.Key3: _speed = GameSpeed.TresRapide; break;
+            case Key.Key1: SetSpeed(GameSpeed.Observation); break;
+            case Key.Key2: SetSpeed(GameSpeed.Rapide); break;
+            case Key.Key3: SetSpeed(GameSpeed.TresRapide); break;
             case Key.Escape: Select(null); break;
+        }
+    }
+
+    private void SetSpeed(GameSpeed speed)
+    {
+        _speed = speed;
+        if (speed != GameSpeed.Pause)
+            _speedBeforePause = speed;
+    }
+
+    private void TogglePause()
+    {
+        if (_speed == GameSpeed.Pause)
+            _speed = _speedBeforePause;
+        else
+        {
+            _speedBeforePause = _speed;
+            _speed = GameSpeed.Pause;
         }
     }
 
@@ -208,28 +221,10 @@ public partial class Main : Node2D
     private void UpdateHud()
     {
         GameClock clock = _world.Clock;
-        string speed = _speed switch
-        {
-            GameSpeed.Pause => "en pause",
-            GameSpeed.Observation => "observation ×1",
-            GameSpeed.Rapide => "rapide ×4",
-            _ => "très rapide ×30",
-        };
-        _hud.SetStatus($"An {clock.Year}  ·  {SeasonName(clock.Season)}, jour {clock.DayOfSeason}/5  ·  {clock.Hour:00}:{clock.Minute:00}  ·  {speed}");
+        _hud.SetStatus(clock, _speed);
 
         Colony colony = _world.Colonies[0];
-        Stockpile stock = colony.Stock;
-        int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
-        string population = $"{colony.Members.Count} colons";
-        if (colony.Children > 0)
-            population += $" (dont {colony.Children} enfants)";
-        if (arriving > 0)
-            population += $" (+{arriving} en route)";
-        if (colony.Graves.Count > 0)
-            population += $"  ·  {colony.Graves.Count} tombes";
-        _hud.SetColony($"{colony.Name}  ·  {population}  ·  humeur {colony.AverageMood * 100:0} %  ·  attrait {Migration.Attractiveness(colony, clock) * 100:0} %  ·  " +
-                       $"nourriture {stock.Get(ResourceType.Food)}  ·  céréales {stock.Get(ResourceType.Grain)}  ·  bois {stock.Get(ResourceType.Wood)}  ·  " +
-                       $"pierre {stock.Get(ResourceType.Stone)}  ·  minerai de fer {stock.Get(ResourceType.IronOre)}");
+        _hud.ShowColony(colony, clock);
 
         (int x, int y) = TileUnderMouse();
         LocalMap map = _world.Map;
@@ -245,14 +240,6 @@ public partial class Main : Node2D
             Select(null);
         _hud.ShowColonist(_selected);
     }
-
-    private static string SeasonName(Season season) => season switch
-    {
-        Season.Printemps => "Printemps",
-        Season.Ete => "Été",
-        Season.Automne => "Automne",
-        _ => "Hiver",
-    };
 
     private static string SurfaceName(Surface surface) => surface switch
     {

@@ -39,6 +39,7 @@ public partial class MapView : Node2D
     private void OnTileChanged(int x, int y)
     {
         MarkDirty(x, y);
+        MarkDirty(x, y - 1);
         MarkDirty(x, y + 1);
         MarkDirty(x - 1, y);
         MarkDirty(x + 1, y);
