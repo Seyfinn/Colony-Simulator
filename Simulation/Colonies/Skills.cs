@@ -1,6 +1,6 @@
 namespace GodColony.Simulation.Colonies;
 
-public enum SkillType { Foraging, Woodcutting, Mining, Construction }
+public enum SkillType { Foraging, Fishing, Woodcutting, Mining, Construction }
 
 /// <summary>
 /// Les compétences d'un colon, de 0 à 20. Elles progressent par la pratique, plus ou moins vite

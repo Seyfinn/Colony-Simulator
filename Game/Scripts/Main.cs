@@ -221,6 +221,8 @@ public partial class Main : Node2D
             ? $"Case ({x}, {y})  ·  altitude {map.GetElevation(x, y)}  ·  {SurfaceName(map.GetSurface(x, y))}{(map.CanMine(x, y) ? "  ·  minable" : "")}"
             : " ");
 
+        _hud.ShowShares(colony);
+        _hud.ShowThoughts(colony);
         _hud.ShowColonist(_selected);
     }
 

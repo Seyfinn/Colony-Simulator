@@ -1,16 +1,28 @@
 namespace GodColony.Simulation.Colonies;
 
-/// <summary>Les grands secteurs de travail entre lesquels la colonie répartit sa main-d'œuvre.</summary>
-public enum WorkSector { Food, Wood, Stone }
+/// <summary>
+/// Les grands secteurs de travail entre lesquels la colonie répartit sa main-d'œuvre.
+/// « Libre » regroupe ceux dont la colonie n'a pas besoin pour l'instant : ils se reposent.
+/// </summary>
+public enum WorkSector { Food, Wood, Stone, Free }
 
 public static class WorkSectors
 {
+    /// <summary>Les secteurs où l'on travaille vraiment (tous sauf « libre »).</summary>
+    public static readonly WorkSector[] Productive = [WorkSector.Food, WorkSector.Wood, WorkSector.Stone];
+
     public static readonly WorkSector[] All = Enum.GetValues<WorkSector>();
 
-    public static SkillType Skill(this WorkSector sector) => sector switch
+    /// <summary>Les compétences utiles dans un secteur (la nourriture vient de la cueillette ou de la pêche).</summary>
+    public static SkillType[] Skills(this WorkSector sector) => sector switch
     {
-        WorkSector.Food => SkillType.Foraging,
-        WorkSector.Wood => SkillType.Woodcutting,
-        _ => SkillType.Mining,
+        WorkSector.Food => [SkillType.Foraging, SkillType.Fishing],
+        WorkSector.Wood => [SkillType.Woodcutting],
+        WorkSector.Stone => [SkillType.Mining],
+        _ => [],
     };
+
+    /// <summary>Aptitude d'un colon pour un secteur : son niveau et son talent dans la meilleure compétence utile.</summary>
+    public static float Fitness(this WorkSector sector, Skills skills) =>
+        sector.Skills().Select(s => skills.Level(s) + skills.Talent(s) * 4f).DefaultIfEmpty(0f).Max();
 }

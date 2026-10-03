@@ -10,6 +10,7 @@ public enum ActivityKind
     Forage,
     /// <summary>Cueillir des baies pour les manger sur place, faute de nourriture au stock.</summary>
     ForageToEat,
+    Fish,
     Chop,
     Mine,
     Deliver,
@@ -42,11 +43,13 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     public SkillType? Skill => Kind switch
     {
         ActivityKind.Forage => SkillType.Foraging,
+        ActivityKind.Fish => SkillType.Fishing,
         ActivityKind.Chop => SkillType.Woodcutting,
         ActivityKind.Mine => SkillType.Mining,
         _ => null,
     };
 
     /// <summary>Cette action réserve-t-elle sa case cible (pour éviter que deux colons visent le même arbre) ?</summary>
-    public bool ReservesTarget => Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Chop or ActivityKind.Mine;
+    public bool ReservesTarget =>
+        Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine;
 }

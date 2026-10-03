@@ -1,0 +1,114 @@
+using GodColony.Simulation.Colonies;
+using GodColony.Simulation.Time;
+using Xunit.Abstractions;
+
+namespace GodColony.Simulation.Tests;
+
+public class BrainTests(ITestOutputHelper output)
+{
+    private static (WorldState World, Colony Colony) ColonyWith(int food, int wood, int stone)
+    {
+        var world = new WorldState(12345);
+        Colony colony = world.Colonies[0];
+        Set(colony, ResourceType.Food, food);
+        Set(colony, ResourceType.Wood, wood);
+        Set(colony, ResourceType.Stone, stone);
+        return (world, colony);
+    }
+
+    private static void Set(Colony colony, ResourceType type, int amount)
+    {
+        colony.Stock.TryTake(type, colony.Stock.Get(type));
+        colony.Stock.Add(type, amount);
+    }
+
+    private static void ThinkSeveralHours(Colony colony, GameClock clock)
+    {
+        for (int i = 0; i < 8; i++)
+            ColonyBrain.Think(colony, clock);
+    }
+
+    [Fact]
+    public void En_cas_de_famine_tout_le_monde_part_chercher_a_manger_et_la_carriere_attend()
+    {
+        (WorldState world, Colony colony) = ColonyWith(food: 0, wood: 200, stone: 0);
+        ThinkSeveralHours(colony, world.Clock);
+
+        Assert.True(colony.WorkShares[WorkSector.Food] > 0.6f);
+        Assert.True(colony.WorkShares[WorkSector.Stone] < 0.01f, "Pas de carrière tant que la survie n'est pas assurée.");
+        Assert.Contains(colony.Thoughts, t => t.Text.Contains("nourriture"));
+    }
+
+    [Fact]
+    public void Dans_l_abondance_la_colonie_prend_du_temps_libre()
+    {
+        (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 1000);
+        ThinkSeveralHours(colony, world.Clock);
+
+        Assert.True(colony.WorkShares[WorkSector.Free] > 0.9f);
+        Assert.True(colony.Members.Count(m => m.Sector == WorkSector.Free) >= 18);
+        Assert.Contains(colony.Thoughts, t => t.Text.Contains("temps libre"));
+    }
+
+    [Fact]
+    public void Quand_la_survie_est_assuree_la_colonie_ouvre_la_carriere()
+    {
+        (WorldState world, Colony colony) = ColonyWith(food: 1000, wood: 1000, stone: 0);
+        ThinkSeveralHours(colony, world.Clock);
+
+        Assert.True(colony.WorkShares[WorkSector.Stone] > 0.3f);
+        Assert.Contains(colony.Thoughts, t => t.Text.Contains("carrière"));
+    }
+
+    [Fact]
+    public void En_automne_la_colonie_anticipe_l_hiver_en_coupant_du_bois()
+    {
+        (WorldState _, Colony colony) = ColonyWith(food: 1000, wood: 30, stone: 1000);
+        var autumn = new GameClock(TimeConstants.TicksPerDay * 10 + TimeConstants.TicksPerDay / 2);
+        Assert.Equal(Season.Automne, autumn.Season);
+
+        ThinkSeveralHours(colony, autumn);
+
+        output.WriteLine(string.Join("\n", colony.Thoughts.Select(t => t.Text)));
+        Assert.True(colony.WorkShares[WorkSector.Wood] > 0.2f);
+        Assert.Contains(colony.Thoughts, t => t.Text.Contains("hiver"));
+    }
+
+    [Fact]
+    public void Sans_bois_le_feu_s_eteint_en_hiver()
+    {
+        (WorldState _, Colony colony) = ColonyWith(food: 100, wood: 0, stone: 0);
+        var winter = new GameClock(TimeConstants.TicksPerDay * 15 + TimeConstants.TicksPerDay * 20 / 24);
+        ColonyBrain.LightFire(colony, winter);
+
+        Assert.False(colony.FireLit);
+        Assert.Contains(colony.Thoughts, t => t.Text.Contains("feu"));
+    }
+
+    [Fact]
+    public void Sur_une_annee_entiere_la_colonie_survit_seule()
+    {
+        var world = new WorldState(12345);
+        Colony colony = world.Colonies[0];
+        int coldNightsWithoutFire = 0;
+
+        for (long i = 0; i < TimeConstants.TicksPerYear; i++)
+        {
+            world.Step();
+            if (world.Clock.Hour == 21 && world.Clock.Minute == 0 && ColonyBrain.IsColdSeason(world.Clock.Season) && !colony.FireLit)
+                coldNightsWithoutFire++;
+        }
+
+        output.WriteLine($"Stock : nourriture {colony.Stock.Get(ResourceType.Food)}, bois {colony.Stock.Get(ResourceType.Wood)}, " +
+                         $"pierre {colony.Stock.Get(ResourceType.Stone)}, fer {colony.Stock.Get(ResourceType.IronOre)}, " +
+                         $"humeur {colony.AverageMood:P0}, nuits froides sans feu {coldNightsWithoutFire}");
+        foreach (WorkSector sector in WorkSectors.All)
+            output.WriteLine($"  {sector} : {colony.WorkShares[sector]:P0}");
+        foreach (Thought thought in colony.Thoughts)
+            output.WriteLine($"  [jour {thought.Ticks / TimeConstants.TicksPerDay}] {thought.Text}");
+
+        Assert.All(colony.Members, c => Assert.True(c.Needs.Food > 0.05f, $"{c.Name} meurt de faim."));
+        Assert.Equal(0, coldNightsWithoutFire);
+        Assert.True(colony.Stock.Get(ResourceType.Stone) > 0, "La carrière devrait avoir été exploitée à un moment.");
+    }
+}

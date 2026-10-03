@@ -6,6 +6,7 @@ namespace GodColony.Simulation.Colonies;
 public static class WorkSites
 {
     private const int TreeSearchRadius = 25;
+    private const int FishingSearchRadius = 30;
     private const int QuarrySearchRadius = 40;
     private const int QuarryWorkRadius = 10;
 
@@ -38,6 +39,28 @@ public static class WorkSites
                 trees.Add((x, y, dx * dx + dy * dy));
         }
         return trees.OrderBy(t => t.Distance).Select(t => (t.X, t.Y));
+    }
+
+    /// <summary>Cases d'eau poissonneuses près du camp, avec pour chacune une case de rive d'où pêcher.</summary>
+    public static IEnumerable<(int WaterX, int WaterY, int StandX, int StandY)> FishingSpots(LocalMap map, Colony colony)
+    {
+        var spots = new List<(int WaterX, int WaterY, int StandX, int StandY, int Distance)>();
+        for (int dy = -FishingSearchRadius; dy <= FishingSearchRadius; dy++)
+        for (int dx = -FishingSearchRadius; dx <= FishingSearchRadius; dx++)
+        {
+            int x = colony.CampX + dx, y = colony.CampY + dy;
+            if (!map.InBounds(x, y) || map.GetFish(x, y) == 0 || colony.Reserved.Contains((x, y)))
+                continue;
+            foreach ((int nx, int ny) in Neighbors.Select(n => (x + n.Dx, y + n.Dy)))
+            {
+                if (map.IsWalkable(nx, ny))
+                {
+                    spots.Add((x, y, nx, ny, Distance(nx, ny, colony.CampX, colony.CampY)));
+                    break;
+                }
+            }
+        }
+        return spots.OrderBy(s => s.Distance).Select(s => (s.WaterX, s.WaterY, s.StandX, s.StandY));
     }
 
     /// <summary>

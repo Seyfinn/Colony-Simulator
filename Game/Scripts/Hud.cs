@@ -1,5 +1,7 @@
+using System.Linq;
 using Godot;
 using GodColony.Simulation.Colonies;
+using GodColony.Simulation.Time;
 
 namespace GodColony;
 
@@ -8,7 +10,11 @@ public partial class Hud : CanvasLayer
 {
     private Label _status = null!;
     private Label _colony = null!;
+    private Label _shares = null!;
     private Label _tileInfo = null!;
+    private Label _thoughts = null!;
+
+    private const int ThoughtsShown = 8;
 
     private PanelContainer _colonistPanel = null!;
     private Label _colonistName = null!;
@@ -27,9 +33,22 @@ public partial class Hud : CanvasLayer
 
         _status = AddLabel(column, 18, new Color(1, 1, 1));
         _colony = AddLabel(column, 15, new Color(0.95f, 0.85f, 0.6f));
+        _shares = AddLabel(column, 14, new Color(0.75f, 0.85f, 0.95f));
         _tileInfo = AddLabel(column, 14, new Color(0.8f, 0.8f, 0.8f));
         AddLabel(column, 13, new Color(0.65f, 0.65f, 0.65f)).Text =
             "Espace : pause   ·   1, 2, 3 : vitesses   ·   ZQSD / clic droit : déplacer   ·   molette : zoom   ·   clic gauche : choisir un colon (ou miner la roche)";
+
+        // Les pensées de la colonie, en bas à gauche : on y voit son cerveau fonctionner.
+        PanelContainer thoughtsPanel = MakePanel();
+        thoughtsPanel.AnchorTop = thoughtsPanel.AnchorBottom = 1;
+        thoughtsPanel.OffsetLeft = 12;
+        thoughtsPanel.OffsetBottom = -12;
+        thoughtsPanel.GrowVertical = Control.GrowDirection.Begin;
+        AddChild(thoughtsPanel);
+        var thoughtsColumn = new VBoxContainer();
+        thoughtsPanel.AddChild(thoughtsColumn);
+        AddLabel(thoughtsColumn, 15, new Color(0.95f, 0.85f, 0.6f)).Text = "Pensées de la colonie";
+        _thoughts = AddLabel(thoughtsColumn, 14, new Color(0.88f, 0.88f, 0.88f));
 
         _colonistPanel = MakePanel();
         _colonistPanel.AnchorLeft = _colonistPanel.AnchorRight = 1;
@@ -55,6 +74,28 @@ public partial class Hud : CanvasLayer
     public void SetStatus(string text) => _status.Text = text;
     public void SetColony(string text) => _colony.Text = text;
     public void SetTileInfo(string text) => _tileInfo.Text = text;
+
+    public void ShowShares(Colony colony)
+    {
+        var parts = WorkSectors.All.Select(s => $"{SectorName(s)} {colony.WorkShares[s] * 100:0} %");
+        _shares.Text = "Répartition du travail : " + string.Join("  ·  ", parts);
+    }
+
+    /// <summary>Les dernières pensées, de la plus récente à la plus ancienne, datées (jour et heure).</summary>
+    public void ShowThoughts(Colony colony)
+    {
+        var lines = colony.Thoughts
+            .AsEnumerable()
+            .Reverse()
+            .Take(ThoughtsShown)
+            .Select(t =>
+            {
+                long day = t.Ticks / TimeConstants.TicksPerDay + 1;
+                int hour = (int)(t.Ticks % TimeConstants.TicksPerDay * 24 / TimeConstants.TicksPerDay);
+                return $"J{day} {hour:00}h   {t.Text}";
+            });
+        _thoughts.Text = string.Join("\n", lines);
+    }
 
     public void ShowColonist(Colonist? colonist)
     {
@@ -84,12 +125,14 @@ public partial class Hud : CanvasLayer
     {
         WorkSector.Food => "nourriture",
         WorkSector.Wood => "bois",
-        _ => "pierre",
+        WorkSector.Stone => "pierre",
+        _ => "temps libre",
     };
 
     private static string SkillName(SkillType skill) => skill switch
     {
         SkillType.Foraging => "Cueillette",
+        SkillType.Fishing => "Pêche",
         SkillType.Woodcutting => "Bûcheronnage",
         SkillType.Mining => "Minage",
         _ => "Construction",
@@ -108,6 +151,7 @@ public partial class Hud : CanvasLayer
             ActivityKind.Relax => there ? "Se détend près du feu" : "Va se détendre près du feu",
             ActivityKind.Forage => there ? "Cueille des baies" : "Part cueillir des baies",
             ActivityKind.ForageToEat => there ? "Mange des baies sauvages" : "Cherche des baies à manger",
+            ActivityKind.Fish => there ? "Pêche" : "Part pêcher au lac",
             ActivityKind.Chop => there ? "Abat un arbre" : "Part couper du bois",
             ActivityKind.Mine => there ? "Taille la roche" : "Part à la carrière",
             ActivityKind.Deliver => "Rapporte sa récolte au camp",

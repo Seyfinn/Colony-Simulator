@@ -1,4 +1,5 @@
 using GodColony.Simulation.Generation;
+using GodColony.Simulation.Time;
 
 namespace GodColony.Simulation.Map;
 
@@ -48,8 +49,16 @@ public sealed class LocalMap
     private readonly float[] _floraGrowth;
     private readonly byte[] _berries;
 
-    /// <summary>Nombre maximal de baies sur un buisson ; il en repousse une par jour.</summary>
+    /// <summary>Nombre maximal de baies sur un buisson ; il en repousse une par jour, sauf en hiver.</summary>
     public const int MaxBerries = 3;
+
+    /// <summary>Nombre maximal de poissons par case d'eau ; ils se renouvellent lentement.</summary>
+    public const int MaxFish = 3;
+
+    private const float FishRegrowthChancePerDay = 0.5f;
+    private const float WinterFishRegrowthChancePerDay = 0.25f;
+
+    private readonly byte[] _fish;
 
     /// <summary>Déclenché quand une case change d'aspect (minée, arbre coupé…).</summary>
     public event Action<int, int>? TileChanged;
@@ -66,6 +75,7 @@ public sealed class LocalMap
         _flora = new FloraType[n];
         _floraGrowth = new float[n];
         _berries = new byte[n];
+        _fish = new byte[n];
     }
 
     public bool InBounds(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
@@ -86,6 +96,18 @@ public sealed class LocalMap
     public float GetFloraGrowth(int x, int y) => _floraGrowth[Index(x, y)];
 
     public int GetBerries(int x, int y) => _berries[Index(x, y)];
+
+    public int GetFish(int x, int y) => _fish[Index(x, y)];
+
+    /// <summary>Pêche un poisson dans une case d'eau. Renvoie false s'il n'y en a plus.</summary>
+    public bool CatchFish(int x, int y)
+    {
+        int i = Index(x, y);
+        if (_fish[i] == 0)
+            return false;
+        _fish[i]--;
+        return true;
+    }
 
     /// <summary>Cueille toutes les baies d'un buisson et renvoie leur nombre.</summary>
     public int HarvestBerries(int x, int y)
@@ -136,15 +158,21 @@ public sealed class LocalMap
     /// Appelé à chaque nouveau jour : une baie repousse sur chaque buisson, les arbres grandissent,
     /// et quelques souches donnent une jeune pousse. La forêt repousse, mais lentement.
     /// </summary>
-    public void DailyUpdate(long day)
+    public void DailyUpdate(long day, Season season)
     {
+        bool winter = season == Season.Hiver;
+        float fishChance = winter ? WinterFishRegrowthChancePerDay : FishRegrowthChancePerDay;
+
         for (int y = 0; y < Height; y++)
         for (int x = 0; x < Width; x++)
         {
             int i = Index(x, y);
+            if (_fish[i] < MaxFish && IsWater(x, y) && Noise.Hash01(x, y, (int)day, Seed + 91) < fishChance)
+                _fish[i]++;
+
             switch (_flora[i])
             {
-                case FloraType.Bush when _berries[i] < MaxBerries:
+                case FloraType.Bush when !winter && _berries[i] < MaxBerries:
                     _berries[i]++;
                     TileChanged?.Invoke(x, y);
                     break;
@@ -245,5 +273,6 @@ public sealed class LocalMap
         _flora[i] = flora;
         _floraGrowth[i] = growth;
         _berries[i] = flora == FloraType.Bush ? (byte)MaxBerries : (byte)0;
+        _fish[i] = elevation <= WaterLevel ? (byte)MaxFish : (byte)0;
     }
 }

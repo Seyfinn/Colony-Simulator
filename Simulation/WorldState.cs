@@ -33,18 +33,34 @@ public sealed class WorldState
         Map = MapGenerator.Generate(mapWidth, mapHeight, seed);
         Pathfinder = new Pathfinder(Map);
         Colonies.Add(ColonyFounder.Found(Map, Random, "Première colonie", StartingColonists, () => _nextColonistId++));
+        foreach (Colony colony in Colonies)
+            ColonyBrain.Think(colony, Clock);
     }
 
     /// <summary>Avance la simulation d'un tick.</summary>
     public void Step()
     {
         long day = Clock.TotalDays;
+        int hour = Clock.Hour;
         Clock.Advance();
         if (Clock.TotalDays != day)
-            Map.DailyUpdate(Clock.TotalDays);
+            Map.DailyUpdate(Clock.TotalDays, Clock.Season);
+
+        if (Clock.Hour != hour)
+        {
+            foreach (Colony colony in Colonies)
+            {
+                ColonyBrain.Think(colony, Clock);
+                if (Clock.Hour == FireLightingHour)
+                    ColonyBrain.LightFire(colony, Clock);
+            }
+        }
 
         foreach (Colony colony in Colonies)
         foreach (Colonist colonist in colony.Members)
             ColonistAI.Tick(colonist, this);
     }
+
+    /// <summary>On allume le feu pour la nuit à 20 h.</summary>
+    private const int FireLightingHour = 20;
 }

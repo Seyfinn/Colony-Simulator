@@ -14,6 +14,8 @@ public static class ColonistAI
     private const float WalkTilesPerSecond = 4f;
     private const float EatSeconds = 1.5f;
     private const float ForageSeconds = 1.5f;
+    private const float FishSeconds = 3f;
+    private const int FoodPerFish = 2;
     private const float ChopSeconds = 4f;
     private const float MineSeconds = 5f;
     private const float DeliverSeconds = 0.5f;
@@ -32,6 +34,7 @@ public static class ColonistAI
     private const float BoredomPerHour = 0.03f;
     private const float RelaxRecoveryPerHour = 0.3f;
 
+    private const float ColdSleepFactor = 0.6f;
     private const float MealValue = 0.6f;
     private const float BerryValue = 0.2f;
 
@@ -43,7 +46,7 @@ public static class ColonistAI
     {
         colonist.PrevX = colonist.X;
         colonist.PrevY = colonist.Y;
-        UpdateNeeds(colonist);
+        UpdateNeeds(colonist, world);
 
         // À bout de forces, il s'endort là où il est.
         if (colonist.Needs.Rest <= 0f && colonist.Activity?.Kind != ActivityKind.Sleep)
@@ -68,13 +71,16 @@ public static class ColonistAI
             Act(colonist, world);
     }
 
-    private static void UpdateNeeds(Colonist colonist)
+    private static void UpdateNeeds(Colonist colonist, WorldState world)
     {
         Needs needs = colonist.Needs;
         const float hour = 1f / TimeConstants.TicksPerHour;
         needs.Food -= HungerPerHour * hour;
+
+        // Sans feu pendant la saison froide, le sommeil répare mal.
+        bool cold = ColonyBrain.IsColdSeason(world.Clock.Season) && !colonist.Colony.FireLit;
         if (colonist.IsSleeping)
-            needs.Rest += SleepRecoveryPerHour * hour;
+            needs.Rest += SleepRecoveryPerHour * (cold ? ColdSleepFactor : 1f) * hour;
         else
             needs.Rest -= FatiguePerHour * hour;
 
@@ -122,6 +128,15 @@ public static class ColonistAI
             && StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds))
             return;
 
+        // Temps libre : la colonie n'a pas besoin de ses bras pour l'instant, il se détend.
+        if (colonist.Sector == WorkSector.Free)
+        {
+            if (needs.Leisure < 0.95f && StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds))
+                return;
+            Wander(colonist, world);
+            return;
+        }
+
         // On ne part au travail que si on a de quoi tenir jusqu'au retour, et pas en fin de journée.
         bool fitForWork = needs.Food > 0.5f && needs.Rest > 0.4f && clock.Hour >= 6 && clock.Hour < 17;
         if (fitForWork && TryWork(colonist, world))
@@ -130,12 +145,12 @@ public static class ColonistAI
         Wander(colonist, world);
     }
 
-    /// <summary>Travaille d'abord dans son secteur ; s'il n'y a rien à y faire, aide dans les autres.</summary>
+    /// <summary>Travaille d'abord dans son secteur ; s'il n'y a rien à y faire, aide dans les autres secteurs actifs.</summary>
     private static bool TryWork(Colonist colonist, WorldState world)
     {
         Colony colony = colonist.Colony;
-        IEnumerable<WorkSector> order = WorkSectors.All
-            .Where(s => s != colonist.Sector && colony.WorkShares[s] > 0f)
+        IEnumerable<WorkSector> order = WorkSectors.Productive
+            .Where(s => s != colonist.Sector && colony.WorkShares[s] > 0.05f)
             .OrderByDescending(s => colony.WorkShares[s])
             .Prepend(colonist.Sector);
 
@@ -143,7 +158,7 @@ public static class ColonistAI
         {
             bool started = sector switch
             {
-                WorkSector.Food => TryForage(colonist, world, ActivityKind.Forage, colony.CampX, colony.CampY),
+                WorkSector.Food => TryGatherFood(colonist, world),
                 WorkSector.Wood => TryChop(colonist, world),
                 _ => TryMine(colonist, world),
             };
@@ -173,21 +188,62 @@ public static class ColonistAI
     /// <summary>Cherche le buisson chargé de baies le plus proche, que personne d'autre n'a réservé.</summary>
     private static bool TryForage(Colonist colonist, WorldState world, ActivityKind kind, int centerX, int centerY)
     {
+        float seconds = ForageSeconds / colonist.Skills.WorkSpeed(SkillType.Foraging);
+        return NearestBushes(world.Map, colonist.Colony, centerX, centerY)
+            .Take(TargetsToTry)
+            .Any(b => TryStart(colonist, world, new Activity(kind, b.X, b.Y, Ticks(seconds))));
+    }
+
+    /// <summary>
+    /// Choisit la façon la plus rentable de nourrir la colonie : on compare la nourriture rapportée
+    /// au temps passé (aller-retour compris) pour les buissons et les coins de pêche les plus proches.
+    /// </summary>
+    private static bool TryGatherFood(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
         LocalMap map = world.Map;
+        var options = new List<(Activity Activity, float Food, float WorkSeconds)>();
+
+        float forageSeconds = ForageSeconds / colonist.Skills.WorkSpeed(SkillType.Foraging);
+        foreach ((int x, int y) in NearestBushes(map, colony, colony.CampX, colony.CampY).Take(TargetsToTry))
+            options.Add((new Activity(ActivityKind.Forage, x, y, Ticks(forageSeconds)), map.GetBerries(x, y), forageSeconds));
+
+        float fishSeconds = FishSeconds / colonist.Skills.WorkSpeed(SkillType.Fishing);
+        foreach ((int wx, int wy, int sx, int sy) in WorkSites.FishingSpots(map, colony).Take(TargetsToTry))
+            options.Add((new Activity(ActivityKind.Fish, wx, wy, Ticks(fishSeconds)) { StandX = sx, StandY = sy }, FoodPerFish, fishSeconds));
+
+        Activity? best = null;
+        List<(int X, int Y)>? bestPath = null;
+        int bestMaxStep = 1;
+        float bestRate = 0f;
+        foreach ((Activity activity, float food, float workSeconds) in options)
+        {
+            (List<(int X, int Y)>? path, int maxStep) = PlanPath(colonist, world, activity);
+            if (path is null)
+                continue;
+            float roundTripSeconds = 2f * path.Count / WalkTilesPerSecond;
+            float rate = food / (roundTripSeconds + workSeconds);
+            if (rate > bestRate)
+                (best, bestPath, bestMaxStep, bestRate) = (activity, path, maxStep, rate);
+        }
+
+        if (best is null || bestPath is null)
+            return false;
+        Commit(colonist, best, bestPath, bestMaxStep);
+        return true;
+    }
+
+    private static IEnumerable<(int X, int Y)> NearestBushes(LocalMap map, Colony colony, int centerX, int centerY)
+    {
         var candidates = new List<(int X, int Y, int Distance)>();
         for (int dy = -ForageSearchRadius; dy <= ForageSearchRadius; dy++)
         for (int dx = -ForageSearchRadius; dx <= ForageSearchRadius; dx++)
         {
             int x = centerX + dx, y = centerY + dy;
-            if (map.InBounds(x, y) && map.GetBerries(x, y) > 0 && !colonist.Colony.Reserved.Contains((x, y)))
+            if (map.InBounds(x, y) && map.GetBerries(x, y) > 0 && !colony.Reserved.Contains((x, y)))
                 candidates.Add((x, y, dx * dx + dy * dy));
         }
-
-        float seconds = ForageSeconds / colonist.Skills.WorkSpeed(SkillType.Foraging);
-        return candidates
-            .OrderBy(c => c.Distance)
-            .Take(TargetsToTry)
-            .Any(c => TryStart(colonist, world, new Activity(kind, c.X, c.Y, Ticks(seconds))));
+        return candidates.OrderBy(c => c.Distance).Select(c => (c.X, c.Y));
     }
 
     private static bool TryChop(Colonist colonist, WorldState world)
@@ -223,24 +279,34 @@ public static class ColonistAI
     /// <summary>Calcule le chemin vers l'endroit de l'action et la confie au colon. Renvoie false si l'endroit est inaccessible.</summary>
     private static bool TryStart(Colonist colonist, WorldState world, Activity activity)
     {
-        int maxStep = 1;
-        List<(int X, int Y)>? path = world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY);
-
-        // Filet de sécurité : coincé au fond d'un trou, on escalade une marche de deux niveaux pour en sortir.
-        if (path is null && IsStranded(colonist, world.Map))
-        {
-            maxStep = 2;
-            path = world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, maxStep);
-        }
+        (List<(int X, int Y)>? path, int maxStep) = PlanPath(colonist, world, activity);
         if (path is null)
             return false;
+        Commit(colonist, activity, path, maxStep);
+        return true;
+    }
 
+    private static (List<(int X, int Y)>? Path, int MaxStep) PlanPath(Colonist colonist, WorldState world, Activity activity)
+    {
+        List<(int X, int Y)>? path = world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY);
+
+        // Filet de sécurité : coincé dans un trou ou sur un plateau isolé par la carrière,
+        // on escalade une marche de deux niveaux pour rentrer au camp.
+        if (path is null && (IsStranded(colonist, world.Map) || IsGoingHome(activity)))
+            return (world.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, maxStep: 2), 2);
+        return (path, 1);
+    }
+
+    private static bool IsGoingHome(Activity activity) =>
+        activity.Kind is ActivityKind.Sleep or ActivityKind.Eat or ActivityKind.Deliver or ActivityKind.Relax;
+
+    private static void Commit(Colonist colonist, Activity activity, List<(int X, int Y)> path, int maxStep)
+    {
         colonist.Activity = activity;
         colonist.Path = path;
         colonist.PathIndex = 0;
         colonist.PathMaxStep = maxStep;
         Reserve(colonist.Colony, activity);
-        return true;
     }
 
     private static bool IsStranded(Colonist colonist, LocalMap map)
@@ -346,6 +412,7 @@ public static class ColonistAI
     {
         ActivityKind.Eat => colonist.Colony.Stock.TryTake(ResourceType.Food, 1),
         ActivityKind.Forage or ActivityKind.ForageToEat => world.Map.GetBerries(activity.TargetX, activity.TargetY) > 0,
+        ActivityKind.Fish => world.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Chop => world.Map.CanChop(activity.TargetX, activity.TargetY),
         ActivityKind.Mine => WorkSites.CanMineFrom(world.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
         _ => true,
@@ -368,6 +435,9 @@ public static class ColonistAI
             }
             case ActivityKind.ForageToEat:
                 colonist.Needs.Food += BerryValue * map.HarvestBerries(activity.TargetX, activity.TargetY);
+                break;
+            case ActivityKind.Fish when map.CatchFish(activity.TargetX, activity.TargetY):
+                colonist.Carrying = (ResourceType.Food, FoodPerFish);
                 break;
             case ActivityKind.Chop when map.CanChop(activity.TargetX, activity.TargetY):
                 colonist.Carrying = (ResourceType.Wood, map.ChopTree(activity.TargetX, activity.TargetY));

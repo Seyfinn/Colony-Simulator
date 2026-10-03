@@ -25,13 +25,26 @@ public sealed class Colony
     public List<Colonist> Members { get; } = [];
     public Stockpile Stock { get; } = new();
 
-    /// <summary>Part de la main-d'œuvre consacrée à chaque secteur (la somme vaut 1).</summary>
+    /// <summary>Part de la main-d'œuvre consacrée à chaque secteur (la somme vaut 1). Le cerveau l'ajuste chaque heure.</summary>
     public Dictionary<WorkSector, float> WorkShares { get; } = new()
     {
         [WorkSector.Food] = 0.5f,
         [WorkSector.Wood] = 0.3f,
         [WorkSector.Stone] = 0.2f,
+        [WorkSector.Free] = 0f,
     };
+
+    /// <summary>Dernières mesures du cerveau de la colonie (null avant sa première réflexion).</summary>
+    public ColonySensors? Sensors { get; internal set; }
+
+    /// <summary>Ce que la colonie pense et décide, en langage clair, du plus ancien au plus récent.</summary>
+    public List<Thought> Thoughts { get; } = [];
+
+    /// <summary>Le feu brûle-t-il cette nuit ? Sans feu en saison froide, on dort mal.</summary>
+    public bool FireLit { get; internal set; } = true;
+
+    /// <summary>Dernier état annoncé pour chaque sujet, pour ne parler que lorsque la situation change.</summary>
+    internal Dictionary<string, ColonyBrain.NarrationTopic> NarrationState { get; } = [];
 
     /// <summary>Cases déjà prises en charge par un colon (un buisson qu'il va cueillir, par exemple).</summary>
     internal HashSet<(int X, int Y)> Reserved { get; } = [];
@@ -49,11 +62,11 @@ public sealed class Colony
     public void AssignSectors()
     {
         Dictionary<WorkSector, int> quotas = ComputeQuotas(Members.Count);
+        // Le temps libre revient à ceux qui restent une fois les postes productifs pourvus.
         var candidates =
             from colonist in Members
             from sector in WorkSectors.All
-            let fit = colonist.Skills.Level(sector.Skill()) + colonist.Skills.Talent(sector.Skill()) * 4f
-                      + (colonist.Sector == sector ? 3f : 0f)
+            let fit = sector.Fitness(colonist.Skills) + (colonist.Sector == sector ? 3f : 0f)
             orderby fit descending
             select (colonist, sector);
 
