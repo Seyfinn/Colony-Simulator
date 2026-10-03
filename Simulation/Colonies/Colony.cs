@@ -25,6 +25,9 @@ public sealed class Colony
     public List<Colonist> Members { get; } = [];
     public Stockpile Stock { get; } = new();
 
+    /// <summary>Ce que coûte chaque ressource en heures de travail.</summary>
+    public LaborLedger Labor { get; } = new();
+
     /// <summary>Part de la main-d'œuvre consacrée à chaque secteur (la somme vaut 1). Le cerveau l'ajuste chaque heure.</summary>
     public Dictionary<WorkSector, float> WorkShares { get; } = new()
     {

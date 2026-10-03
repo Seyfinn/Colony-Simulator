@@ -243,7 +243,7 @@ public static class ColonistAI
 
         if (best is null || bestPath is null)
             return false;
-        Commit(colonist, best, bestPath, bestMaxStep);
+        Commit(colonist, best, bestPath, bestMaxStep, world.Clock.Ticks);
         return true;
     }
 
@@ -327,7 +327,7 @@ public static class ColonistAI
         (List<(int X, int Y)>? path, int maxStep) = PlanPath(colonist, world, activity);
         if (path is null)
             return false;
-        Commit(colonist, activity, path, maxStep);
+        Commit(colonist, activity, path, maxStep, world.Clock.Ticks);
         return true;
     }
 
@@ -345,8 +345,17 @@ public static class ColonistAI
     private static bool IsGoingHome(Activity activity) =>
         activity.Kind is ActivityKind.Sleep or ActivityKind.Eat or ActivityKind.Deliver or ActivityKind.Relax;
 
-    private static void Commit(Colonist colonist, Activity activity, List<(int X, int Y)> path, int maxStep)
+    private static void Commit(Colonist colonist, Activity activity, List<(int X, int Y)> path, int maxStep, long now)
     {
+        // Mesure du coût en travail : une récolte démarre un cycle qui se termine au dépôt au camp ;
+        // toute autre occupation les mains vides (manger, dormir…) l'interrompt.
+        if (activity.CommittedAtTicks == 0)
+            activity.CommittedAtTicks = now;
+        if (activity.IsHarvest && colonist.WorkCycleStartTicks < 0)
+            colonist.WorkCycleStartTicks = now;
+        else if (!activity.IsHarvest && colonist.Carrying is null)
+            colonist.WorkCycleStartTicks = -1;
+
         colonist.Activity = activity;
         colonist.Path = path;
         colonist.PathIndex = 0;
@@ -428,6 +437,12 @@ public static class ColonistAI
             {
                 colonist.Colony.Stock.Add(load.Type, load.Amount);
                 colonist.Carrying = null;
+                if (colonist.WorkCycleStartTicks >= 0)
+                {
+                    double hours = LaborLedger.TicksToHours(world.Clock.Ticks - colonist.WorkCycleStartTicks);
+                    colonist.Colony.Labor.Record(load.Type, hours, load.Amount);
+                    colonist.WorkCycleStartTicks = -1;
+                }
             }
 
             if (!CanBegin(colonist, world, activity))
@@ -483,6 +498,9 @@ public static class ColonistAI
     private static void Finish(Colonist colonist, WorldState world, Activity activity)
     {
         LocalMap map = world.Map;
+        if (activity.Building is { } building)
+            building.LaborTicks += world.Clock.Ticks - activity.CommittedAtTicks;
+
         switch (activity.Kind)
         {
             case ActivityKind.Eat:

@@ -60,4 +60,7 @@ public sealed class Colonist
     /// <summary>Hauteur de marche autorisée sur le chemin en cours (2 seulement pour escalader hors d'un trou).</summary>
     internal int PathMaxStep { get; set; } = 1;
     internal int ThinkCooldown { get; set; }
+
+    /// <summary>Moment où il est parti récolter ce qu'il rapporte, pour mesurer le coût en travail (-1 sinon).</summary>
+    internal long WorkCycleStartTicks { get; set; } = -1;
 }

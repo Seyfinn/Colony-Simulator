@@ -11,6 +11,7 @@ public partial class Hud : CanvasLayer
     private Label _status = null!;
     private Label _colony = null!;
     private Label _shares = null!;
+    private Label _costs = null!;
     private Label _tileInfo = null!;
     private Label _thoughts = null!;
 
@@ -34,6 +35,7 @@ public partial class Hud : CanvasLayer
         _status = AddLabel(column, 18, new Color(1, 1, 1));
         _colony = AddLabel(column, 15, new Color(0.95f, 0.85f, 0.6f));
         _shares = AddLabel(column, 14, new Color(0.75f, 0.85f, 0.95f));
+        _costs = AddLabel(column, 14, new Color(0.75f, 0.95f, 0.8f));
         _tileInfo = AddLabel(column, 14, new Color(0.8f, 0.8f, 0.8f));
         AddLabel(column, 13, new Color(0.65f, 0.65f, 0.65f)).Text =
             "Espace : pause   ·   1, 2, 3 : vitesses   ·   ZQSD / clic droit : déplacer   ·   molette : zoom   ·   clic gauche : choisir un colon (ou miner la roche)";
@@ -79,6 +81,7 @@ public partial class Hud : CanvasLayer
     {
         var parts = WorkSectors.All.Select(s => $"{SectorName(s)} {colony.WorkShares[s] * 100:0} %");
         _shares.Text = "Répartition du travail : " + string.Join("  ·  ", parts);
+        _costs.Text = "Coût en heures de travail par unité : " + ColonyBrain.CostSummary(colony.Labor);
     }
 
     /// <summary>Les dernières pensées, de la plus récente à la plus ancienne, datées (jour et heure).</summary>

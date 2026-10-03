@@ -44,6 +44,12 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
 
     public float ElapsedTicks { get; set; }
 
+    /// <summary>Moment où le colon s'est engagé dans cette activité (départ compris).</summary>
+    public long CommittedAtTicks { get; set; }
+
+    /// <summary>Activité qui produit une ressource : on mesure son coût en travail.</summary>
+    public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine;
+
     /// <summary>Vrai une fois que le colon est arrivé et a commencé l'action.</summary>
     public bool Started { get; set; }
 

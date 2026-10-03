@@ -107,6 +107,7 @@ public static class ColonyBrain
     /// <summary>Une hutte vient d'être achevée : des colons s'y installent.</summary>
     public static void OnBuildingComplete(Colony colony, Building building, GameClock clock)
     {
+        colony.Labor.RecordHut(LaborLedger.TicksToHours(building.LaborTicks));
         colony.MoveIn(building);
         int homeless = colony.Homeless;
         Say(colony, clock, homeless > 0
@@ -250,6 +251,10 @@ public static class ColonyBrain
                 : "La carrière attendra : les besoins vitaux passent d'abord.");
         }
 
+        // Bilan de saison : ce que coûte chaque ressource en heures de travail.
+        if (Changed(colony, "saison", clock.Season.ToString()) && colony.Labor.HoursPerUnit(ResourceType.Food) is not null)
+            Say(colony, clock, "Bilan de saison, en heures de travail par unité : " + CostSummary(colony.Labor) + ".");
+
         int free = Workers(WorkSector.Free);
         float freeRatio = free / (float)Math.Max(1, colony.Members.Count);
         string freeBand = free == 0 ? "aucun"
@@ -258,6 +263,23 @@ public static class ColonyBrain
             : Announced(colony, "temps libre");
         if (Changed(colony, "temps libre", freeBand) && free > 0)
             Say(colony, clock, $"Tout va bien : {free} colons profitent de leur temps libre.");
+    }
+
+    public static string CostSummary(LaborLedger labor)
+    {
+        var parts = new List<string>();
+        void Add(ResourceType type, string name)
+        {
+            if (labor.HoursPerUnit(type) is { } hours)
+                parts.Add($"{name} {hours:0.0} h");
+        }
+        Add(ResourceType.Food, "nourriture");
+        Add(ResourceType.Wood, "bois");
+        Add(ResourceType.Stone, "pierre");
+        Add(ResourceType.IronOre, "minerai de fer");
+        if (labor.HoursPerHut is { } hut)
+            parts.Add($"hutte {hut:0} h");
+        return parts.Count == 0 ? "pas encore mesuré" : string.Join(", ", parts);
     }
 
     private static string Announced(Colony colony, string topic) =>

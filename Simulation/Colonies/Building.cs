@@ -44,6 +44,9 @@ public sealed class Building
 
     public List<Colonist> Residents { get; } = [];
 
+    /// <summary>Temps de travail cumulé sur ce chantier (allers-retours compris), en ticks.</summary>
+    public long LaborTicks { get; internal set; }
+
     public IEnumerable<(int X, int Y)> Tiles
     {
         get
