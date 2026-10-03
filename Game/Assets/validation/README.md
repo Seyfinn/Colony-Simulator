@@ -1,5 +1,15 @@
 # Validation graphique T-001 — 2026-10-03
 
+## T-003 — canaux secs et en eau — 2026-10-04
+
+- `t003_catalogue.png` : 32 tuiles au grossissement ×4, deux rangées sèches puis deux en eau, masques 0 à 15 dans chaque groupe.
+- `t003_colonie.png` : contrôle du lancement normal, `--advance-hours=96 --focus-fields --zoom=1.5`. Aucun canal visible dans cette partie ; cette image vérifie uniquement le démarrage normal.
+- `t003_rendu_terrain.png` : capture de `canaux.tscn`, scène isolée qui pose les 16 formes sèches et les 16 formes remplies sur une carte de démonstration. Utilise le même `TerrainPainter.Paint` que `ChunkView`, sélectionne les vrais PNG selon les masques calculés et ne modifie pas une colonie en cours.
+
+Pour reproduire : compiler, puis lancer Godot avec `--path Game res://Assets/validation/canaux.tscn -- --capture=chemin.png`. Le projet conserve sa scène principale habituelle.
+
+`python Game/Assets/tools/generer_canaux.py` exporte les 32 fichiers et vérifie leurs dimensions/formats, ouvertures et raccords. Build : 0 avertissement / 0 erreur. Planche et captures inspectées.
+
 ## T-011 — crépuscule rose
 
 `crepuscule_rose.png` : capture en jeu à 19 h 40, avec `--advance-hours=11.5 --zoom=1.5`. Teinte rose légèrement mauve du soir, halo moins intense et rayons assortis. Build sans erreur ni avertissement ; capture inspectée.

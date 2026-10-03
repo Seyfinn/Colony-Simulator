@@ -10,6 +10,7 @@ public static class RiverTiles
     private static readonly Dictionary<string, byte[]?> Pixels = [];
     private static bool? _complete;
     private static readonly Dictionary<(int Mask, int Corners), byte[]?> Composed = [];
+    private static readonly (int X, int Y)[] CanalSteps = [(0, -1), (1, 0), (0, 1), (-1, 0)];
 
     public static bool Complete
     {
@@ -59,8 +60,11 @@ public static class RiverTiles
         for (int sx = x - 1; sx <= x + 1; sx++)
         {
             if (!map.InBounds(sx, sy) || !map.IsRiver(sx, sy) || map.IsFlooded(sx, sy)) continue;
-            if (map.RiverDownstream(sx, sy) is not { } next) continue;
-            Edge(sx, sy, next.X, next.Y);
+            if (map.RiverDownstream(sx, sy) is { } next) Edge(sx, sy, next.X, next.Y);
+            // Une prise d'eau ouvre aussi la berge de la rivière vers le canal alimenté.
+            foreach (var (dx, dy) in CanalSteps)
+                if (map.InBounds(sx + dx, sy + dy) && map.IsCanalWet(sx + dx, sy + dy))
+                    Edge(sx, sy, sx + dx, sy + dy);
         }
         return mask;
     }
@@ -136,7 +140,7 @@ public static class RiverTiles
 
     public static int LakeEdges(LocalMap map, int x, int y, int riverMask)
     {
-        bool Land(int px, int py) => map.InBounds(px, py) && !map.IsWater(px, py);
+        bool Land(int px, int py) => map.InBounds(px, py) && !map.IsWater(px, py) && !map.IsCanalWet(px, py);
         int mask = (Land(x, y - 1) ? 1 : 0) | (Land(x + 1, y) ? 2 : 0)
             | (Land(x, y + 1) ? 4 : 0) | (Land(x - 1, y) ? 8 : 0);
         return mask & ~riverMask; // L'embouchure reste ouverte.

@@ -137,8 +137,8 @@ Les cases voisines sont reliées par un **masque de connexions** à 4 bits : nor
 | `river_end_ne/se/sw/nw.png`, `river_fall_ne/se/sw/nw.png` | Sources et chutes orientées en diagonale | PNG (T-001-D) |
 | `river_end_<masque>.png` | Source (en montagne), 4 images pour les masques 1, 2, 4, 8 | PNG (T-001) |
 | `river_fall_<masque>.png` | Chute d'eau quand la rivière descend d'un niveau, masques 1, 2, 4, 8 | PNG (T-001) |
-| `canal_dry_0.png` … `canal_dry_15.png` | Fossé creusé, encore à sec | À livrer (T-003) |
-| `canal_wet_0.png` … `canal_wet_15.png` | Canal où l'eau coule | À livrer (T-003) |
+| `canal_dry_0.png` … `canal_dry_15.png` | Fossé creusé, encore à sec | PNG (T-003) |
+| `canal_wet_0.png` … `canal_wet_15.png` | Canal où l'eau coule | PNG (T-003) |
 | `lake_edge_<masque>.png` | Rives du lac de retenue (masque des voisins qui ne sont **pas** de l'eau), 0 à 15 | PNG (T-001) |
 | `water_deep.png`, `water_deep_1.png` | Eau profonde, 2 images d'animation douce | Code |
 
@@ -174,7 +174,6 @@ Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
 | N° | Priorité | Tâche | Détail | Qui | État |
 |---|---|---|---|---|---|
 | T-002 | P2 | Barrage en chantier | 3 étapes visibles de la construction. | ChatGPT | À faire |
-| T-003 | P1 | Canaux d'irrigation | Fossé à sec et canal en eau, à connexions (2 × 16 images). | ChatGPT | À faire |
 | T-004 | P2 | Pièces | Icône `coins.png` 16 × 16 : une pile de pièces dorées, lisible en petit. | ChatGPT | À faire |
 | T-005 | P2 | Roue du moulin animée | 4 images en boucle ; la vitesse de rotation sera pilotée par le débit (donnée `GetFlow`). | ChatGPT puis Claude pour la vitesse | À faire |
 | T-006 | P1 | Caravane | Animation de marche de la caravane sur la carte du monde (le moteur fournit une version rudimentaire en carrés). | ChatGPT | À faire |
@@ -191,6 +190,12 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — ChatGPT/Codex — T-003 livrée : canaux secs et en eau
+- Livré **32 PNG RGBA 8 bits, 32 × 32**, aux noms exacts du catalogue : `terrain/canal_dry_0.png` à `_15.png`, `canal_wet_0.png` à `_15.png`. Fossés étroits avec levée de terre claire, paroi sombre et fond sec ; même géométrie en eau, palette assortie aux rivières. Aucun changement de taille ou de nom.
+- `TerrainPainter.cs` sélectionne les images selon `IsCanalWet` et le masque cardinal de `WaterGeometry.Connections`. Les tronçons secs et remplis se raccordent ; une case isolée reste un petit creusement fermé. Le cache de pixels 32 × 32 existant est partagé ; une image absente laisse le dessin procédural en place. `RiverTiles.cs` ouvre les berges des rivières et des lacs vers les prises d'eau des canaux remplis.
+- Validation : `tools/generer_canaux.py` exporte et contrôle formats/dimensions, sorties des 16 masques et raccords ; `dotnet build Game/GodColony.csproj`, **0 avertissement / 0 erreur**. Planche `validation/t003_catalogue.png` inspectée. Jeu lancé à +96 h : `validation/t003_colonie.png`, sans canal encore creusé dans la vue ; pas présenté comme preuve d'un canal naturel. La scène dédiée `validation/canaux.tscn` utilise une carte de démonstration et le **même `TerrainPainter.Paint` que le jeu** : 16 formes sèches et 16 en eau capturées et inspectées (`validation/t003_rendu_terrain.png`). La scène ne se lance que si demandée explicitement.
+- T-003 déplacée dans l'archive. Commit **« Graphismes : livrer les canaux secs et en eau à connexions »**. **À Claude** : images branchées, aucune donnée ni action supplémentaire nécessaire ; si tu ajoutes une option de démonstration des canaux dans `Main.cs`, elle permettra une capture dans une colonie. La prochaine P1 est T-006 (caravane). `Simulation/` et `Simulation.Tests/` inchangés.
 
 ### 2026-10-03 — ChatGPT/Codex — T-011 : crépuscule rose
 - À la demande de l'utilisateur, crépuscule moins rouge/orange : teinte du soir rose légèrement mauve dans `Game/Scripts/View/ArtDirection.cs` (`0.96, 0.78, 0.90`). Halo et rayons de fin de journée accordés au rose dans `DayNightAmbience.cs`, avec un halo moins intense. Transition progressive vers la nuit conservée.

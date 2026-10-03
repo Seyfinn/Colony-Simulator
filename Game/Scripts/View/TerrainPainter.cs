@@ -54,6 +54,7 @@ public static class TerrainPainter
         GrassPalette pn = Palette(BiomeVisuals.At(map, x, y - 1)), ps = Palette(BiomeVisuals.At(map, x, y + 1));
         GrassPalette pw = Palette(BiomeVisuals.At(map, x - 1, y)), pe = Palette(BiomeVisuals.At(map, x + 1, y));
         int connections = canal ? WaterGeometry.Connections(map, x, y) : 0;
+        byte[]? canalTile = canal ? RiverTiles.Get($"canal_{(wet ? "wet" : "dry")}_{connections}") : null;
         int riverMask = RiverTiles.Connections(map, x, y);
         int riverCorners = RiverTiles.Corners(map, x, y);
         byte[]? riverShape = RiverTiles.River(riverMask, riverCorners, river);
@@ -155,7 +156,7 @@ public static class TerrainPainter
                     else if (nearest.Distance < width + 3)
                         color = Blend(color, Blend(Loam, Moss, 0.35f), (width + 3 - nearest.Distance) / 4f);
                 }
-                if (canal) color = CanalPixel(color, wx, wy, px, py, connections, wet);
+                if (canal && canalTile is null) color = CanalPixel(color, wx, wy, px, py, connections, wet);
                 float shade = surface == Surface.Water || streamWater ? 1 : ambient;
                 int foot = py - cliff;
                 if (cliff > 0 && foot < 5) shade *= 0.74f + foot * 0.05f;
@@ -178,6 +179,7 @@ public static class TerrainPainter
                 RiverTiles.Blend(accent, pixels, stride, ox, oy);
         }
         if (lakeTile is not null) RiverTiles.Blend(lakeTile, pixels, stride, ox, oy);
+        if (canalTile is not null) RiverTiles.Blend(canalTile, pixels, stride, ox, oy);
     }
 
     private static Rgb GroundPixel(Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass)
