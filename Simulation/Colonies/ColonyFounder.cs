@@ -70,7 +70,7 @@ public static class ColonyFounder
                 continue;
 
             float score = 0;
-            bool water = false, mountain = false;
+            bool water = false, river = false, mountain = false;
             for (int dy = -25; dy <= 25; dy++)
             for (int dx = -25; dx <= 25; dx++)
             {
@@ -81,9 +81,12 @@ public static class ColonyFounder
                 if (distance <= 15 && map.GetFlora(nx, ny) == FloraType.Bush) score += 3f;
                 if (distance <= 10 && map.GetFlora(nx, ny) == FloraType.Tree) score += 0.15f;
                 if (distance <= 12 && map.IsWater(nx, ny)) water = true;
+                if (distance <= 14 && map.IsRiver(nx, ny)) river = true;
                 if (map.IsMountain(nx, ny)) mountain = true;
             }
             if (water) score += 20f;
+            // Une rivière à portée : pêche, berges fertiles, et plus tard de quoi irriguer.
+            if (river) score += 25f;
             if (mountain) score += 15f;
             score -= 0.1f * (Math.Abs(x - map.Width / 2) + Math.Abs(y - map.Height / 2));
 
@@ -103,7 +106,7 @@ public static class ColonyFounder
         int elevation = map.GetElevation(x, y);
         for (int dy = -2; dy <= 2; dy++)
         for (int dx = -2; dx <= 2; dx++)
-            if (!map.IsWalkable(x + dx, y + dy) || map.GetElevation(x + dx, y + dy) != elevation)
+            if (!map.IsWalkable(x + dx, y + dy) || map.IsRiver(x + dx, y + dy) || map.GetElevation(x + dx, y + dy) != elevation)
                 return false;
         return true;
     }

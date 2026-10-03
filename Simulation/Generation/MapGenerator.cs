@@ -3,7 +3,7 @@ using GodColony.Simulation.Map;
 namespace GodColony.Simulation.Generation;
 
 /// <summary>
-/// Génère une carte locale tempérée : lacs, plaines en terrasses, forêts et montagnes.
+/// Génère une carte locale tempérée : lacs, rivières, plaines en terrasses, forêts et montagnes.
 /// </summary>
 public static class MapGenerator
 {
@@ -25,6 +25,9 @@ public static class MapGenerator
             map.SetGenerated(x, y, e, soil, flora, growth);
         }
 
+        foreach ((int x, int y) in Rivers.Generate(elevation, width, height, seed))
+            map.SetRiver(x, y);
+        map.ComputeBanks();
         return map;
     }
 

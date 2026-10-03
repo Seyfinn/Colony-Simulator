@@ -21,11 +21,11 @@ public static class ArtDirection
 
     public static Color DayTint(GameClock clock)
     {
-        float hour = clock.Hour + clock.Minute / 60f;
-        Color night = new(0.40f, 0.49f, 0.58f);
-        Color dawn = new(0.90f, 0.79f, 0.68f);
+        float hour = clock.TimeOfDay * 24;
+        Color night = new(0.40f, 0.50f, 0.66f);
+        Color dawn = new(0.98f, 0.83f, 0.73f);
         Color day = new(1.00f, 0.99f, 0.94f);
-        Color dusk = new(0.87f, 0.72f, 0.65f);
+        Color dusk = new(0.95f, 0.69f, 0.55f);
         if (hour < 5 || hour >= 22) return night;
         if (hour < 7) return night.Lerp(dawn, Smooth((hour - 5) / 2));
         if (hour < 9) return dawn.Lerp(day, Smooth((hour - 7) / 2));

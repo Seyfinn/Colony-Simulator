@@ -21,6 +21,9 @@ public partial class ColonistsView : Node2D
 
     public Colonist? Selected { get; set; }
 
+    /// <summary>Halos et braises réservés au mode d'observation.</summary>
+    public bool AmbientEffectsEnabled { get; set; } = true;
+
     public void Init(WorldState world)
     {
         _world = world;
@@ -61,7 +64,7 @@ public partial class ColonistsView : Node2D
         _time += delta;
         foreach (var (colony, light) in _fireLights)
         {
-            light.Enabled = HasFire(colony);
+            light.Enabled = AmbientEffectsEnabled && HasFire(colony);
             float flicker = 0.96f + 0.04f * Mathf.Sin((float)_time * 9 + colony.CampX);
             light.Energy = (0.12f + 0.78f * (1 - _world.Clock.Daylight)) * flicker;
         }
@@ -155,7 +158,7 @@ public partial class ColonistsView : Node2D
         bool burning = HasFire(colony);
         Texture2D fire = burning ? SpriteFactory.Campfire[(int)(_time * 8) % 4] : SpriteFactory.Firepit;
         DrawTexture(fire, center - new Vector2(16, 19));
-        if (!burning) return;
+        if (!burning || !AmbientEffectsEnabled) return;
         for (int i = 0; i < 4; i++)
         {
             float rise = (float)(_time * 0.55 + i * 0.27) % 1;

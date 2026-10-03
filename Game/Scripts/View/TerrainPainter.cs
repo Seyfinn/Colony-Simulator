@@ -34,7 +34,9 @@ public static class TerrainPainter
     private static void PaintTile(LocalMap map, int x, int y, byte[] pixels, int stride, int ox, int oy)
     {
         int height = map.GetElevation(x, y);
-        Surface surface = map.GetSurface(x, y);
+        // Une rivière se dessine comme de l'eau (rives, pas de falaise) ; seule sa teinte, plus claire, change.
+        bool river = map.IsRiver(x, y);
+        Surface surface = Structural(map.GetSurface(x, y));
         int north = Elevation(map, x, y - 1, height), south = Elevation(map, x, y + 1, height);
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
         Surface n = Neighbor(map, x, y - 1, surface), s = Neighbor(map, x, y + 1, surface);
@@ -61,7 +63,7 @@ public static class TerrainPainter
             }
             else
             {
-                color = GroundPixel(surface, wx, wy, height);
+                color = river ? RiverPixel(wx, wy) : GroundPixel(surface, wx, wy, height);
                 int edge = 2 + (int)(Noise.Value2D(wx / 9f, wy / 9f, 51) * 4);
                 int distance = TileSize;
                 Surface adjacent = surface;
@@ -147,7 +149,20 @@ public static class TerrainPainter
     }
 
     private static int Elevation(LocalMap map, int x, int y, int fallback) => map.InBounds(x, y) ? map.GetElevation(x, y) : fallback;
-    private static Surface Neighbor(LocalMap map, int x, int y, Surface fallback) => map.InBounds(x, y) ? map.GetSurface(x, y) : fallback;
+    private static Surface Neighbor(LocalMap map, int x, int y, Surface fallback) => map.InBounds(x, y) ? Structural(map.GetSurface(x, y)) : fallback;
+
+    /// <summary>Pour les bords et les falaises, la rivière compte comme de l'eau.</summary>
+    private static Surface Structural(Surface surface) => surface == Surface.River ? Surface.Water : surface;
+
+    /// <summary>Eau peu profonde, claire, avec de petites rides dans le sens du courant (en attendant les vraies illustrations).</summary>
+    private static Rgb RiverPixel(int x, int y)
+    {
+        Rgb color = Blend(Lake, Foam, 0.18f);
+        int ripple = (x + (int)(Noise.Value2D(x / 17f, y / 25f, 69) * 6)) % 10;
+        if (ripple == 0 && Noise.Hash01(x / 12, y / 9, 71, 0) > 0.7f)
+            color = Blend(color, Foam, 0.3f);
+        return color;
+    }
     private static Rgb Blend(Rgb a, Rgb b, float t) => new((byte)(a.R + (b.R - a.R) * t), (byte)(a.G + (b.G - a.G) * t), (byte)(a.B + (b.B - a.B) * t));
     private static Rgb Tint(Rgb c, float t) => new(Scale(c.R, t), Scale(c.G, t), Scale(c.B, t));
     private static byte Scale(byte value, float t) => (byte)Math.Clamp(value * t, 0, 255);

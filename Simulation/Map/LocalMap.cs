@@ -10,7 +10,7 @@ public enum SoilType : byte { Grass, Dirt, Sand }
 public enum Material : byte { Soil, Stone, IronOre }
 
 /// <summary>Ce qu'on voit sur le dessus d'une case.</summary>
-public enum Surface : byte { Water, Grass, Dirt, Sand, Stone, IronOre }
+public enum Surface : byte { Water, Grass, Dirt, Sand, Stone, IronOre, River }
 
 /// <summary>Végétation d'une case. Une souche reste après l'abattage d'un arbre, et peut repousser.</summary>
 public enum FloraType : byte { None, Tree, Bush, Stump }
@@ -60,6 +60,15 @@ public sealed class LocalMap
 
     private readonly byte[] _fish;
 
+    /// <summary>Les cases de rivière : de l'eau peu profonde, qu'on traverse à gué (en ralentissant) et où l'on pêche.</summary>
+    private readonly bool[] _river;
+
+    /// <summary>Cases proches de l'eau (lac, mer ou rivière) : leur terre est plus riche.</summary>
+    private readonly bool[] _bank;
+
+    /// <summary>Distance (en cases) à l'eau en deçà de laquelle une terre est fertile.</summary>
+    public const int BankReach = 2;
+
     /// <summary>Déclenché quand une case change d'aspect (minée, arbre coupé…).</summary>
     public event Action<int, int>? TileChanged;
 
@@ -76,6 +85,8 @@ public sealed class LocalMap
         _floraGrowth = new float[n];
         _berries = new byte[n];
         _fish = new byte[n];
+        _river = new bool[n];
+        _bank = new bool[n];
     }
 
     public bool InBounds(int x, int y) => x >= 0 && y >= 0 && x < Width && y < Height;
@@ -85,6 +96,15 @@ public sealed class LocalMap
     public int GetElevation(int x, int y) => _elevation[Index(x, y)];
 
     public bool IsWater(int x, int y) => _originalElevation[Index(x, y)] <= WaterLevel;
+
+    /// <summary>Une rivière : de l'eau peu profonde, qui se traverse à pied.</summary>
+    public bool IsRiver(int x, int y) => _river[Index(x, y)];
+
+    /// <summary>De l'eau, profonde (lac, mer) ou courante (rivière).</summary>
+    public bool HasWater(int x, int y) => IsWater(x, y) || IsRiver(x, y);
+
+    /// <summary>La terre est riche à moins de deux cases de l'eau.</summary>
+    public bool IsFertileBank(int x, int y) => InBounds(x, y) && _bank[Index(x, y)];
 
     public bool IsMountain(int x, int y) => _originalElevation[Index(x, y)] >= MountainElevation;
 
@@ -167,7 +187,7 @@ public sealed class LocalMap
         for (int x = 0; x < Width; x++)
         {
             int i = Index(x, y);
-            if (_fish[i] < MaxFish && IsWater(x, y) && Noise.Hash01(x, y, (int)day, Seed + 91) < fishChance)
+            if (_fish[i] < MaxFish && (IsWater(x, y) || _river[i]) && Noise.Hash01(x, y, (int)day, Seed + 91) < fishChance)
                 _fish[i]++;
 
             switch (_flora[i])
@@ -208,7 +228,10 @@ public sealed class LocalMap
         IsWalkable(toX, toY) && Math.Abs(GetElevation(toX, toY) - GetElevation(fromX, fromY)) <= maxStep;
 
     /// <summary>Coût de traversée d'une case : on avance moins vite en forêt.</summary>
-    public float MoveCost(int x, int y) => GetFlora(x, y) == FloraType.Tree ? 1.6f : 1f;
+    public float MoveCost(int x, int y) => GetFlora(x, y) == FloraType.Tree ? 1.6f : IsRiver(x, y) ? RiverMoveCost : 1f;
+
+    /// <summary>On avance deux fois moins vite dans l'eau d'une rivière.</summary>
+    public const float RiverMoveCost = 2f;
 
     /// <summary>Matière de la couche numéro <paramref name="level"/> (0 = tout en bas) de la case.</summary>
     public Material MaterialAt(int x, int y, int level)
@@ -226,6 +249,8 @@ public sealed class LocalMap
     {
         if (IsWater(x, y))
             return Surface.Water;
+        if (IsRiver(x, y))
+            return Surface.River;
         return TopMaterial(x, y) switch
         {
             Material.Stone => Surface.Stone,
@@ -242,6 +267,7 @@ public sealed class LocalMap
     public bool CanMine(int x, int y) =>
         InBounds(x, y)
         && !IsWater(x, y)
+        && !IsRiver(x, y)
         && TopMaterial(x, y) != Material.Soil
         && GetElevation(x, y) > MinMiningElevation;
 
@@ -262,6 +288,31 @@ public sealed class LocalMap
     /// <summary>Les filons de fer forment des veines en 3D à l'intérieur de la roche.</summary>
     private bool IsIronVein(int x, int y, int level) =>
         Noise.Fractal3D(x * 0.11f, y * 0.11f, level * 0.45f, Seed + 500, 3) > 0.64f;
+
+    /// <summary>Utilisé par le générateur : trace une rivière sur la case (sans plante, poissonneuse).</summary>
+    internal void SetRiver(int x, int y)
+    {
+        int i = Index(x, y);
+        _river[i] = true;
+        _flora[i] = FloraType.None;
+        _floraGrowth[i] = 0f;
+        _berries[i] = 0;
+        _fish[i] = MaxFish;
+    }
+
+    /// <summary>Utilisé par le générateur, une fois l'eau en place : repère les berges fertiles.</summary>
+    internal void ComputeBanks()
+    {
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            bool near = false;
+            for (int dy = -BankReach; dy <= BankReach && !near; dy++)
+            for (int dx = -BankReach; dx <= BankReach && !near; dx++)
+                near = InBounds(x + dx, y + dy) && HasWater(x + dx, y + dy);
+            _bank[Index(x, y)] = near && !HasWater(x, y);
+        }
+    }
 
     // Utilisé uniquement par le générateur de carte.
     internal void SetGenerated(int x, int y, int elevation, SoilType soil, FloraType flora, float growth)

@@ -804,7 +804,7 @@ public static class ColonistAI
             case ActivityKind.Harvest when Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Ripe } plot:
                 plot.Stage = CropStage.Fallow;
                 plot.Growth = 0f;
-                colonist.Carrying = (ResourceType.Grain, Farming.PlotYield);
+                colonist.Carrying = (ResourceType.Grain, Farming.YieldAt(map, activity.TargetX, activity.TargetY));
                 break;
             case ActivityKind.Craft when activity.InputsTaken && activity.Building is { } workshop:
             {

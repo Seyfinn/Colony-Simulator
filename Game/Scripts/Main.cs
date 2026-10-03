@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.Linq;
 using Godot;
 using GodColony.Simulation;
@@ -26,6 +27,7 @@ public partial class Main : Node2D
     private WorldState _world = null!;
     private ColonistsView _colonistsView = null!;
     private CanvasModulate _daylight = null!;
+    private DayNightAmbience _ambience = null!;
     private Hud _hud = null!;
 
     private GameSpeed _speed = GameSpeed.Observation;
@@ -36,7 +38,9 @@ public partial class Main : Node2D
     // Outils de développement, passés en ligne de commande après "--" :
     //   --capture=chemin.png   enregistre une capture puis quitte le jeu
     //   --advance-hours=N      fait avancer la simulation de N heures au démarrage
+    //   --speed=1|4|30         choisit la vitesse pour vérifier les ambiances
     //   --demo-quarry          creuse une carrière de démonstration
+    //   --zoom=N               règle le zoom de la caméra (0.2 montre presque toute la carte)
     //   --select-first         sélectionne le premier colon
     //   --focus-fields         centre la caméra sur le premier champ
     private string? _capturePath;
@@ -66,6 +70,13 @@ public partial class Main : Node2D
         AddChild(camera);
         camera.MakeCurrent();
 
+        // Une couche visuelle sous le HUD : aucun effet ne voile les contrôles.
+        var atmosphereLayer = new CanvasLayer { Layer = 1 };
+        AddChild(atmosphereLayer);
+        _ambience = new DayNightAmbience();
+        atmosphereLayer.AddChild(_ambience);
+        _ambience.Init(_world.Map);
+
         _hud = new Hud();
         AddChild(_hud);
         _hud.SpeedRequested += SetSpeed;
@@ -81,12 +92,17 @@ public partial class Main : Node2D
         {
             if (arg.StartsWith("--capture="))
                 _capturePath = arg["--capture=".Length..];
+            else if (arg.StartsWith("--speed=") && int.TryParse(arg["--speed=".Length..], out int speed)
+                && speed is 1 or 4 or 30)
+                SetSpeed((GameSpeed)speed);
             else if (arg.StartsWith("--advance-hours="))
             {
-                int ticks = (int)(float.Parse(arg["--advance-hours=".Length..]) * TimeConstants.TicksPerHour);
+                int ticks = (int)(float.Parse(arg["--advance-hours=".Length..], CultureInfo.InvariantCulture) * TimeConstants.TicksPerHour);
                 for (int i = 0; i < ticks; i++)
                     _world.Step();
             }
+            else if (arg.StartsWith("--zoom="))
+                camera.Zoom = Vector2.One * float.Parse(arg["--zoom=".Length..], System.Globalization.CultureInfo.InvariantCulture);
             else if (arg == "--select-first")
                 Select(_world.Colonies[0].Members[0]);
             else if (arg == "--focus-quarry" && _world.Colonies[0].Quarry is { } quarry)
@@ -119,7 +135,10 @@ public partial class Main : Node2D
             _world.Step();
         _colonistsView.Alpha = (float)Math.Clamp(_pendingTicks, 0, 1);
 
-        _daylight.Color = ArtDirection.DayTint(_world.Clock);
+        GameSpeed atmosphereSpeed = _speed == GameSpeed.Pause ? _speedBeforePause : _speed;
+        _ambience.Update(_world.Clock, atmosphereSpeed, _speed == GameSpeed.Pause, delta);
+        _daylight.Color = _ambience.Tint;
+        _colonistsView.AmbientEffectsEnabled = _ambience.DetailedEffects;
 
         UpdateHud();
 
@@ -244,6 +263,7 @@ public partial class Main : Node2D
     private static string SurfaceName(Surface surface) => surface switch
     {
         Surface.Water => "eau",
+        Surface.River => "rivière",
         Surface.Grass => "herbe",
         Surface.Dirt => "terre",
         Surface.Sand => "sable",
