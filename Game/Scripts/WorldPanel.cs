@@ -153,7 +153,7 @@ public partial class WorldPanel : CanvasLayer
 
     private Control BuildDetails(Colony colony)
     {
-        var card = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Stop };
+        var card = new PanelContainer { MouseFilter = Control.MouseFilterEnum.Stop, SizeFlagsHorizontal = Control.SizeFlags.ShrinkBegin };
         card.AddThemeStyleboxOverride("panel", new StyleBoxFlat
         {
             BgColor = Panel, BorderColor = Edge,
