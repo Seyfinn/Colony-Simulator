@@ -16,6 +16,7 @@ public partial class ColonyCreationPanel : CanvasLayer
     private LineEdit _name = null!;
     private OptionButton _species = null!;
     private SpinBox _founders = null!;
+    private CheckBox _randomSize = null!;
     private Label _step = null!, _description = null!, _site = null!, _error = null!, _provisions = null!;
     private Button _region = null!, _confirm = null!, _suggest = null!;
     private bool _terrainStage;
@@ -23,7 +24,9 @@ public partial class ColonyCreationPanel : CanvasLayer
     public bool IsOpen => _panel.Visible;
     public Species Species => Species.All[_species.Selected];
     public string ColonyName => _name.Text.Trim();
-    public int Founders => (int)_founders.Value;
+    public bool RandomSize => _randomSize.ButtonPressed;
+    /// <summary>Le nombre choisi, ou un tirage entre 5 et 15 en mode aléatoire (à appeler une seule fois, à la confirmation).</summary>
+    public int Founders => RandomSize ? ColonyFounder.RandomFounderCount(Random.Shared) : (int)_founders.Value;
 
     public override void _Ready()
     {
@@ -66,6 +69,13 @@ public partial class ColonyCreationPanel : CanvasLayer
         MenuStyle.Text(body, "Nombre de fondateurs", 14, MenuStyle.Muted);
         _founders = new SpinBox { Name = "NombreFondateurs", MinValue = 5, MaxValue = 20, Step = 1, Value = 8 };
         body.AddChild(_founders);
+        _randomSize = new CheckBox
+        {
+            Name = "ColonieAleatoire",
+            Text = $"Colonie aléatoire ({ColonyFounder.MinRandomFounders} à {ColonyFounder.MaxRandomFounders} habitants)",
+        };
+        body.AddChild(_randomSize);
+        _randomSize.Toggled += _ => UpdateProvisions();
         _provisions = MenuStyle.Text(body, "", 13, MenuStyle.Muted, true);
         _founders.ValueChanged += _ => UpdateProvisions();
         var actions = MenuStyle.Column(frame, 6);
@@ -89,7 +99,7 @@ public partial class ColonyCreationPanel : CanvasLayer
     public void Open(int colonyNumber)
     {
         _name.Text = $"Colonie {colonyNumber}";
-        _species.Select(0); _founders.Value = 8;
+        _species.Select(0); _founders.Value = 8; _randomSize.ButtonPressed = false;
         UpdateSpecies(); UpdateProvisions();
         _panel.Show();
         ShowRegionStage();
@@ -136,7 +146,14 @@ public partial class ColonyCreationPanel : CanvasLayer
 
     public void SetError(string message) => _error.Text = message;
     private void UpdateConfirm() => _confirm.Disabled = !_terrainStage || !_validSite || ColonyName.Length == 0;
-    private void UpdateProvisions() => _provisions.Text = $"Dotation : {Founders * 4} provisions et {ColonyFounder.StartingCoins} pièces.\nLes fondateurs organisent ensuite leur travail automatiquement.";
+    private void UpdateProvisions()
+    {
+        _founders.Editable = !RandomSize;
+        string dotation = RandomSize
+            ? $"{ColonyFounder.MinRandomFounders * 4} à {ColonyFounder.MaxRandomFounders * 4} provisions selon le tirage"
+            : $"{(int)_founders.Value * 4} provisions";
+        _provisions.Text = $"Dotation : {dotation} et {ColonyFounder.StartingCoins} pièces.\nLes fondateurs organisent ensuite leur travail automatiquement.";
+    }
     private void UpdateSpecies() => _description.Text = _species.Selected switch
     {
         1 => "Nains · hautes terres. Habiles mineurs et forgerons ; longue durée de vie.",

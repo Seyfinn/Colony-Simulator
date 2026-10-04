@@ -19,6 +19,12 @@ public static class ColonyFounder
     /// <summary>Limite des fondateurs choisis par le joueur.</summary>
     public const int MaxPlayerFounders = 20;
 
+    /// <summary>Bornes (incluses) du nombre de fondateurs tiré au hasard quand le joueur laisse faire le hasard.</summary>
+    public const int MinRandomFounders = 5;
+    public const int MaxRandomFounders = 15;
+
+    public static int RandomFounderCount(Random random) => random.Next(MinRandomFounders, MaxRandomFounders + 1);
+
     public static Colony Found(LocalMap map, Random random, string name, int colonistCount, Func<int> nextId, GameClock clock, Species? species = null)
     {
         species ??= Species.Human;
