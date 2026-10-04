@@ -8,6 +8,20 @@ namespace GodColony.Simulation.Tests;
 public class FoundingTests
 {
     [Fact]
+    public void Le_tirage_aleatoire_de_fondateurs_reste_entre_5_et_15_et_couvre_toute_la_plage()
+    {
+        var random = new Random(7);
+        var seen = new HashSet<int>();
+        for (int i = 0; i < 2000; i++)
+        {
+            int count = ColonyFounder.RandomFounderCount(random);
+            Assert.InRange(count, 5, 15);
+            seen.Add(count);
+        }
+        Assert.Equal(11, seen.Count);
+    }
+
+    [Fact]
     public void Un_monde_vierge_peut_avancer_puis_accueillir_sa_premiere_colonie()
     {
         var world = new WorldState(12345, colonyCount: 0, migration: false, lifecycle: false);
