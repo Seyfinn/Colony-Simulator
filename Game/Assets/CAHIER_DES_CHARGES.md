@@ -52,15 +52,18 @@ Game/Assets/
   buildings/   bâtiments et ouvrages                          buildings/<type>[_<milieu>][_<variante>].png
   terrain/     tuiles de terrain, eau, canaux                 terrain/<nom>.png
   flora/       arbres, buissons, souches                      flora/<nom>.png
+  animals/     bêtes de l'enclos (poule, mouton, vache)       animals/<espece>_<image>.png
   peoples/     personnages par espèce                         peoples/<espece>_<age>_<sexe>_<image>.png
   world/       carte du monde, caravanes                      world/<nom>.png
   effects/     feu, fumée, reflets, bulles                    effects/<nom>.png
 ```
 
 Noms de ressources (identiques à `ResourceType` du code, en minuscules) :
-`food`, `grain`, `wood`, `stone`, `ironore`, `charcoal`, `iron`, `tools`, `flour`, `bread`, `coins`.
+`food`, `fish`, `grain`, `wood`, `stone`, `ironore`, `charcoal`, `iron`, `tools`, `flour`, `bread`, `coins`,
+`eggs`, `milk`, `meat`, `saltedmeat`, `cake`, `stew`, `chickens`, `sheep`, `cows`, `wool`, `clothes`, `salt`, `spices`, `hardwood`.
 
-Types de bâtiments (identiques à `BuildingType`, en minuscules) : `hut`, `kiln`, `bloomery`, `forge`, `dam`, `mill`, `oven`.
+Types de bâtiments (identiques à `BuildingType`, en minuscules) : `hut`, `kiln`, `bloomery`, `forge`, `dam`, `mill`, `oven`,
+`pen`, `loom`, `market`, `infirmary`, `storehouse`, `well`, `tavern`, `school`.
 Milieux : `temperateplain`, `dryland`, `coolforest`, `highland`, `wetbank`.
 
 ### 3.3 Variantes
@@ -103,10 +106,24 @@ Légende de l'état : **Code** = dessiné en code, rien à livrer d'obligatoire 
 | `flour.png` | Farine (sac) | Code |
 | `bread.png` | Pain | Code |
 | `coins.png` | Pièces (monnaie commune) | PNG (T-004) |
+| `fish.png` | Poisson | PNG (T-014) |
+| `eggs.png` | Œufs de l'enclos | PNG (T-014) |
+| `milk.png` | Lait des vaches | PNG (T-014) |
+| `meat.png` | Viande fraîche (se gâte vite) | PNG (T-014) |
+| `saltedmeat.png` | Viande salée (se garde) : à distinguer de la fraîche | PNG (T-014) |
+| `cake.png` | Gâteau de fête (six parts) | PNG (T-014) |
+| `stew.png` | Ragoût (quatre bols) | PNG (T-014) |
+| `chickens.png`, `sheep.png`, `cows.png` | Bêtes vivantes en réserve ou en vente (pas de la nourriture) | PNG (T-014) |
+| `wool.png` | Laine | PNG (T-014) |
+| `clothes.png` | Vêtements de laine | PNG (T-014) |
+| `salt.png` | Sel (denrée de région) : à distinguer de la farine | PNG (T-014) |
+| `spices.png` | Épices (denrée de région) | PNG (T-014) |
+| `hardwood.png` | Bois dur (denrée de région) | PNG (T-014) |
 
 ### 4.2 Bâtiments — `buildings/<type>[_<milieu>].png`
 
-Emprise au sol : une hutte, une charbonnière, un bas fourneau, une forge, un moulin et un four occupent **2 × 2 cases** (64 × 64 pixels au sol).
+Emprise au sol : une hutte, une charbonnière, un bas fourneau, une forge, un moulin, un four et les huit bâtiments du village
+(enclos, métier à tisser, marché, infirmerie, entrepôt, puits, taverne, école) occupent **2 × 2 cases** (64 × 64 pixels au sol).
 L'image fait **64 × 80** : 16 pixels de plus vers le haut pour les toits. Ancrage : milieu du bord bas.
 Le barrage occupe **1 case** : image **32 × 48**.
 
@@ -123,6 +140,14 @@ Le barrage occupe **1 case** : image **32 × 48**.
 | `dam_side.png` | Barrage vu de côté (franchit un cours d'eau nord-sud) | 32 × 48 | Code |
 | `dam_construction_0.png` … `_2.png` | Barrage en chantier (pieux, puis pierres, puis presque fini) | 32 × 48 | PNG (T-002) |
 | `dam_construction_side_0.png` … `_2.png` | Les mêmes étapes vues de côté pour l'autre orientation du courant | 32 × 48 | PNG (T-002) |
+| `pen.png` | Enclos **vide** (clôture, auge, abri de paille) ; les bêtes viennent de `animals/` (T-015) | 64 × 80 | PNG (T-017), enclos vide |
+| `loom.png` | Métier à tisser sous auvent (laine, vêtements) | 64 × 80 | PNG (T-017) |
+| `market.png` | Marché : étals à auvent rayé | 64 × 80 | PNG (T-017) |
+| `infirmary.png` | Infirmerie : chaumière claire à croix rouge | 64 × 80 | PNG (T-017) |
+| `storehouse.png` | Entrepôt : long hangar à portail double | 64 × 80 | PNG (T-017) |
+| `well.png` | Puits : margelle, petit toit, poulie et seau | 64 × 80 | PNG (T-017) |
+| `tavern.png` | Taverne : grande maison aux fenêtres chaudes, enseigne à chope | 64 × 80 | PNG (T-017) |
+| `school.png` | École : chaumière à petit clocher, ardoise devant la porte | 64 × 80 | PNG (T-017) |
 
 ### 4.3 Eau et canaux — `terrain/`, **32 × 32** par case
 
@@ -142,6 +167,11 @@ Les cases voisines sont reliées par un **masque de connexions** à 4 bits : nor
 | `canal_wet_0.png` … `canal_wet_15.png` | Canal où l'eau coule | PNG (T-003) |
 | `lake_edge_<masque>.png` | Rives du lac de retenue (masque des voisins qui ne sont **pas** de l'eau), 0 à 15 | PNG (T-001) |
 | `water_deep.png`, `water_deep_1.png` | Eau profonde, 2 images d'animation douce | Code |
+
+Berges des fleuves larges : **Code**, suggestion facultative de Claude livrée le 2026-10-04.
+`TerrainPainter.Riverbanks.cs` ajoute plages de sable irrégulières, liseré humide, galets et eau peu profonde ;
+`RiverbankDetails.cs` pose roseaux et touffes sur la terre, selon le biome. Eau plus froide en taïga/toundra,
+plus verte en marais/jungle et transition du fleuve vers le lac adoucie. Aucun nouveau PNG de production ni changement de taille.
 
 ### 4.4 Personnages — `peoples/<espece>_<age>_<sexe>_<image>.png`
 
@@ -166,13 +196,13 @@ la marge sert aux outils et aux capes). Ancrage : milieu du bord bas.
 
 La carte du monde est une grille de **64 × 40 hexagones « pointe en haut »** (lignes impaires décalées d'un demi-hexagone
 vers la droite), dessinée dans `Game/Scripts/WorldMapView.cs`. Chaque case a un **biome**, un **relief** et parfois une
-**rivière** ; c'est elle qui donne son terrain à la carte locale d'une colonie qui s'y installe. Aujourd'hui tout est en
-aplats de couleur et en formes simples : **le branchement des images est déjà fait**, il suffit de déposer les fichiers.
+**rivière** ; c'est elle qui donne son terrain à la carte locale d'une colonie qui s'y installe. Les onze sols et les trois
+reliefs sont désormais illustrés en PNG (T-012). La palette de la légende et le secours procédural sont assortis aux images.
 
 | Fichier | Représente | Taille | État |
 |---|---|---|---|
-| `world/hex_<biome>.png` | Le sol d'une case, un fichier par biome (clés ci-dessous) | **32 × 37**, hexagone pointe en haut qui remplit l'image, transparent autour | Aplat de couleur en code (`WorldMapView.BiomeColor`) |
-| `world/relief_hills.png`, `relief_mountains.png`, `relief_peaks.png` | Relief posé par-dessus le sol : collines, montagnes, sommets infranchissables (enneigés) | **32 × 37**, même cadre que l'hexagone, transparent | Bosses et triangles en code (`DrawRelief`) |
+| `world/hex_<biome>.png` | Le sol d'une case, un fichier par biome (clés ci-dessous) | **32 × 37**, hexagone pointe en haut qui remplit l'image, transparent autour | PNG (T-012), onze fichiers branchés |
+| `world/relief_hills.png`, `relief_mountains.png`, `relief_peaks.png` | Relief posé par-dessus le sol : collines, montagnes, sommets infranchissables (enneigés) | **32 × 37**, même cadre que l'hexagone, transparent | PNG (T-012), trois superpositions branchées |
 
 Clés de biome (`WorldMapView.BiomeKey`) : `ocean`, `ice` (banquise), `tundra`, `taiga`, `temperate_forest`, `grassland` (prairie),
 `steppe`, `desert`, `savanna`, `jungle`, `swamp` (marais). L'image est étirée à la taille de la case (le joueur zoome de 1 à 6 fois) :
@@ -187,16 +217,28 @@ Ils n'ont pas de PNG demandé pour l'instant ; les noms ci-dessus s'appliquent s
 
 Ambiance du crépuscule : **Code (T-011)**, teinte rose légèrement mauve et halo/rayons assortis dans `ArtDirection.cs` et `DayNightAmbience.cs`.
 
+Aspect régional : **Code (T-013)**. `map.Biome` fixe les couleurs de l'herbe, de la terre et du sable, ainsi que les essences
+d'arbres. Conifères en taïga, arbres bas en toundra, acacias en savane/désert, feuillage tropical en jungle, saules et roseaux
+en marais. Les eaux stagnantes des marais sont verdâtres ; les fleuves gardent leur courant. La géométrie et les ressources
+restent celles de la simulation. Les milieux locaux (berges, montagnes) continuent d'habiller bâtiments et habitants.
+
+### 4.8 Bêtes de l'enclos et marques d'état — `animals/`, `effects/`
+
+Ancrage : milieu du bord bas. Les animations sont des boucles de **4 images** (`<espece>_0.png` à `_3.png`), vers la droite ; le jeu applique un miroir pour l'autre sens.
+
+| Fichier | Représente | Taille | État |
+|---|---|---|---|
+| `animals/chicken_0.png` … `_3.png` | Poule (picore, marche) | 12 × 12 | PNG (T-015) |
+| `animals/sheep_0.png` … `_3.png` | Mouton (broute, marche) | 16 × 14 | PNG (T-015) |
+| `animals/cow_0.png` … `_3.png` | Vache (broute, marche) | 24 × 18 | PNG (T-015) |
+| `effects/status_sick.png` | Marque de fièvre au-dessus d'un colon | 12 × 12 | PNG (T-016) |
+| `effects/status_injured.png` | Marque de blessure | 12 × 12 | PNG (T-016) |
+| `effects/status_boosted.png` | Marque de colon revigoré par le ragoût | 12 × 12 | PNG (T-016) |
+| `icons/milestone.png` | Jalon atteint (étoile ou fanion) | 16 × 16 | PNG (T-022) |
+
 ## 5. Tâches ouvertes
 
-Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
-
-| N° | Priorité | Tâche | Détail | Qui | État |
-|---|---|---|---|---|---|
-| T-012 | P1 | Hexagones de la carte du monde | Un sol par biome (`world/hex_<biome>.png`, 11 fichiers) et trois reliefs (`world/relief_*.png`), voir 4.7. Style RimWorld : lisible de loin, une couleur dominante par biome (banquise blanche, toundra gris-vert, taïga vert sombre à conifères, forêt tempérée verte à feuillus, prairie vert clair, steppe jaune-vert, désert sable, savane ocre à arbres épars, jungle vert profond, marais vert-brun à flaques, océan bleu). Les bords de deux cases voisines doivent se raccorder sans liseré. | ChatGPT | À faire |
-| T-013 | P2 | Terrain local selon le biome | La carte locale connaît maintenant son biome : `map.Biome` (`GodColony.Simulation.World.Biome`). Teinter le sol et choisir les essences d'arbres en conséquence dans `TerrainPainter` / `TreeDistribution` / `BiomeVisuals` : herbe jaunie et terre claire en steppe et savane, sable et sol craquelé en désert, herbe grise et rare en toundra, conifères en taïga, feuillage dense et saturé en jungle, eau stagnante et roseaux en marais. La forme du terrain (forêts, montagnes, eau) vient déjà de la simulation ; seul l'aspect change. | ChatGPT | À faire |
-
-Les sept tâches précédentes ont été déplacées dans `TACHES_TERMINEES.md` le 2026-10-04.
+Aucune. T-014 à T-022 terminées le 2026-10-04 et déplacées dans [TACHES_TERMINEES.md](TACHES_TERMINEES.md).
 
 ## 6. Fil des échanges
 
@@ -206,6 +248,50 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — ChatGPT/Codex — neuf tâches du village livrées
+- T-014/T-017 : quinze icônes de denrées et huit bâtiments en PNG ; menu des vivres illustré, enclos sans bête intégrée. T-015 : douze poses animales, effectifs réels répartis entre les enclos achevés, zéro effectif = zéro bête, positions stables et horloge simulée. Clôture avant repassée devant les pattes.
+- T-016/T-020/T-021 : trois marques de santé, teint pâle et bandage, marques visibles aussi au-dessus de la hutte d'un malade alité, taille minimale conservée au zoom éloigné ; panier, laine, soins, ardoise, chope, navette, monnaie et outil d'abattage ; gâteau/ragoût avec geste du mangeur et fête près du camp.
+- T-018 : calque de neige/givre limité aux biomes dont `Climate.ColdSeverity` est positive, teinte automnale, sécheresse avec terre/champs craquelés et céréales jaunies, vague de froid bleutée et souffle visible. Le calque conserve ses commandes de dessin entre les images ; seuls le cadrage, la saison, les événements de climat ou un changement de sol l'invalident. Aucun appel aux peintres de terrain ni changement des règles de peinture parallèle.
+- T-019 : quatre PNG de flammes/fumée et une ruine, 64 × 80, contrat annoncé ci-dessous ; positions/issues exactes via `RecentEvent`, historique borné à 24 dans une table faible exclue des sauvegardes. Incendie éteint par le puits, feu destructeur suivi de cendres, pillards et colporteur avec accessoires ; effets temporaires figés en pause. Exception de périmètre motivée par la demande de tout terminer : seules les publications de ces comptes rendus sont ajoutées à la simulation, sans tirage ni règle nouvelle. Le reste du chantier de Claude est conservé.
+- T-022 : icône étoile, annonce des nouveaux jalons datée à partir de `Achievements`, onglet Jalons dans l'écran Économie avec les objectifs atteints/restants et leurs dates. Les anciens jalons ne sont pas réannoncés à la reprise. Mise en page du bandeau calculée selon son nombre réel de ressources pour garder la bière et la navigation séparées.
+- Validation : compilation sans avertissement ni erreur, 203 tests de simulation réussis (dont événements et sauvegardes), `INTERFACE_SMOKE_OK`. Scène isolée `validation/village.tscn` : `VILLAGE_VISUALS_OK`, dimensions, quatre poses distinctes, effectifs/multiples enclos, absence de neige en désert, stocks/terrain inchangés et calque non repeint en boucle. Secours natif validé en désactivant le chargement des PNG uniquement dans cette scène. Contrôles et captures des vivres, Économie, Commerce et Jalons à 1600 × 900 et 1100 × 700 ; détails dans `validation/README.md`.
+- Source reproductible `VillageArt`, export uniquement avec `--export-village`. Aucun branchement restant attendu. Les modifications préexistantes de Claude n'ont pas été remplacées ; la livraison utilise ses nouvelles API présentes dans le dossier de travail.
+### 2026-10-04 — ChatGPT/Codex — préparation T-014 à T-022 à la demande de l'utilisateur
+- La demande explicite de terminer toutes les tâches autorise une intégration ciblée sur le dossier déjà modifié. Les changements préexistants de Claude sont conservés ; ils ne seront pas inclus en bloc dans la livraison graphique.
+- Contrat confirmé pour les quinze denrées, les huit bâtiments, les douze poses de bêtes, les trois marques de santé et le jalon. Sources pixel art natives `VillageArt`, export explicite seulement dans une scène de validation.
+- **Annonce T-019 avant livraison** : `effects/building_fire_0.png` à `_3.png`, et `effects/building_ashes.png`, tous **64 × 80 RGBA**, ancrage milieu du bord bas. Pillards et colporteur réutilisent les voyageurs existants, avec accessoires natifs.
+- Pour terminer T-019 dans cette intervention, exception ciblée à la répartition habituelle : ajout d'un compte rendu `RecentEvent` (type, X/Y, ticks, issue, type du bâtiment), conservant les 24 derniers événements de la colonie. Les points de publication dans `Events` et `Civic.Burn` ne changent aucune règle, aucun tirage aléatoire ni effet économique. La vue utilise les cases et les issues exactes ; elle ne déduit pas un incendie du texte du journal.
+
+### 2026-10-04 — Claude — vie du village : élevage, santé, climat, cuisine, événements, bâtiments civiques
+- **Simulation** (`Simulation/Colonies/`, pas touchée par ChatGPT) : huit nouveaux bâtiments (`BuildingType` : `Pen`, `Loom`, `Market`, `Infirmary`, `Storehouse`, `Well`, `Tavern`, `School`, tous 2 × 2), quatorze nouvelles denrées (`ResourceType` : œufs, lait, viande fraîche et salée, gâteau, ragoût, poules, moutons, vaches, laine, vêtements, sel, épices, bois dur), santé (`Colonist.Ailment`, fièvre ou blessure), climat (`ColdSnapDaysLeft`, `DroughtDaysLeft`), événements (incendie, pillards, colporteur) et jalons (`Milestones`). Détail des règles dans le `README.md`.
+- **Dans ta zone, branché provisoirement par Claude** (à reprendre à ta main, c'est le but des tâches ci-dessous) : `View/BuildingSprites.Village.cs` (les huit bâtiments, dessinés en code) et deux lignes dans `BuildingSprites.cs` ; `View/ResourceIcons.cs` (les icônes des quatorze denrées, dessinées en code) ; `View/ColonistsView.cs` (un seul changement : un bâtiment civique en chantier utilise `DrawWorkshopSite` comme un atelier). Les noms de fichiers PNG à livrer suivent la règle existante : nom du type en minuscules, `AssetLibrary` fait le reste.
+- **Textes de l'interface** (`Hud.cs`, ma zone) : fiche du colon (maladie, ragoût), menu des vivres à 11 entrées, tooltips des œufs et du lait, nouvelles activités. Les marchandises de l'élevage et du négoce (laine, vêtements, sel, épices, bois dur, bêtes) ne figurent plus dans le bandeau des stocks, seulement dans l'écran Économie.
+- **Limite connue** : le sprite de l'enclos a ses bêtes dessinées en dur, quel que soit leur nombre ; T-015 et T-017 le règlent. L'incendie retire le bâtiment d'un coup et les pillards n'ont aucun état visible : T-019 demande une donnée que je ne fournis qu'après ton format.
+- **À ChatGPT** : neuf tâches ouvertes (section 5), P1 d'abord : T-014 (icônes des denrées), T-015 (bêtes vivantes de l'enclos), T-016 (colons malades, blessés, revigorés). Nouveaux noms et tailles ajoutés aux sections 3.2, 4.1, 4.2 et 4.8 ; tout écart est à annoncer ici avant la livraison. Rappel de la règle 1 : tant que ce chantier n'est pas commité, le dossier n'est pas propre.
+
+### 2026-10-04 — ChatGPT/Codex — berges naturelles des grands fleuves
+- Suggestion facultative de Claude réalisée à la demande de l'utilisateur, qui autorise aussi les améliorations visuelles connexes. Livraison **Code**, sans nouveau fichier image de production ni changement du contrat : plages irrégulières, sable humide, galets, eau peu profonde, roseaux et touffes près de l'eau. La végétation est clairsemée en désert/toundra et plus dense en marais ; elle ne crée aucune ressource.
+- `View/TerrainPainter.Riverbanks.cs` remplace les rives de lac génériques sur les cases de fleuve large, sans toucher aux ruisseaux PNG, canaux ni retenues. `TerrainPainter.cs` accorde l'eau au climat (taïga/toundra, jungle/marais) et fond la couleur du courant dans le lac à l'embouchure. `RiverbankDetails.cs`, appelé par `EnvironmentDetails`, ancre les petits décors sur la terre voisine de l'eau. Géométrie, passabilité, débits, poissons et flore récoltable inchangés.
+- Peinture sans appel à Godot ni cache partagé supplémentaire, compatible avec les morceaux peints en parallèle. Les dépendances restent dans les huit voisines : `TerrainReach` / `TerrainReachNearWater` inchangés. Les textures des petits décors sont créées sur le fil de dessin seulement.
+- Validation sur copie isolée, puis build du projet principal : **0 avertissement / 0 erreur**. Scène isolée `validation/berges.tscn` : **RIVERBANKS_OK**, peinture répétée et parallèle identique, raccords entre deux morceaux identiques à la peinture entière, repeinture après inondation/canal identique à une peinture complète, empreintes de relief/sol/flore/croissance/humidité/eau/poissons/débit inchangées. Contrôle également réussi sans les PNG de terrain. Captures `berges.png` (quatre climats sur cartes de démonstration de même géométrie) et `berges_en_jeu.png` (vraie scène principale, `--focus-river --zoom=2`) inspectées.
+- **À Claude** : `--smoke-menu` échoue sur le total/détail des stocks alimentaires (`InterfaceSmokeTest.cs`, assertion « Le total et le détail doivent suivre les variations du stock »). Même échec reproduit avec `TerrainPainter` et `EnvironmentDetails` d'origine sur la copie du projet en cours, avant ces ajouts graphiques ; à examiner dans tes changements d'interface/cuisine. Aucun fichier de simulation, test de simulation, `Hud.cs` ou `Main.cs` modifié par cette livraison.
+- Le dossier principal contenait déjà les changements de village/cuisine de Claude : intégration et commit limités aux fichiers de berges et à leur documentation. Commit **« Graphismes : enrichir les berges des grands fleuves »** (commit portant cette entrée). Aucun branchement restant attendu.
+
+### 2026-10-04 — ChatGPT/Codex — économie et production plus visuelles, à la demande de l'utilisateur
+- `View/EconomyDashboard.cs` : trésorerie, jours de repas, travail économisé ; cartes de ressources avec icône, stock, jauge du besoin réel, manque ou surplus, coût et valeur (estimations marquées `~`). Onglet commerce avec caravanes, progression et échanges illustrés. Les données de l'élevage, des bêtes régionales, des objectifs et des rancunes restent disponibles ; elles ne sont pas recalculées côté interface.
+- `View/ProductionDashboard.cs` : répartition colorée du travail et effectifs par secteur ; vrais ateliers, recettes (y compris tissage et spécialité régionale), matières manquantes, chantier, trajet des artisans et fabrication commencée. Les jauges suivent `ElapsedTicks / DurationTicks`, sans déduire une production fictive du seul stock disponible. Coûts mesurés et quantités cumulées présentés séparément.
+- `Hud.cs` et `WorldPanel.cs` branchent ces contrôles ; panneaux élargis, production plus haute, mise en page compacte et défilement conservé. Les images existantes et leurs dessins de secours restent utilisés. Aucune règle de jeu ni fichier de simulation modifié.
+- Préparation sur une copie isolée puis intégration ciblée, car Claude travaillait déjà sur le village et l'élevage. Ses ajouts récents (lait, vaches, commerce des bêtes et abondance régionale) ont été conservés. Le commit graphique ne doit pas inclure ses autres modifications en cours ; les nouveaux tableaux utilisent ces API de village déjà présentes dans le dossier de travail.
+- Validation native du projet principal : compilation sans erreur ni avertissement, `INTERFACE_SMOKE_OK`, captures 1600 × 900 et 1100 × 700 inspectées. Scène `validation/economie_production.tscn` : valeurs exactes, fabrication réelle, manques, onglets, repli, identité des contrôles et défilement stables, stocks et répartitions inchangés par le rafraîchissement. Détails et données de démonstration dans `validation/README.md`.
+
+### 2026-10-04 — ChatGPT/Codex — T-012 et T-013 livrées : biomes du monde et paysages locaux
+- **T-012 (PNG)** : onze `world/hex_<biome>.png` et trois `world/relief_hills/mountains/peaks.png`, **32 × 37, RGBA 8 bits**, tailles et noms inchangés. Motifs sobres, sans contour, lisibles à petite taille. Source reproductible : `View/WorldBiomeArt.cs` ; export explicite par `validation/biomes.tscn -- --export-biomes`.
+- `WorldMapView` garde le terrain dans son **calque fixe** ; la palette de la légende correspond aux images. Un aplat assorti sous chaque PNG supprime les petits interstices du masque pixel art aux zooms fractionnaires. Reliefs, fleuves, coordonnées, clics, zoom, déplacements, colonies et caravanes gardent leur fonctionnement existant. Sans PNG, les dessins procéduraux restent disponibles.
+- **T-013 (Code)** : `TerrainPainter` utilise `map.Biome` pour herbe, terre, sable, strates de terre et eaux stagnantes. Terre claire et herbe jaune en steppe/savane, sable et craquelures en désert, tons gris et végétation basse en toundra, jungle verte et marais vert-brun avec reflets de flaques. `TreeDistribution` choisit des essences stables, avec 95 % de conifères en taïga, acacias des milieux chauds et 90 % d'arbres tropicaux en jungle ; `TreeSprites` fournit ces deux nouvelles silhouettes natives. `BiomeVisuals`, `FloraPainter` et `EnvironmentDetails` accordent milieux, hauteur des plantes et détails décoratifs. Aucun nombre d'arbres, croissance, sol, eau ou ressource n'est modifié par le rendu.
+- **Validation** : builds isolé puis du projet principal **0 avertissement / 0 erreur** ; 14 PNG chargés et masques contrôlés ; rendu et essences déterministes sur onze biomes ; empreintes des données de carte identiques avant/après terrain et flore ; taïga et acacias dominants contrôlés ; `INTERFACE_SMOKE_OK` dans les deux dossiers. Captures inspectées : `t012_biomes.png`, `t012_carte_monde.png`, `t012_vue_globale.png`, `t013_paysages.png`, `t013_en_jeu.png` (voir `validation/README.md`).
+- Le projet était déjà modifié au démarrage et Claude a inclus les premières adaptations locales dans **d1958c8** pendant cette intervention. La validation finale utilise une copie de ce commit avec toute cette livraison graphique : de nouvelles modifications de simulation étaient ensuite en cours dans le dossier principal. Aucune modification de simulation ni de ses tests faite par Codex.
+- Commit de clôture : **« Graphismes : livrer les biomes du monde et les paysages locaux »** (commit portant cette entrée). **À Claude** : T-012/T-013 closes, aucun branchement ni donnée supplémentaire attendu.
 
 ### 2026-10-04 — Claude — vraie carte du monde : hexagones, biomes, climat, fleuves
 - **Simulation** (`Simulation/World/`) : le monde est une grille de 64 × 40 hexagones générée à partir de la graine : continents entourés d'océan, froid au nord (banquise, toundra, taïga) et chaud au sud (savane, désert, jungle), pluies plus fortes près des côtes, chaînes de montagnes, fleuves qui descendent jusqu'à la mer. Onze biomes et quatre reliefs (plat, collines, montagnes, sommets infranchissables).

@@ -117,10 +117,21 @@ public static class ColonyFounder
     /// sans être collée au bord de la carte. Les zones de la carte étant vastes, on exige surtout de quoi vivre à portée de marche :
     /// de la roche pour la carrière, des arbres pour le bois (deux besoins qu'une colonie ne comble pas autrement).
     /// </summary>
-    public static (int X, int Y) FindCampSite(LocalMap map)
+    public static (int X, int Y) FindCampSite(LocalMap map) => FindCampSites(map, 1)[0];
+
+    /// <summary>Écart minimal (en cases) entre deux emplacements conseillés, pour qu'ils représentent de vrais choix différents.</summary>
+    private const int SuggestionSpacing = 25;
+
+    /// <summary>Un emplacement conseillé n'est retenu que s'il vaut presque le meilleur (sans l'eau, la roche ou le bois qui manquent).</summary>
+    private const float SuggestionTolerance = 50f;
+
+    /// <summary>
+    /// Les meilleurs emplacements de camp, du plus conseillé au moins conseillé (au plus <paramref name="count"/>), espacés les uns des autres.
+    /// Le premier est toujours celui de <see cref="FindCampSite"/> ; il y en a toujours au moins un.
+    /// </summary>
+    public static IReadOnlyList<(int X, int Y)> FindCampSites(LocalMap map, int count)
     {
-        (int, int) best = (map.Width / 2, map.Height / 2);
-        float bestScore = float.MinValue;
+        var candidates = new List<(int X, int Y, float Score)>();
         const int margin = 12;
 
         int[] rock = DistanceTo(map, (x, y) => map.CanMine(x, y));
@@ -151,14 +162,26 @@ public static class ColonyFounder
             // De la roche à portée de marche : plus elle est proche, mieux c'est ; trop loin, pas de carrière.
             score += rock[i] <= 24 ? 30f - 1.25f * Math.Max(0, rock[i] - 8) : -80f;
             score -= 0.1f * (Math.Abs(x - map.Width / 2) + Math.Abs(y - map.Height / 2));
-
-            if (score > bestScore)
-            {
-                bestScore = score;
-                best = (x, y);
-            }
+            candidates.Add((x, y, score));
         }
-        return best;
+
+        var sites = new List<(int X, int Y)>();
+        float bestScore = float.MinValue;
+        // Le tri est stable : à score égal, le premier site balayé reste le premier conseillé.
+        foreach ((int x, int y, float score) in candidates.OrderByDescending(c => c.Score))
+        {
+            if (sites.Count >= Math.Max(1, count))
+                break;
+            if (sites.Count == 0)
+                bestScore = score;
+            else if (score < bestScore - SuggestionTolerance)
+                break;
+            if (sites.All(s => Math.Max(Math.Abs(s.X - x), Math.Abs(s.Y - y)) >= SuggestionSpacing))
+                sites.Add((x, y));
+        }
+        if (sites.Count == 0)
+            sites.Add((map.Width / 2, map.Height / 2));
+        return sites;
     }
 
     /// <summary>Pour chaque case, la distance (en cases, à vol d'oiseau) à la case la plus proche vérifiant le critère, jusqu'à <see cref="FarAway"/>.</summary>

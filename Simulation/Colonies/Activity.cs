@@ -33,6 +33,14 @@ public enum ActivityKind
     Arrive,
     /// <summary>Un colon malheureux quitte la colonie pour de bon.</summary>
     Depart,
+    /// <summary>Soigner les animaux de l'enclos : ramasser les œufs, tondre les moutons.</summary>
+    Tend,
+    /// <summary>Soigner les malades et les blessés à l'infirmerie.</summary>
+    Heal,
+    /// <summary>Un enfant ou un adolescent apprend à l'école.</summary>
+    Study,
+    /// <summary>Abattre une bête à l'enclos, sur ordre de la colonie (besoin de nourriture ou surplus de bétail).</summary>
+    Slaughter,
 }
 
 /// <summary>
@@ -66,10 +74,19 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
 
     /// <summary>Activité qui produit une ressource : on mesure son coût en travail.</summary>
     public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest
-            or ActivityKind.Craft;
+            or ActivityKind.Craft or ActivityKind.Tend or ActivityKind.Slaughter;
 
     /// <summary>Pour un repas : ce qu'il redonne à celui qui mange (selon qu'on a pris du pain, du grain ou des baies).</summary>
     public float MealValue { get; set; } = Stockpile.GrainMealValue;
+
+    /// <summary>Pour un repas : le plat de fête mangé (gâteau ou ragoût), s'il y en a un.</summary>
+    public ResourceType? Meal { get; set; }
+
+    /// <summary>Pour un abattage : l'espèce de la bête.</summary>
+    public ResourceType? Species { get; init; }
+
+    /// <summary>Pour une fabrication : le produit visé, quand l'atelier a plusieurs recettes (les plats de fête) ; null pour la recette habituelle.</summary>
+    public ResourceType? Product { get; init; }
 
     /// <summary>Pour une fabrication : les matières sont prises au stock, le produit n'est pas encore sorti.</summary>
     public bool InputsTaken { get; set; }
@@ -89,6 +106,8 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Mine => SkillType.Mining,
         ActivityKind.Build or ActivityKind.Dig => SkillType.Construction,
         ActivityKind.Craft => Building is { } workshop ? Crafting.SkillFor(workshop.Type) : SkillType.Smithing,
+        ActivityKind.Tend or ActivityKind.Slaughter => SkillType.Husbandry,
+        ActivityKind.Heal => SkillType.Medicine,
         ActivityKind.Sow or ActivityKind.Harvest => SkillType.Farming,
         _ => null,
     };

@@ -22,6 +22,31 @@ public class FoundingTests
     }
 
     [Fact]
+    public void Plusieurs_regions_conseillees_sont_distinctes_libres_et_commencent_par_la_meilleure()
+    {
+        var world = new WorldState(12345);
+        IReadOnlyList<int> tiles = world.WorldMap.SuggestTiles(Species.Human, 5);
+        Assert.Equal(5, tiles.Count);
+        Assert.Equal(world.WorldMap.SuggestTile(Species.Human), tiles[0]);
+        Assert.Equal(tiles.Count, tiles.Distinct().Count());
+        Assert.All(tiles, t => Assert.True(world.WorldMap.CanSettle(t, out _)));
+        Assert.All(tiles.Skip(1), t => Assert.True(world.WorldMap.Grid.Distance(tiles[0], t) >= 3));
+    }
+
+    [Fact]
+    public void Plusieurs_camps_conseilles_sont_constructibles_espaces_et_commencent_par_le_meilleur()
+    {
+        var world = new WorldState(12345, colonyCount: 0, migration: false, lifecycle: false);
+        LocalMap map = world.GenerateColonyMap(world.WorldMap.SuggestTile(Species.Human));
+        IReadOnlyList<(int X, int Y)> sites = ColonyFounder.FindCampSites(map, 5);
+        Assert.InRange(sites.Count, 1, 5);
+        Assert.Equal(ColonyFounder.FindCampSite(map), sites[0]);
+        Assert.Equal(sites.Count, sites.Distinct().Count());
+        Assert.All(sites, s => Assert.True(ColonyFounder.CanFoundAt(map, s.X, s.Y, out _)));
+        Assert.All(sites.Skip(1), s => Assert.True(Math.Max(Math.Abs(s.X - sites[0].X), Math.Abs(s.Y - sites[0].Y)) >= 25));
+    }
+
+    [Fact]
     public void Un_monde_vierge_peut_avancer_puis_accueillir_sa_premiere_colonie()
     {
         var world = new WorldState(12345, colonyCount: 0, migration: false, lifecycle: false);

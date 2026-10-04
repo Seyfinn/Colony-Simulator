@@ -11,7 +11,7 @@ public static class ColonistAI
 {
     // Le calendrier est compressé (une journée = 45 s), mais les gestes doivent rester lisibles à l'écran :
     // la marche et la durée des actions sont donc exprimées en secondes réelles à vitesse ×1.
-    private const float WalkTilesPerSecond = 4f;
+    private const float WalkTilesPerSecond = 10f;
     private const float EatSeconds = 1.5f;
     private const float ForageSeconds = 1.5f;
     private const float FishSeconds = 3f;
@@ -25,6 +25,17 @@ public static class ColonistAI
     private const float DigSeconds = 4f;
     private const float DeliverSeconds = 0.5f;
     private const float RelaxSeconds = 6f;
+    private const float TendSeconds = 3f;
+    private const float SlaughterSeconds = 5f;
+
+    /// <summary>La gaieté d'un bon repas retombe en deux jours.</summary>
+    private const float CheerFadePerHour = 1f / 48f;
+    private const float HealSeconds = 5f;
+    private const float StudySeconds = 6f;
+
+    /// <summary>À la taverne on se détend plus vite, et l'on y trouve de la compagnie.</summary>
+    private const float TavernRelaxFactor = 1.5f;
+    private const float TavernSocialPerHour = 0.15f;
 
     private const int ThinkIntervalTicks = 10;
     private const int ForageSearchRadius = 30;
@@ -192,6 +203,8 @@ public static class ColonistAI
         const float hour = 1f / TimeConstants.TicksPerHour;
         needs.Food -= HungerPerHour * HungerFactor(colonist.Stage) * hour;
         needs.Grief -= GriefFadePerHour * hour;
+        needs.Cheer -= CheerFadePerHour * hour;
+        needs.BeerCheer -= hour / (Cuisine.BeerDays * 24f);
 
         // On dort mieux à l'abri d'une hutte ; dehors, sans feu pendant la saison froide, le sommeil répare mal.
         bool sheltered = colonist.IsSleepingAtHome;
@@ -201,8 +214,13 @@ public static class ColonistAI
         else
             needs.Rest -= FatiguePerHour * hour;
 
-        if (colonist.Activity is { Kind: ActivityKind.Relax, Started: true })
-            needs.Leisure += RelaxRecoveryPerHour * hour;
+        if (colonist.Activity is { Kind: ActivityKind.Relax, Started: true } relaxing)
+        {
+            bool tavern = relaxing.Building?.Type == BuildingType.Tavern;
+            needs.Leisure += RelaxRecoveryPerHour * (tavern ? TavernRelaxFactor : 1f) * hour;
+            if (tavern)
+                needs.Social += TavernSocialPerHour * hour;
+        }
         else if (!colonist.IsSleeping)
             needs.Leisure -= BoredomPerHour * colonist.Personality.BoredomFactor * hour;
 
@@ -244,7 +262,7 @@ public static class ColonistAI
         bool cold = ColonyBrain.IsColdSeason(world.Clock.Season);
         bool warm = !cold || colonist.Colony.FireLit;
         bool housed = colonist.Home is not null;
-        return 0.2f + (housed ? 0.4f : 0f) + (warm ? 0.3f : 0f) + (housed && cold ? 0.1f : 0f);
+        return 0.2f + (housed ? 0.4f : 0f) + (warm ? 0.3f : 0f) + (housed && cold ? 0.1f : 0f) + Civic.ComfortBonus(colonist.Colony, cold);
     }
 
     /// <summary>Choisit la prochaine activité, du besoin le plus pressant au travail.</summary>
@@ -286,6 +304,14 @@ public static class ColonistAI
             && StartNearCamp(colonist, world, ActivityKind.Deliver, DeliverSeconds))
             return;
 
+        // Malade ou blessé : on se repose (à l'infirmerie, s'il y en a une) jusqu'à la guérison.
+        if (colonist.Ailment != Ailment.None)
+        {
+            if (!TryRecover(colonist, world))
+                Wander(colonist, world);
+            return;
+        }
+
         // Besoin de compagnie : les sociables en cherchent plus tôt, les solitaires se contentent de peu.
         // Les conversations ont lieu le soir et pendant le temps libre, sauf si la solitude devient pesante.
         float socialThreshold = 0.75f - 0.2f * colonist.Personality[Axis.Sociabilite];
@@ -295,13 +321,16 @@ public static class ColonistAI
             return;
 
         if ((needs.Leisure < 0.3f || (clock.IsEvening && needs.Leisure < 0.8f))
-            && StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds))
+            && StartRelax(colonist, world))
             return;
 
         // Temps libre : la colonie n'a pas besoin de ses bras pour l'instant, il se détend.
         if (colonist.Sector == WorkSector.Free || colonist.Stage == LifeStage.Child)
         {
-            if (needs.Leisure < 0.95f && StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds))
+            // Les enfants vont à l'école, quand il y en a une.
+            if (colonist.Stage == LifeStage.Child && Civic.IsSchoolTime(clock) && TryStudy(colonist, world))
+                return;
+            if (needs.Leisure < 0.95f && StartRelax(colonist, world))
                 return;
             Wander(colonist, world);
             return;
@@ -367,8 +396,9 @@ public static class ColonistAI
         {
             bool started = sector switch
             {
-                WorkSector.Food => TryGatherFood(colonist, world),
-                WorkSector.Farm => TryFarm(colonist, world),
+                // Une bête abattue pour un besoin de vivres passe avant la cueillette : c'est la nourriture la plus rapide à obtenir.
+                WorkSector.Food => TrySlaughter(colonist, world) || TryGatherFood(colonist, world),
+                WorkSector.Farm => TryFarm(colonist, world) || TryTend(colonist, world) || TrySlaughter(colonist, world),
                 WorkSector.Wood => TryChop(colonist, world),
                 WorkSector.Stone => TryMine(colonist, world),
                 WorkSector.Craft => TryCraft(colonist, world),
@@ -378,6 +408,77 @@ public static class ColonistAI
                 return true;
         }
         return false;
+    }
+
+    /// <summary>Se détend à la taverne si la colonie en a une, sinon près du feu.</summary>
+    private static bool StartRelax(Colonist colonist, WorldState world)
+    {
+        if (Civic.Site(colonist.Colony, BuildingType.Tavern) is { } tavern)
+        {
+            (int x, int y) = tavern.Tiles.ElementAt(colonist.Id % 4);
+            if (TryStart(colonist, world, new Activity(ActivityKind.Relax, x, y, Ticks(RelaxSeconds)) { Building = tavern }))
+                return true;
+        }
+        return StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds);
+    }
+
+    /// <summary>Un malade garde le lit : à l'infirmerie s'il y a de la place (quatre lits), sinon près du feu. Sans hasard, pour ne pas décaler les graines.</summary>
+    private static bool TryRecover(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        if (Civic.Site(colony, BuildingType.Infirmary) is { } infirmary
+            && colony.Members.Count(m => m != colonist && m.Activity is { Kind: ActivityKind.Relax, Building.Type: BuildingType.Infirmary }) < Building.HutCapacity)
+        {
+            (int x, int y) = infirmary.Tiles.ElementAt(colonist.Id % 4);
+            if (TryStart(colonist, world, new Activity(ActivityKind.Relax, x, y, Ticks(RelaxSeconds * 2)) { Building = infirmary }))
+                return true;
+        }
+        IReadOnlyList<(int X, int Y)> spots = colony.GatherSpots;
+        (int cx, int cy) = spots[colonist.Id % Math.Min(12, spots.Count)];
+        return TryStart(colonist, world, new Activity(ActivityKind.Relax, cx, cy, Ticks(RelaxSeconds * 2)));
+    }
+
+    /// <summary>À l'école, un enfant s'exerce au métier où il est le plus doué.</summary>
+    private static bool TryStudy(Colonist colonist, WorldState world)
+    {
+        if (Civic.Site(colonist.Colony, BuildingType.School) is not { } school)
+            return false;
+        (int x, int y) = school.Tiles.ElementAt(colonist.Id % 4);
+        return TryStart(colonist, world, new Activity(ActivityKind.Study, x, y, Ticks(StudySeconds)) { Building = school });
+    }
+
+    /// <summary>Soigne les animaux de l'enclos : il y a des œufs à ramasser ou de la laine à tondre.</summary>
+    private static bool TryTend(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        if (!Husbandry.WorkPending(colony) || Husbandry.NearestPen(colony, colonist.TileX, colonist.TileY) is not { } pen)
+            return false;
+        float seconds = TendSeconds / WorkSpeed(colonist, SkillType.Husbandry);
+        (int x, int y) = pen.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        return TryStart(colonist, world, new Activity(ActivityKind.Tend, x, y, Ticks(seconds)) { Building = pen });
+    }
+
+    /// <summary>Abat une bête à l'enclos, si la colonie en a donné l'ordre (voir <see cref="Husbandry.PlanSlaughter"/>).</summary>
+    private static bool TrySlaughter(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        if (Husbandry.NextSlaughter(colony) is not { } species || Husbandry.NearestPen(colony, colonist.TileX, colonist.TileY) is not { } pen)
+            return false;
+        float seconds = SlaughterSeconds / WorkSpeed(colonist, SkillType.Husbandry);
+        (int x, int y) = pen.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        return TryStart(colonist, world, new Activity(ActivityKind.Slaughter, x, y, Ticks(seconds)) { Building = pen, Species = species });
+    }
+
+    /// <summary>Un guérisseur passe à l'infirmerie s'il y a des malades et que personne n'y soigne déjà.</summary>
+    private static bool TryHeal(Colonist colonist, WorldState world)
+    {
+        Colony colony = colonist.Colony;
+        if (Civic.Site(colony, BuildingType.Infirmary) is not { } infirmary || Health.PatientCount(colony) == 0
+            || colony.Members.Any(m => m.Activity?.Kind == ActivityKind.Heal))
+            return false;
+        float seconds = HealSeconds / WorkSpeed(colonist, SkillType.Medicine);
+        (int x, int y) = infirmary.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        return TryStart(colonist, world, new Activity(ActivityKind.Heal, x, y, Ticks(seconds)) { Building = infirmary });
     }
 
     private static bool IsAtCamp(Colonist colonist) =>
@@ -465,7 +566,8 @@ public static class ColonistAI
     /// <summary>Vitesse de travail : l'habileté du métier, modulée par l'ardeur du colon.</summary>
     private static float WorkSpeed(Colonist colonist, SkillType skill) =>
         colonist.Skills.WorkSpeed(skill) * colonist.Personality.WorkFactor * MathF.Max(0.1f, WorkFactorOf(colonist.Stage))
-        * ToolChain.SpeedFactor(colonist.Colony, skill);
+        * ToolChain.SpeedFactor(colonist.Colony, skill) * (skill == SkillType.Farming ? Husbandry.PloughFactor(colonist.Colony) : 1f)
+        * Cuisine.BoostFactor(colonist);
 
     private static IEnumerable<FieldPlot> NearestPlots(Colony colony, Colonist colonist, CropStage stage) =>
         Farming.Plots(colony)
@@ -540,15 +642,26 @@ public static class ColonistAI
     private static bool TryCraft(Colonist colonist, WorldState world)
     {
         Colony colony = colonist.Colony;
-        if (Crafting.PickJob(colony, (int)ColonyBrain.HeatingTarget(colony, world.Clock.Season)) is not { } workshop)
+        if (TryHeal(colonist, world))
+            return true;
+        // Le gâteau passe avant le pain (sinon la farine part toute en pain), et le ragoût et la bière avant les chaînes du fer, du blé, du textile et du négoce
+        // tant que leur stock est presque vide (sinon ces chaînes occuperaient les artisans sans cesse) ; sinon ils passent après, pour compléter le stock.
+        ResourceType? product = null;
+        Building? workshop = null;
+        if ((Cuisine.PickCake(colony) ?? Cuisine.PickStew(colony, Cuisine.UrgentFill) ?? Cuisine.PickBrew(colony, Cuisine.UrgentFill)) is { } first)
+            (workshop, product) = (first.Workshop, first.Recipe.Output);
+        workshop ??= Crafting.PickJob(colony, (int)ColonyBrain.HeatingTarget(colony, world.Clock.Season));
+        if (workshop is null && (Cuisine.PickStew(colony) ?? Cuisine.PickBrew(colony)) is { } dish)
+            (workshop, product) = (dish.Workshop, dish.Recipe.Output);
+        if (workshop is null)
             return false;
-        Recipe recipe = Crafting.RecipeFor(workshop.Type);
+        Recipe recipe = Crafting.RecipeFor(colony, workshop.Type, product);
         float seconds = recipe.Seconds / WorkSpeed(colonist, Crafting.SkillFor(workshop.Type));
         // Un moulin tourne au rythme de la rivière : un barrage en amont le ralentit.
         if (workshop.Type == BuildingType.Mill)
             seconds /= MathF.Max(0.25f, Hydrology.MillFlow(colonist.Colony.Map, workshop));
         (int x, int y) = workshop.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
-        return TryStart(colonist, world, new Activity(ActivityKind.Craft, x, y, Ticks(seconds)) { Building = workshop });
+        return TryStart(colonist, world, new Activity(ActivityKind.Craft, x, y, Ticks(seconds)) { Building = workshop, Product = product });
     }
 
     private static bool TryMine(Colonist colonist, WorldState world)
@@ -736,7 +849,7 @@ public static class ColonistAI
 
         activity.ElapsedTicks++;
         if (activity.Skill is { } skill)
-            colonist.Skills.Practice(skill, colonist.Personality.LearningFactor * LearningFactorOf(colonist.Stage) / TimeConstants.TicksPerSecond);
+            colonist.Skills.Practice(skill, colonist.Personality.LearningFactor * LearningFactorOf(colonist.Stage) * Civic.LearningBonus(colonist.Colony) / TimeConstants.TicksPerSecond);
 
         Needs needs = colonist.Needs;
         bool done = activity.Kind == ActivityKind.Sleep
@@ -751,7 +864,8 @@ public static class ColonistAI
     /// <summary>Vérifie, à l'arrivée, que l'action est toujours possible (un autre a pu cueillir le buisson entre-temps).</summary>
     private static bool CanBegin(Colonist colonist, WorldState world, Activity activity) => activity.Kind switch
     {
-        ActivityKind.Eat => colonist.Colony.Stock.TryTakeMeal(out float meal) && SetMealValue(activity, meal),
+        ActivityKind.Eat => colonist.Colony.Stock.TryTakeMeal(out float meal, out ResourceType? dish) && SetMeal(activity, meal, dish),
+        ActivityKind.Slaughter => activity.Species is { } species && Husbandry.CanSlaughter(colonist.Colony, species),
         ActivityKind.Chat => activity.Partner is { Transit: TransitState.None, IsSleeping: false } partner
                              && MathF.Abs(partner.X - colonist.X) + MathF.Abs(partner.Y - colonist.Y) <= ChatMaxGap,
         ActivityKind.Sow => Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow }
@@ -763,22 +877,25 @@ public static class ColonistAI
         ActivityKind.Mine => WorkSites.CanMineFrom(colonist.Colony.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
         ActivityKind.Dig => !colonist.Colony.Map.IsCanal(activity.TargetX, activity.TargetY),
         ActivityKind.Craft => activity.Building is { IsComplete: true } workshop && TakeCraftInputs(colonist, activity, workshop),
+        ActivityKind.Tend => Husbandry.PenSite(colonist.Colony) is not null && Husbandry.WorkPending(colonist.Colony),
+        ActivityKind.Heal => Health.PatientCount(colonist.Colony) > 0,
         ActivityKind.FetchMaterials => TakeMaterials(colonist, activity.Building!),
         ActivityKind.SupplySite => activity.Building is { IsComplete: false } site && colonist.CarryingTo == site,
         ActivityKind.Build => activity.Building is { IsComplete: false, HasAllMaterials: true },
         _ => true,
     };
 
-    private static bool SetMealValue(Activity activity, float value)
+    private static bool SetMeal(Activity activity, float value, ResourceType? dish)
     {
         activity.MealValue = value;
+        activity.Meal = dish;
         return true;
     }
 
     /// <summary>À l'arrivée à l'atelier, on prend au stock les matières de la recette ; elles manquent peut-être déjà.</summary>
     private static bool TakeCraftInputs(Colonist colonist, Activity activity, Building workshop)
     {
-        if (!ToolChain.TryTakeInputs(colonist.Colony, Crafting.RecipeFor(workshop.Type), out double inputHours))
+        if (!ToolChain.TryTakeInputs(colonist.Colony, Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product), out double inputHours))
             return false;
         activity.InputsTaken = true;
         activity.InputLaborHours = inputHours;
@@ -806,12 +923,25 @@ public static class ColonistAI
         if (activity.Building is { } building)
             building.LaborTicks += world.Clock.Ticks - activity.CommittedAtTicks;
         if (activity.Skill is { } usedSkill)
+        {
             ToolChain.RecordUse(colonist.Colony, usedSkill);
+            // Les gestes de force et d'outil peuvent blesser.
+            if (activity.Kind is ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Build or ActivityKind.Dig)
+                Health.MaybeInjure(world, colonist, usedSkill);
+        }
 
         switch (activity.Kind)
         {
             case ActivityKind.Eat:
                 colonist.Needs.Food += activity.MealValue;
+                if (activity.Meal is { } dishEaten)
+                    Cuisine.Savor(colonist, dishEaten, world.Clock);
+                break;
+            case ActivityKind.Slaughter when activity.Species is { } slaughtered && Husbandry.Slaughter(colonist.Colony, slaughtered) is var meat and > 0:
+                colonist.Carrying = (ResourceType.Meat, meat);
+                break;
+            case ActivityKind.Relax when activity.Building is { Type: BuildingType.Tavern }:
+                Cuisine.Drink(colonist, world.Clock);
                 break;
             case ActivityKind.Forage:
             {
@@ -843,9 +973,16 @@ public static class ColonistAI
                 plot.Growth = 0f;
                 colonist.Carrying = (ResourceType.Grain, Farming.YieldAt(map, activity.TargetX, activity.TargetY));
                 break;
+            case ActivityKind.Craft when activity.InputsTaken && activity.Building is { Type: BuildingType.Cask } cask:
+                // Les céréales sont versées dans le fût : rien à rapporter, la bière fermente et sera tirée dans cinq jours.
+                Cuisine.StartBrewing(colonist.Colony, cask, activity.InputLaborHours + LaborLedger.TicksToHours(world.Clock.Ticks - activity.CommittedAtTicks), world.Clock);
+                activity.InputsTaken = false;
+                colonist.WorkCycleStartTicks = -1;
+                colonist.WorkCycleExtraHours = 0;
+                break;
             case ActivityKind.Craft when activity.InputsTaken && activity.Building is { } workshop:
             {
-                Recipe recipe = Crafting.RecipeFor(workshop.Type);
+                Recipe recipe = Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product);
                 bool first = colonist.Colony.AnnouncedProducts.Add(recipe.Output);
                 colonist.Carrying = (recipe.Output, recipe.OutputAmount);
                 activity.InputsTaken = false;
@@ -853,6 +990,16 @@ public static class ColonistAI
                     ColonyBrain.OnFirstProduct(colonist.Colony, recipe.Output, world.Clock);
                 break;
             }
+            case ActivityKind.Tend when Husbandry.Collect(colonist.Colony) is { } haul:
+                colonist.Carrying = haul;
+                break;
+            case ActivityKind.Heal:
+                Health.Treat(colonist.Colony);
+                break;
+            case ActivityKind.Study:
+                colonist.Skills.Practice(colonist.Skills.Favorite(),
+                    StudySeconds * 3f * colonist.Personality.LearningFactor * LearningFactorOf(colonist.Stage) * Civic.LearningBonus(colonist.Colony));
+                break;
             case ActivityKind.Dig when !map.IsCanal(activity.TargetX, activity.TargetY):
                 FinishDig(colonist, world, activity);
                 break;
@@ -910,7 +1057,7 @@ public static class ColonistAI
             // Une fabrication interrompue rend les matières à la colonie.
             if (activity is { Kind: ActivityKind.Craft, InputsTaken: true, Building: { } workshop })
             {
-                ToolChain.Refund(colonist.Colony, Crafting.RecipeFor(workshop.Type));
+                ToolChain.Refund(colonist.Colony, Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product));
                 activity.InputsTaken = false;
                 colonist.WorkCycleExtraHours = 0;
             }

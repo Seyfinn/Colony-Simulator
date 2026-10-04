@@ -1,5 +1,6 @@
 using Godot;
 using GodColony.Simulation.Map;
+using GodColony.Simulation.World;
 using Noise = GodColony.Simulation.Generation.Noise;
 
 namespace GodColony.View;
@@ -45,6 +46,8 @@ public static class FloraPainter
             _ => map.GetBerries(x, y) > 0 ? SpriteFactory.Bush : SpriteFactory.BushEmpty,
         };
         float scale = flora == FloraType.Stump ? 1f : 0.3f + 0.7f * map.GetFloraGrowth(x, y);
+        // Les mêmes plantes restent récoltables ; seules leurs silhouettes deviennent plus basses en toundra.
+        if (flora != FloraType.Stump && map.Biome is Biome.Tundra or Biome.IceSheet) scale *= 0.72f;
         Vector2 size = sprite.GetSize() * scale;
         Vector2 bottomCenter = tileOrigin + FootOffset(x, y);
         if (shadow)

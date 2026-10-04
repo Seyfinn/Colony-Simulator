@@ -4,8 +4,10 @@ namespace GodColony.Simulation.Colonies;
 /// Les bâtiments de la colonie : des huttes pour dormir, puis les ateliers de la chaîne du fer.
 /// La charbonnière brûle du bois en charbon de bois, le bas fourneau tire du fer du minerai,
 /// la forge fait des outils de ce fer. Le moulin à eau moud le grain en farine, le four à pain en fait du pain.
+/// L'enclos abrite les bêtes, le métier à tisser fait des vêtements de laine, le marché troque la denrée de la région.
+/// L'infirmerie soigne, l'entrepôt protège les vivres, le puits donne de l'eau saine, la taverne délasse, l'école instruit.
 /// </summary>
-public enum BuildingType { Hut, Kiln, Bloomery, Forge, Dam, Mill, Oven }
+public enum BuildingType { Hut, Kiln, Bloomery, Forge, Dam, Mill, Oven, Pen, Loom, Market, Infirmary, Storehouse, Well, Tavern, School, Cask }
 
 /// <summary>
 /// Un bâtiment de la colonie, du chantier à l'achèvement. Tous font 2 × 2 cases ; ils coûtent du bois
@@ -31,7 +33,12 @@ public sealed class Building
 
     public bool IsHut => Type == BuildingType.Hut;
     public bool IsDam => Type == BuildingType.Dam;
-    public bool IsWorkshop => Type is BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge or BuildingType.Mill or BuildingType.Oven;
+    public bool IsWorkshop => Type is BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge or BuildingType.Mill or BuildingType.Oven
+        or BuildingType.Loom or BuildingType.Market;
+
+    /// <summary>Les bâtiments de la vie du village (hors ateliers) : enclos, infirmerie, entrepôt, puits, taverne, école.</summary>
+    public bool IsCivic => Type is BuildingType.Pen or BuildingType.Infirmary or BuildingType.Storehouse or BuildingType.Well
+        or BuildingType.Tavern or BuildingType.School or BuildingType.Cask;
 
     /// <summary>Case en haut à gauche du bâtiment.</summary>
     public int X { get; }
@@ -48,6 +55,15 @@ public sealed class Building
         BuildingType.Dam => 16,
         BuildingType.Mill => 14,
         BuildingType.Oven => 6,
+        BuildingType.Pen => 10,
+        BuildingType.Loom => 8,
+        BuildingType.Market => 14,
+        BuildingType.Infirmary => 12,
+        BuildingType.Storehouse => 18,
+        BuildingType.Well => 4,
+        BuildingType.Tavern => 16,
+        BuildingType.School => 14,
+        BuildingType.Cask => 6,
         _ => HutWood,
     };
 
@@ -59,6 +75,12 @@ public sealed class Building
         BuildingType.Dam => 30,
         BuildingType.Mill => 20,
         BuildingType.Oven => 16,
+        BuildingType.Market => 6,
+        BuildingType.Infirmary => 8,
+        BuildingType.Storehouse => 10,
+        BuildingType.Well => 14,
+        BuildingType.Tavern => 4,
+        BuildingType.School => 6,
         _ => 0,
     };
 
@@ -70,8 +92,28 @@ public sealed class Building
         BuildingType.Dam => 40f,
         BuildingType.Mill => 26f,
         BuildingType.Oven => 18f,
+        BuildingType.Pen => 14f,
+        BuildingType.Loom => 14f,
+        BuildingType.Market => 24f,
+        BuildingType.Infirmary => 24f,
+        BuildingType.Storehouse => 28f,
+        BuildingType.Well => 20f,
+        BuildingType.Tavern => 26f,
+        BuildingType.School => 24f,
+        BuildingType.Cask => 8f,
         _ => HutWorkSeconds,
     };
+
+    /// <summary>
+    /// Pour un fût : le moment où sa bière sera prête (0 s'il est vide). Il fermente cinq jours (voir <see cref="Cuisine.BrewDays"/>) puis livre ses chopes à la taverne.
+    /// </summary>
+    public long BrewReadyTicks { get; internal set; }
+
+    /// <summary>Pour un fût : ce qu'a coûté sa fournée en heures de travail (céréales comprises), pour fixer le prix de la bière.</summary>
+    public double BrewCostHours { get; internal set; }
+
+    /// <summary>Le fût contient une fournée, qu'elle fermente encore ou qu'elle attende d'être tirée.</summary>
+    public bool IsBrewing => BrewReadyTicks > 0;
 
     public int WoodDelivered { get; internal set; }
     public int StoneDelivered { get; internal set; }
@@ -145,7 +187,19 @@ public sealed class Building
     public (int X, int Y) BedOf(Colonist colonist) => Tiles.ElementAt(Math.Max(0, Residents.IndexOf(colonist)) % HutCapacity);
 
     /// <summary>Le nom est féminin en français (« une forge »).</summary>
-    public static bool IsFeminine(BuildingType type) => type is BuildingType.Hut or BuildingType.Kiln or BuildingType.Forge;
+    public static bool IsFeminine(BuildingType type) =>
+        type is BuildingType.Hut or BuildingType.Kiln or BuildingType.Forge or BuildingType.Infirmary or BuildingType.Tavern or BuildingType.School;
+
+    /// <summary>« la forge », « le moulin », « l'infirmerie » (élision devant une voyelle ; le h de « hutte » est aspiré).</summary>
+    public static string Definite(BuildingType type)
+    {
+        string name = NameOf(type);
+        return "aeiouyé".Contains(name[0]) ? "l'" + name : (IsFeminine(type) ? "la " : "le ") + name;
+    }
+
+    /// <summary>« à la forge », « au moulin », « à l'infirmerie ».</summary>
+    public static string AtThe(BuildingType type) =>
+        Definite(type).StartsWith("l'") ? "à " + Definite(type) : (IsFeminine(type) ? "à la " : "au ") + NameOf(type);
 
     /// <summary>« un moulin », « une forge ».</summary>
     public static string WithArticle(BuildingType type) => (IsFeminine(type) ? "une " : "un ") + NameOf(type);
@@ -158,6 +212,15 @@ public sealed class Building
         BuildingType.Dam => "barrage",
         BuildingType.Mill => "moulin",
         BuildingType.Oven => "four à pain",
+        BuildingType.Pen => "enclos",
+        BuildingType.Loom => "métier à tisser",
+        BuildingType.Market => "marché",
+        BuildingType.Infirmary => "infirmerie",
+        BuildingType.Storehouse => "entrepôt",
+        BuildingType.Well => "puits",
+        BuildingType.Tavern => "taverne",
+        BuildingType.School => "école",
+        BuildingType.Cask => "fût",
         _ => "hutte",
     };
 }

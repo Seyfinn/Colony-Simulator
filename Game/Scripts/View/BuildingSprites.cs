@@ -33,6 +33,15 @@ public static partial class BuildingSprites
             case "Forge": Forge(art, biome); break;
             case "Mill": Mill(art, biome); break;
             case "Oven": Bakery(art, biome); break;
+            case "Pen": Pen(art, biome); break;
+            case "Loom": Loom(art, biome); break;
+            case "Market": Market(art, biome); break;
+            case "Infirmary": Infirmary(art, biome); break;
+            case "Storehouse": Storehouse(art, biome); break;
+            case "Well": Well(art, biome); break;
+            case "Tavern": Tavern(art, biome); break;
+            case "School": School(art, biome); break;
+            case "Cask": Cask(art, biome); break;
             case "Dam": Dam(art); break;
             case "DamSide": SideDam(art); break;
             default: Cottage(art, biome); break;

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using Godot;
 using GodColony.Simulation.Map;
+using GodColony.Simulation.World;
 using Noise = GodColony.Simulation.Generation.Noise;
 
 namespace GodColony.View;
@@ -15,6 +16,7 @@ public static class EnvironmentDetails
     {
         if (map.HasWater(x, y) || map.IsCanal(x, y)) return;
         Surface surface = map.GetSurface(x, y);
+        if (surface is Surface.Grass or Surface.Dirt or Surface.Sand && RiverbankDetails.Draw(canvas, map, x, y, origin)) return;
         if (surface is not (Surface.Grass or Surface.Dirt or Surface.Stone)) return;
         WoodlandBiome biome = BiomeVisuals.At(map, x, y);
         if (surface == Surface.Stone && biome != WoodlandBiome.Highland) return;
@@ -27,11 +29,14 @@ public static class EnvironmentDetails
             WoodlandBiome.CoolForest => 0.21f, WoodlandBiome.Dryland => 0.16f,
             WoodlandBiome.Highland => 0.13f, _ => 0.12f,
         };
+        if (map.Biome is Biome.Tundra or Biome.Desert or Biome.IceSheet) density *= 0.3f;
+        if (map.Biome == Biome.TropicalForest) density *= 1.5f;
         if (Noise.Hash01(x, y, 163, map.Seed) > density) return;
         int variant = Math.Min(2, (int)(Noise.Hash01(x, y, 167, map.Seed) * 3));
         Texture2D sprite = Get(biome, variant);
         Vector2 foot = origin + new Vector2(10 + Noise.Hash01(x, y, 169, map.Seed) * 12, 20 + Noise.Hash01(x, y, 173, map.Seed) * 8).Round();
-        canvas.DrawTexture(sprite, foot - new Vector2(sprite.GetWidth() / 2f, sprite.GetHeight()));
+        Color tint = map.Biome == Biome.TropicalForest ? new Color(0.8f, 1.08f, 0.82f) : Colors.White;
+        canvas.DrawTexture(sprite, foot - new Vector2(sprite.GetWidth() / 2f, sprite.GetHeight()), tint);
     }
 
     private static bool Water(LocalMap map, int x, int y) => map.InBounds(x, y) && (map.HasWater(x, y) || map.IsCanalWet(x, y));

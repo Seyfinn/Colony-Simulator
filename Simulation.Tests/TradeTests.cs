@@ -212,7 +212,7 @@ public class TradeTests(ITestOutputHelper output)
             {
                 foreach (Colony c in world.Colonies)
                     watches[c].Observe(c);
-                Assert.Equal(coinsAtStart, CoinsInTheWorld(world)); // la monnaie ne se crée ni ne se perd
+                Assert.Equal(coinsAtStart, CoinsInTheWorld(world) + world.CoinsLostToEvents); // la monnaie ne se crée ni ne se perd (hors pillards et colporteurs)
             }
         }
 

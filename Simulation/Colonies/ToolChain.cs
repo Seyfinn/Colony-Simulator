@@ -1,6 +1,10 @@
 namespace GodColony.Simulation.Colonies;
 
-/// <summary>Une recette : dans un atelier, des matières deviennent un produit en quelques secondes de travail.</summary>
+/// <summary>
+/// Une recette : dans un atelier, des matières deviennent un produit. <c>Seconds</c> est la durée du geste à vitesse ×1
+/// pour un ouvrier moyen : plus la tâche est difficile, plus elle est longue (moudre, brûler du charbon, cuire, tisser, fondre, forger).
+/// Les coûts de référence d'<see cref="Economy.BaselineCost"/> suivent ces durées.
+/// </summary>
 public sealed record Recipe(BuildingType Workshop, (ResourceType Type, int Amount)[] Inputs, ResourceType Output, int OutputAmount, float Seconds);
 
 /// <summary>
@@ -42,9 +46,9 @@ public static class ToolChain
     private const int IronPerTool = 2;
     private const int CharcoalPerTool = 1;
 
-    private static readonly Recipe Charring = new(BuildingType.Kiln, [(ResourceType.Wood, WoodPerBatch)], ResourceType.Charcoal, CharcoalPerBatch, 6f);
-    private static readonly Recipe Smelting = new(BuildingType.Bloomery, [(ResourceType.IronOre, OrePerIron), (ResourceType.Charcoal, CharcoalPerIron)], ResourceType.Iron, 1, 8f);
-    private static readonly Recipe Forging = new(BuildingType.Forge, [(ResourceType.Iron, IronPerTool), (ResourceType.Charcoal, CharcoalPerTool)], ResourceType.Tools, 1, 8f);
+    private static readonly Recipe Charring = new(BuildingType.Kiln, [(ResourceType.Wood, WoodPerBatch)], ResourceType.Charcoal, CharcoalPerBatch, 12f);
+    private static readonly Recipe Smelting = new(BuildingType.Bloomery, [(ResourceType.IronOre, OrePerIron), (ResourceType.Charcoal, CharcoalPerIron)], ResourceType.Iron, 1, 24f);
+    private static readonly Recipe Forging = new(BuildingType.Forge, [(ResourceType.Iron, IronPerTool), (ResourceType.Charcoal, CharcoalPerTool)], ResourceType.Tools, 1, 32f);
 
     public static Recipe RecipeFor(BuildingType workshop) => workshop switch
     {
@@ -151,15 +155,19 @@ public static class ToolChain
     internal static bool TryTakeInputs(Colony colony, Recipe recipe, out double inputHours)
     {
         inputHours = 0;
-        if (!recipe.Inputs.All(i => colony.Stock.Get(i.Type) >= i.Amount))
+        if (!recipe.Inputs.All(i => colony.Stock.Get(Source(colony, i.Type, i.Amount)) >= i.Amount))
             return false;
         foreach ((ResourceType type, int amount) in recipe.Inputs)
         {
-            colony.Stock.TryTake(type, amount);
+            colony.Stock.TryTake(Source(colony, type, amount), amount);
             inputHours += amount * (colony.Labor.HoursPerUnit(type) ?? 0.0);
         }
         return true;
     }
+
+    /// <summary>La viande salée remplace la viande fraîche dans une recette quand celle-ci manque.</summary>
+    private static ResourceType Source(Colony colony, ResourceType type, int amount) =>
+        type == ResourceType.Meat && colony.Stock.Get(ResourceType.Meat) < amount ? ResourceType.SaltedMeat : type;
 
     internal static void Refund(Colony colony, Recipe recipe)
     {

@@ -1,11 +1,12 @@
 using System;
 using GodColony.Simulation.Generation;
 using GodColony.Simulation.Map;
+using GodColony.Simulation.World;
 
 namespace GodColony.View;
 
 /// <summary>Terrain pastoral en 32 pixels : sols nuancés, rives, roche stratifiée et veines de fer.</summary>
-public static class TerrainPainter
+public static partial class TerrainPainter
 {
     public const int TileSize = 32;
     private const int StratumHeight = 8;
@@ -17,6 +18,38 @@ public static class TerrainPainter
     private static readonly Rgb Rust = new(178, 111, 64), OreLight = new(221, 164, 100);
     private static readonly Rgb Lake = new(91, 151, 157), Depth = new(61, 114, 136), Foam = new(193, 216, 194);
     private readonly record struct GrassPalette(Rgb Shade, Rgb Main, Rgb Light);
+    private readonly record struct SoilPalette(Rgb Dark, Rgb Light, Rgb Sand, Rgb WetSand);
+    private static SoilPalette SoilFor(Biome biome) => biome switch
+    {
+        Biome.Desert => new(new(178, 147, 98), new(216, 184, 123), new(231, 209, 153), new(171, 152, 112)),
+        Biome.Steppe => new(new(154, 131, 87), new(191, 167, 112), Sand, WetSand),
+        Biome.Savanna => new(new(163, 121, 72), new(199, 157, 91), new(224, 194, 133), new(163, 142, 99)),
+        Biome.Tundra => new(new(125, 132, 117), new(161, 163, 143), new(193, 193, 166), new(142, 151, 137)),
+        Biome.IceSheet => new(new(188, 205, 207), new(228, 237, 224), new(230, 237, 226), new(164, 191, 192)),
+        Biome.TropicalForest => new(new(102, 86, 52), new(137, 110, 63), Sand, WetSand),
+        Biome.Swamp => new(new(86, 93, 57), new(119, 117, 74), new(168, 165, 113), new(114, 130, 93)),
+        _ => new(Loam, Clay, Sand, WetSand),
+    };
+
+    private static GrassPalette Palette(Biome region, WoodlandBiome local)
+    {
+        GrassPalette climate = region switch
+        {
+            Biome.Tundra => new(new(113, 132, 119), new(144, 157, 137), new(170, 180, 155)),
+            Biome.IceSheet => new(new(182, 203, 204), new(217, 229, 223), new(235, 242, 231)),
+            Biome.BorealForest => new(new(62, 102, 86), new(83, 122, 99), new(113, 145, 117)),
+            Biome.Grassland => new(new(110, 139, 82), new(140, 159, 97), new(166, 178, 117)),
+            Biome.Steppe => new(new(139, 138, 81), new(174, 164, 97), new(200, 186, 120)),
+            Biome.Desert => new(new(185, 162, 104), new(211, 186, 129), new(230, 208, 153)),
+            Biome.Savanna => new(new(151, 130, 65), new(186, 159, 82), new(212, 188, 111)),
+            Biome.TropicalForest => new(new(51, 104, 63), new(75, 132, 73), new(113, 158, 91)),
+            Biome.Swamp => new(new(66, 98, 63), new(96, 124, 74), new(133, 146, 92)),
+            _ => Palette(local),
+        };
+        // Les accents de berge ne doivent pas ramener un désert ou une toundra à une prairie tempérée.
+        return local == WoodlandBiome.WetBank && region is Biome.Desert or Biome.Steppe or Biome.Savanna
+            ? Blend(climate, Palette(local), 0.16f) : climate;
+    }
     private static GrassPalette Palette(WoodlandBiome biome) => biome switch
     {
         WoodlandBiome.Dryland => new(new(137, 137, 83), new(170, 164, 104), new(193, 181, 119)),
@@ -35,7 +68,7 @@ public static class TerrainPainter
     private struct PixelNoise()
     {
         public Noise.Value2DCursor Patch = new(47), Edge = new(51), Stripe = new(57), Ripple = new(59), RockPatch = new(63),
-            Deposit = new(67), Depth = new(69), Current = new(69), Ditch = new(73), Stream = new(191), Shore = new(193);
+            Deposit = new(67), Depth = new(69), Current = new(69), Ditch = new(73), Stream = new(191), Shore = new(193), Cracks = new(197);
         public CellHash Speck = new(53), Tuft = new(55), RippleFoam = new(61), Seam = new(65), CurrentFoam = new(71), Pebble = new(73);
     }
 
@@ -89,16 +122,18 @@ public static class TerrainPainter
         }
         Surface surface = VisualSurface(map, x, y);
         WoodlandBiome biome = BiomeVisuals.At(map, x, y);
-        GrassPalette palette = Palette(biome);
-        GrassPalette pn = Palette(BiomeVisuals.At(map, x, y - 1)), ps = Palette(BiomeVisuals.At(map, x, y + 1));
-        GrassPalette pw = Palette(BiomeVisuals.At(map, x - 1, y)), pe = Palette(BiomeVisuals.At(map, x + 1, y));
+        Biome region = map.Biome;
+        SoilPalette soilPalette = SoilFor(region);
+        GrassPalette palette = Palette(region, biome);
+        GrassPalette pn = Palette(region, BiomeVisuals.At(map, x, y - 1)), ps = Palette(region, BiomeVisuals.At(map, x, y + 1));
+        GrassPalette pw = Palette(region, BiomeVisuals.At(map, x - 1, y)), pe = Palette(region, BiomeVisuals.At(map, x + 1, y));
         int connections = canal ? WaterGeometry.Connections(map, x, y) : 0;
         byte[]? canalTile = canal ? RiverTiles.Get($"canal_{(wet ? "wet" : "dry")}_{connections}") : null;
         int riverMask = RiverTiles.Connections(map, x, y);
         int riverCorners = RiverTiles.Corners(map, x, y);
         byte[]? riverShape = wide ? null : RiverTiles.River(riverMask, riverCorners, river);
         byte[]? riverTile = !canal && surface != Surface.Water ? riverShape : null;
-        byte[]? lakeTile = surface == Surface.Water
+        byte[]? lakeTile = surface == Surface.Water && !wide
             ? RiverTiles.Shore(RiverTiles.LakeEdges(map, x, y, riverMask), riverShape) : null;
         // Avec le jeu complet de PNG, les rives restent dans la case ; sans lui, garder l'ancien tracé.
         bool pngRivers = RiverTiles.Complete;
@@ -108,6 +143,10 @@ public static class TerrainPainter
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
         Surface n = Neighbor(map, x, y - 1, surface), s = Neighbor(map, x, y + 1, surface);
         Surface w = Neighbor(map, x - 1, y, surface), e = Neighbor(map, x + 1, y, surface);
+        // À l'embouchure, fondre le courant dans l'eau profonde plutôt que dessiner une séparation rectiligne.
+        bool DeepWater(int ax, int ay) => wide && map.InBounds(ax, ay) && map.IsWater(ax, ay) && !map.IsWideRiver(ax, ay);
+        bool lakeNorth = DeepWater(x, y - 1), lakeSouth = DeepWater(x, y + 1);
+        bool lakeWest = DeepWater(x - 1, y), lakeEast = DeepWater(x + 1, y);
         int cliff = surface != Surface.Water && !river ? Math.Min(Math.Max(0, north - height), 3) * StratumHeight : 0;
         float ambient = 0.86f + height * 0.016f;
         var noise = new PixelNoise();
@@ -127,7 +166,7 @@ public static class TerrainPainter
                 int band = py / StratumHeight;
                 int layer = north - band - 1;
                 Material material = map.MaterialAt(x, y - 1, layer);
-                color = material == Material.Soil ? Blend(Loam, Clay, 0.38f) : RockPixel(ref noise, wx, wy, material == Material.IronOre);
+                color = material == Material.Soil ? Blend(soilPalette.Dark, soilPalette.Light, 0.38f) : RockPixel(ref noise, wx, wy, material == Material.IronOre);
                 int stratum = py % StratumHeight;
                 // Chaque strate possède des fractures décalées et une arête propre.
                 int joint = (wx + band * 9) % 23;
@@ -142,7 +181,25 @@ public static class TerrainPainter
                 if (px < 6) grass = Blend(grass, pw, (6 - px) / 12f);
                 else if (px > 25) grass = Blend(grass, pe, (px - 25) / 12f);
                 color = wide ? RiverPixel(ref noise, wx, wy, wideFlowX, wideFlowY, wideFlow)
-                    : GroundPixel(ref noise, surface, wx, wy, height, biome, grass);
+                    : GroundPixel(ref noise, surface, wx, wy, height, biome, grass, region, soilPalette);
+                if (wide)
+                {
+                    color = region switch
+                    {
+                        Biome.Swamp => Blend(color, new Rgb(65, 110, 87), 0.32f),
+                        Biome.TropicalForest => Blend(color, new Rgb(63, 123, 105), 0.19f),
+                        Biome.BorealForest or Biome.Tundra => Blend(color, new Rgb(76, 128, 147), 0.16f),
+                        _ => color,
+                    };
+                    int estuary = TileSize;
+                    if (lakeNorth) estuary = Math.Min(estuary, py);
+                    if (lakeSouth) estuary = Math.Min(estuary, 31 - py);
+                    if (lakeWest) estuary = Math.Min(estuary, px);
+                    if (lakeEast) estuary = Math.Min(estuary, 31 - px);
+                    if (estuary < 12)
+                        color = Blend(color, GroundPixel(ref noise, Surface.Water, wx, wy, height, biome, grass, region, soilPalette),
+                            1 - estuary / 12f);
+                }
                 if (flooded) color = Blend(color, Depth, 0.22f);
                 int edge = 2 + (int)(noise.Edge.At(wx / 9f, wy / 9f) * 4);
                 int distance = TileSize;
@@ -156,9 +213,9 @@ public static class TerrainPainter
                     if (surface == Surface.Water && adjacent != Surface.Water)
                         color = Blend(color, Foam, 0.12f);
                     else if (surface != Surface.Water && adjacent == Surface.Water)
-                        color = surface == Surface.Sand ? WetSand : Blend(color, Loam, 0.52f);
+                        color = surface == Surface.Sand ? soilPalette.WetSand : Blend(color, soilPalette.Dark, 0.52f);
                     else if (surface == Surface.Grass && adjacent is Surface.Dirt or Surface.Sand)
-                        color = Blend(GroundPixel(ref noise, adjacent, wx, wy, height, biome, grass), color, distance / (float)edge);
+                        color = Blend(GroundPixel(ref noise, adjacent, wx, wy, height, biome, grass, region, soilPalette), color, distance / (float)edge);
                     else if (surface is Surface.Stone or Surface.IronOre && adjacent == Surface.Grass)
                         color = Blend(color, Moss, (1 - distance / (float)edge) * 0.3f);
                 }
@@ -179,8 +236,8 @@ public static class TerrainPainter
                     bool mouth = streams.Length > 0 && WaterGeometry.Nearest(streams, px, py).Distance < 10;
                     if (lakeTile is null && !mouth && shore < margin)
                     {
-                        Rgb soil = GroundPixel(ref noise, Underlying(map, x, y), wx, wy, height, biome, grass);
-                        color = Blend(soil, Underlying(map, x, y) == Surface.Sand ? WetSand : Loam, 0.25f);
+                        Rgb soil = GroundPixel(ref noise, Underlying(map, x, y), wx, wy, height, biome, grass, region, soilPalette);
+                        color = Blend(soil, Underlying(map, x, y) == Surface.Sand ? soilPalette.WetSand : soilPalette.Dark, 0.25f);
                     }
                     else if (lakeTile is null && !mouth && shore < margin + 2.5f) color = Blend(color, Foam, 0.22f);
                 }
@@ -226,9 +283,11 @@ public static class TerrainPainter
         }
         if (lakeTile is not null) RiverTiles.Blend(lakeTile, pixels, stride, ox, oy);
         if (canalTile is not null) RiverTiles.Blend(canalTile, pixels, stride, ox, oy);
+        PaintRiverbank(map, x, y, pixels, stride, ox, oy, wide, riverMask, riverCorners);
     }
 
-    private static Rgb GroundPixel(ref PixelNoise noise, Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass)
+    private static Rgb GroundPixel(ref PixelNoise noise, Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass,
+        Biome region, SoilPalette soil)
     {
         float patch = noise.Patch.At(x / 42f, y / 42f);
         float speck = noise.Speck.At(x / 2, y / 2);
@@ -238,17 +297,32 @@ public static class TerrainPainter
             case Surface.Grass:
                 color = patch < 0.5f ? Blend(grass.Shade, grass.Main, 0.35f + patch * 1.3f) : Blend(grass.Main, grass.Light, (patch - 0.5f) * 1.3f);
                 int tuft = (int)(noise.Tuft.At(x / 11, y / 9) * 100);
-                if (tuft > 85 && x % 11 is 4 or 6 && y % 9 is 3 or 4) color = Tint(color, 1.14f);
-                if (tuft == 99 && x % 11 == 5 && y % 9 == 2) color = biome == WoodlandBiome.CoolForest ? new(166, 139, 100) : new(234, 214, 164);
-                if (biome == WoodlandBiome.Dryland && patch < 0.28f) color = Blend(color, Clay, (0.28f - patch) * 1.2f);
+                int sparseTuft = region is Biome.Tundra or Biome.Desert or Biome.IceSheet ? 97 : 85;
+                if (tuft > sparseTuft && x % 11 is 4 or 6 && y % 9 is 3 or 4) color = Tint(color, 1.14f);
+                if (region != Biome.IceSheet && tuft == 99 && x % 11 == 5 && y % 9 == 2) color = biome == WoodlandBiome.CoolForest ? new(166, 139, 100) : new(234, 214, 164);
+                if (biome == WoodlandBiome.Dryland && patch < 0.28f) color = Blend(color, soil.Light, (0.28f - patch) * 1.2f);
                 if (biome == WoodlandBiome.CoolForest && tuft > 82 && x % 11 is 3 or 4 && y % 9 == 6) color = new(148, 116, 73);
+                // Reflets de flaques dans le sol humide : décor seulement, sans ajouter une case d'eau.
+                if (region == Biome.Swamp && patch > 0.74f)
+                {
+                    color = Blend(color, new Rgb(85, 112, 91), Math.Min(1, (patch - 0.74f) * 10));
+                    if (y % 17 == 0 && x % 13 < 6) color = Blend(color, new Rgb(151, 164, 121), 0.35f);
+                }
                 break;
             case Surface.Dirt:
-                color = Blend(Loam, Clay, 0.45f + patch * 0.4f);
+                color = Blend(soil.Dark, soil.Light, 0.45f + patch * 0.4f);
                 if (speck > 0.92f && y % 7 < 2) color = Tint(color, 1.1f);
+                if (region == Biome.Desert)
+                {
+                    int warp = (int)(noise.Cracks.At(x / 21f, y / 19f) * 8);
+                    int cx = x + warp, cy = y + warp / 2;
+                    bool crack = (cx + cy / 29 * 13 + cy % 29 / 4) % 43 == 0 && cy % 29 < 22
+                        || (cy + cx / 43 * 7) % 29 == 0 && cx % 43 < 32;
+                    if (crack && patch < 0.7f) color = Tint(color, 0.83f);
+                }
                 break;
             case Surface.Sand:
-                color = Blend(WetSand, Sand, 0.78f + patch * 0.18f);
+                color = Blend(soil.WetSand, soil.Sand, 0.78f + patch * 0.18f);
                 if ((y + (int)(noise.Stripe.At(x / 16f, y / 24f) * 5)) % 13 == 0) color = Tint(color, 0.97f);
                 break;
             case Surface.Stone:
@@ -261,9 +335,11 @@ public static class TerrainPainter
                 }
                 return color;
             default:
-                color = Blend(Depth, Lake, elevation <= 1 ? 0.25f : 0.8f);
+                color = region == Biome.Swamp
+                    ? Blend(new Rgb(55, 81, 69), new Rgb(102, 129, 94), 0.25f + patch * 0.55f)
+                    : Blend(Depth, Lake, elevation <= 1 ? 0.25f : 0.8f);
                 int ripple = (y + (int)(noise.Ripple.At(x / 25f, y / 17f) * 5)) % 12;
-                if (ripple == 0 && noise.RippleFoam.At(x / 9, y / 12) > 0.72f) color = Blend(color, Foam, 0.18f);
+                if (ripple == 0 && noise.RippleFoam.At(x / 9, y / 12) > 0.72f) color = Blend(color, Foam, region == Biome.Swamp ? 0.08f : 0.18f);
                 return color;
         }
         return Tint(color, 0.985f + speck * 0.03f);

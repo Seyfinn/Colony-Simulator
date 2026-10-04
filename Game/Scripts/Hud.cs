@@ -31,7 +31,12 @@ public partial class Hud : CanvasLayer
     private readonly Dictionary<ResourceType, PanelContainer> _resourceCards = [];
     private readonly Dictionary<ResourceType, Label> _foodDetails = [];
     private PanelContainer _foodDropdown = null!;
-    private static readonly ResourceType[] FoodResources = [ResourceType.Food, ResourceType.Fish, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour];
+    private static readonly ResourceType[] FoodResources = [ResourceType.Food, ResourceType.Fish, ResourceType.Eggs, ResourceType.Milk, ResourceType.Meat, ResourceType.SaltedMeat,
+        ResourceType.Cake, ResourceType.Stew, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour];
+
+    /// <summary>Marchandises de l'élevage et du négoce : elles ont leur place dans l'écran Économie plutôt que dans le bandeau des stocks.</summary>
+    private static readonly ResourceType[] TradeGoods = [ResourceType.Wool, ResourceType.Clothes, ResourceType.Salt, ResourceType.Spices, ResourceType.Hardwood,
+        ResourceType.Chickens, ResourceType.Sheep, ResourceType.Cows];
     private readonly Dictionary<GameSpeed, Button> _speedButtons = [];
     private Button _pause = null!, _journalTab = null!, _workTab = null!, _collapse = null!;
     private PanelContainer _tray = null!, _help = null!, _colonistPanel = null!;
@@ -40,8 +45,8 @@ public partial class Hud : CanvasLayer
     private bool _trayExpanded = true, _showWork;
     private bool _mapOverlay, _economyOverlay;
     private readonly List<(Label Date, Label Message)> _thoughtRows = [];
-    private readonly Dictionary<WorkSector, (ProgressBar Bar, Label Value)> _shares = [];
-    private Label _costs = null!;
+
+    private ProductionDashboard _productionDashboard = null!;
     private string _thoughtStamp = "";
 
     private TextureRect _portrait = null!;
@@ -149,7 +154,7 @@ public partial class Hud : CanvasLayer
         row.AddThemeConstantOverride("v_separation", 6);
         foreach (ResourceType type in Enum.GetValues<ResourceType>())
         {
-            if (type != ResourceType.Food && FoodResources.Contains(type)) continue;
+            if ((type != ResourceType.Food && FoodResources.Contains(type)) || TradeGoods.Contains(type)) continue;
             var card = Panel();
             card.Name = $"Resource{type}";
             card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -169,6 +174,8 @@ public partial class Hud : CanvasLayer
                 "Flour" => "Farine moulue par le moulin à eau ; elle ne se mange pas crue.",
                 "Bread" => "Pain cuit au four : il nourrit mieux que les céréales crues.",
                 "Coins" => "Pièces de la monnaie commune à toutes les colonies.",
+                "Eggs" => "Œufs de l'enclos : ils se mangent comme la nourriture sauvage.",
+                "Milk" => "Lait des vaches : il nourrit un peu mieux que la nourriture sauvage, mais il tourne vite.",
                 _ => ResourceIcons.Name(type),
             };
             row.AddChild(card);
@@ -220,6 +227,13 @@ public partial class Hud : CanvasLayer
         {
             string name = type == ResourceType.Food ? "Baies" : ResourceIcons.Name(type);
             var line = Row(detail, 12);
+            line.AddChild(new TextureRect
+            {
+                Texture = ResourceIcons.Get(type), TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                CustomMinimumSize = new Vector2(16, 16), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
             Text(line, name, 14, Ink).CustomMinimumSize = new Vector2(85, 0);
             _foodDetails[type] = Text(line, "", 13, Ink);
             _foodDetails[type].Name = $"FoodDetail{type}";
@@ -227,6 +241,9 @@ public partial class Hud : CanvasLayer
         Text(detail, "Farine : à transformer en pain", 12, Muted);
         _foodDropdown.Hide();
     }
+
+    internal static int ResourceCardCount => Enum.GetValues<ResourceType>().Count(type =>
+        (type == ResourceType.Food || !FoodResources.Contains(type)) && !TradeGoods.Contains(type));
 
     private void PositionFoodDetails()
     {
@@ -245,7 +262,8 @@ public partial class Hud : CanvasLayer
         var column = Column(_tray, 8);
         var header = Row(column, 6);
         _journalTab = Button(header, "Journal", "Dernières pensées de la colonie", 94);
-        _workTab = Button(header, "Travail", "Répartition du travail et coûts de production", 94);
+        _workTab = Button(header, "Production", "Travail, recettes des ateliers et coûts de production", 110);
+        _workTab.Name = "Production";
         _journalTab.ToggleMode = _workTab.ToggleMode = true;
         _journalTab.Pressed += () => { _showWork = false; _trayExpanded = true; _thoughtStamp = ""; UpdateTray(); };
         _workTab.Pressed += () => { _showWork = true; _trayExpanded = true; UpdateTray(); };
@@ -266,22 +284,9 @@ public partial class Hud : CanvasLayer
             _thoughtRows.Add((date, message));
         }
         _workBody = Scroll(column, 174);
-        var work = Column(_workBody, 8);
-        work.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        foreach (WorkSector sector in WorkSectors.All)
-        {
-            var line = Row(work, 8);
-            var title = Text(line, SectorName(sector), 12, Ink);
-            title.CustomMinimumSize = new Vector2(145, 0);
-            var bar = Bar(Mint, 7);
-            line.AddChild(bar);
-            var value = Text(line, "", 12, Gold);
-            value.CustomMinimumSize = new Vector2(40, 0);
-            value.HorizontalAlignment = HorizontalAlignment.Right;
-            _shares[sector] = (bar, value);
-        }
-        Section(work, "COÛT PAR UNITÉ · HEURES DE TRAVAIL");
-        _costs = Wrapped(work, "", 12, Muted);
+        _workBody.Name = "DefilementProduction";
+        _productionDashboard = new ProductionDashboard();
+        _workBody.AddChild(_productionDashboard);
         UpdateTray();
     }
 
@@ -397,7 +402,6 @@ public partial class Hud : CanvasLayer
         float inspectorWidth = Math.Clamp(_root.Size.X * 0.24f, 300, 336);
         _colonistPanel.OffsetLeft = -16 - inspectorWidth;
         _colonistPanel.OffsetTop = layout.ContentTop;
-        _tray.OffsetRight = 16 + Math.Min(420, Math.Max(300, _root.Size.X - inspectorWidth - 56));
         UpdateTray();
     }
 
@@ -408,11 +412,16 @@ public partial class Hud : CanvasLayer
         _journalTab.ButtonPressed = !_showWork;
         _workTab.ButtonPressed = _showWork;
         _collapse.Text = _trayExpanded ? "−" : "+";
-        _tray.OffsetTop = _trayExpanded ? -Math.Min(316, Math.Max(220, _root.Size.Y * 0.35f)) : -122;
+        float inspectorWidth = Math.Clamp(_root.Size.X * 0.24f, 300, 336);
+        float width = _trayExpanded && _showWork ? 680 : 420;
+        _tray.OffsetRight = 16 + Math.Min(width, Math.Max(300, _root.Size.X - inspectorWidth - 56));
+        float availableHeight = _root.Size.Y - InterfaceLayout.For(_root.Size).ContentTop - 60;
+        _tray.OffsetTop = _trayExpanded && _showWork
+            ? -60 - Math.Min(600, Math.Max(240, availableHeight))
+            : _trayExpanded ? -Math.Min(316, Math.Max(220, _root.Size.Y * 0.35f)) : -122;
         float bodyHeight = Math.Max(100, -_tray.OffsetTop - 120);
         _journalBody.CustomMinimumSize = _workBody.CustomMinimumSize = new Vector2(0, bodyHeight);
     }
-
     public bool HelpOpen => _help.Visible;
     public bool IsRenaming => _nameEditor.IsVisibleInTree();
     public void ToggleHelp() { _help.Visible = !_help.Visible; SetOverlayState(_mapOverlay, _economyOverlay); }
@@ -451,6 +460,8 @@ public partial class Hud : CanvasLayer
         string population = $"{colony.Members.Count} habitants" + (colony.Children > 0 ? $" · {colony.Children} enfants" : "");
         if (arriving > 0) population += $" · {arriving} en route";
         if (colony.Graves.Count > 0) population += $" · {colony.Graves.Count} tombes";
+        int sick = Health.PatientCount(colony);
+        if (sick > 0) population += $" · {sick} malade{(sick > 1 ? "s" : "")}";
         float days = colony.Stock.FoodUnits / (Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay);
         _colonyMeta.Text = $"{population}   ·   Humeur {colony.AverageMood * 100:0} %   ·   Réserves {days:0.0} j";
         _colonyMeta.TooltipText = $"{population}\nRéserves de repas : {days:0.0} jours (nourriture, céréales et pain)\nHumeur : {colony.AverageMood * 100:0} % · Attrait : {Migration.Attractiveness(colony, clock) * 100:0} %";
@@ -489,14 +500,8 @@ public partial class Hud : CanvasLayer
     public void ShowShares(Colony colony)
     {
         if (!_workBody.Visible) return;
-        foreach (var (sector, display) in _shares)
-        {
-            display.Bar.Value = colony.WorkShares[sector];
-            display.Value.Text = $"{colony.WorkShares[sector] * 100:0} %";
-        }
-        _costs.Text = ColonyBrain.CostSummary(colony.Labor);
+        _productionDashboard.Refresh(colony);
     }
-
     public void ShowThoughts(Colony colony)
     {
         if (!_journalBody.Visible) return;
@@ -535,7 +540,8 @@ public partial class Hud : CanvasLayer
             _portraitAppearance = appearance;
         }
         _colonistName.Text = colonist.FullName;
-        _colonistActivity.Text = Describe(colonist);
+        _colonistActivity.Text = (colonist.Ailment == Ailment.None ? "" : Health.Describe(colonist) + " · ")
+            + (colonist.IsBoosted ? "Revigoré par le ragoût · " : "") + (colonist.Needs.BeerCheer > 0.1f ? "Requinqué par la bière · " : "") + Describe(colonist);
         string stage = colonist.Stage switch
         {
             LifeStage.Child => "Enfant", LifeStage.Teen => "Adolescent" + (colonist.Sex == Sex.Female ? "e" : ""),
@@ -628,7 +634,8 @@ public partial class Hud : CanvasLayer
     private static string SkillName(SkillType skill) => skill.ToString() switch
     {
         "Foraging" => "Cueillette", "Fishing" => "Pêche", "Woodcutting" => "Bûcheronnage", "Mining" => "Minage",
-        "Farming" => "Agriculture", "Smithing" => "Métallurgie", "Cooking" => "Boulangerie", _ => "Construction",
+        "Farming" => "Agriculture", "Smithing" => "Métallurgie", "Cooking" => "Boulangerie", "Husbandry" => "Élevage",
+        "Weaving" => "Tissage", "Trading" => "Négoce", "Medicine" => "Médecine", _ => "Construction",
     };
 
     private static string Describe(Colonist colonist)
@@ -641,6 +648,8 @@ public partial class Hud : CanvasLayer
         {
             ActivityKind.Sleep => there ? "Dort" : "Va se coucher",
             ActivityKind.Eat => there ? "Mange" : "Va manger au camp",
+            ActivityKind.Relax when activity.Building is { Type: BuildingType.Infirmary } => there ? "Se repose à l'infirmerie" : "Va à l'infirmerie",
+            ActivityKind.Relax when activity.Building is { Type: BuildingType.Tavern } => there ? "Se détend à la taverne" : "Va à la taverne",
             ActivityKind.Relax => there ? "Se détend près du feu" : "Va se détendre près du feu",
             ActivityKind.Forage => there ? "Cueille des baies" : "Part cueillir des baies",
             ActivityKind.ForageToEat => there ? "Mange des baies sauvages" : "Cherche des baies à manger",
@@ -656,12 +665,17 @@ public partial class Hud : CanvasLayer
                     : "Bâtit une hutte")
                 : "Part sur le chantier",
             ActivityKind.Dig => there ? "Creuse un canal" : "Part creuser le canal",
+            ActivityKind.Craft when activity.Building is { Type: BuildingType.Cask } => there ? "Verse les céréales dans le fût" : "Part au fût de la taverne",
             ActivityKind.Craft => activity.Building is { } workshop
                 ? $"{(there ? "Travaille" : "Part")} {(Building.IsFeminine(workshop.Type) ? "à la" : "au")} {Building.NameOf(workshop.Type)}"
                 : "Travaille à l'atelier",
             ActivityKind.Chat => there ? "Bavarde" : "Va rejoindre quelqu'un pour bavarder",
             ActivityKind.Sow => there ? "Sème" : "Part semer",
             ActivityKind.Harvest => there ? "Moissonne" : "Part moissonner",
+            ActivityKind.Tend => there ? "Soigne les bêtes de l'enclos" : "Part à l'enclos",
+            ActivityKind.Slaughter => there ? "Abat une bête" : "Part à l'enclos pour abattre une bête",
+            ActivityKind.Heal => there ? "Soigne les malades" : "Part à l'infirmerie",
+            ActivityKind.Study => there ? "Apprend à l'école" : "Part à l'école",
             ActivityKind.Arrive => "Marche vers la colonie",
             ActivityKind.Depart => "Quitte la colonie pour de bon",
             _ => "Se promène",

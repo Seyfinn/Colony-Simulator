@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using GodColony.Simulation;
@@ -17,6 +18,14 @@ public partial class Main
     private LocalMap? _foundingMap;
     private Vector2I? _foundingSite;
     private int _foundingTile = -1;
+
+    /// <summary>Les régions puis les camps conseillés, et le rang de celui qui est proposé (-1 : aucun encore) ; chaque clic passe au suivant.</summary>
+    private IReadOnlyList<int> _regionSuggestions = [];
+    private Species? _regionSuggestionsFor;
+    private int _regionSuggestion = -1;
+    private IReadOnlyList<(int X, int Y)> _siteSuggestions = [];
+    private int _siteSuggestion = -1;
+    private const int SuggestionCount = 5;
     private bool _mapBeforeFounding;
     private Label? _notification;
     private PanelContainer? _notificationCard;
@@ -156,6 +165,7 @@ public partial class Main
     {
         if (_foundingMap is not null) RestoreObservedMap();
         _foundingSite = null; _foundingPreview.Hide();
+        _regionSuggestion = -1; _worldPanel.ShowSuggestions([], -1);
         _foundingPanel.ShowRegionStage();
         _worldPanel.PickingSite = true; _camera.ControlsEnabled = false;
     }
@@ -164,12 +174,15 @@ public partial class Main
     {
         if (!_foundingPanel.IsOpen || !_world.WorldMap.CanSettle(tile, out _)) return;
         _foundingTile = tile;
+        _worldPanel.ShowSuggestions([], -1);
         _foundingMap = _world.GenerateColonyMap(tile);
         DisplayMap(_foundingMap, null);
         _worldPanel.PickingSite = false; _worldPanel.MapOpen = false;
         _foundingPanel.ShowTerrainStage(_world.WorldMap.Grid[tile].Describe().ToLowerInvariant());
         _foundingPreview.SelectedTile = null; _foundingPreview.Show();
-        (int cx, int cy) = ColonyFounder.FindCampSite(_foundingMap);
+        _siteSuggestions = ColonyFounder.FindCampSites(_foundingMap, SuggestionCount); _siteSuggestion = -1;
+        _foundingPreview.Suggestions = [.. _siteSuggestions.Select(s => new Vector2I(s.X, s.Y))];
+        (int cx, int cy) = _siteSuggestions[0];
         _camera.Position = new Vector2(cx + 0.5f, cy + 0.5f) * TerrainPainter.TileSize;
         _camera.Zoom = Vector2.One * 1.25f; _camera.ControlsEnabled = true;
         _hudCooldown = 0;
@@ -178,17 +191,47 @@ public partial class Main
     private void SelectFoundingSite(int x, int y)
     {
         if (_foundingMap is null) return;
+        // Un clic libre sort de la liste des conseils : le suivant redémarre au meilleur.
+        if (_siteSuggestion >= 0 && _siteSuggestions[_siteSuggestion] != (x, y)) _siteSuggestion = -1;
         bool valid = ColonyFounder.CanFoundAt(_foundingMap, x, y, out string reason);
         _foundingSite = new Vector2I(x, y);
         _foundingPreview.SelectedTile = _foundingSite; _foundingPreview.SelectedValid = valid;
         _foundingPanel.SetSite(x, y, valid, reason); _foundingPreview.QueueRedraw();
     }
 
+    /// <summary>Propose le camp conseillé suivant (au terrain) ou la région conseillée suivante (sur la carte du monde).</summary>
     private void SelectSuggestedSite()
     {
-        if (_foundingMap is null) return;
-        (int x, int y) = ColonyFounder.FindCampSite(_foundingMap);
-        SelectFoundingSite(x, y);
+        if (!_foundingPanel.IsOpen) return;
+        if (_foundingMap is null) SuggestRegion();
+        else SuggestCamp();
+    }
+
+    private void SuggestRegion()
+    {
+        Species species = _foundingPanel.Species;
+        if (_regionSuggestionsFor != species || _regionSuggestion < 0)
+        {
+            _regionSuggestions = _world.WorldMap.SuggestTiles(species, SuggestionCount);
+            _regionSuggestionsFor = species; _regionSuggestion = -1;
+        }
+        if (_regionSuggestions.Count == 0) return;
+        _regionSuggestion = (_regionSuggestion + 1) % _regionSuggestions.Count;
+        int tile = _regionSuggestions[_regionSuggestion];
+        _worldPanel.ShowSuggestions(_regionSuggestions, tile);
+        _foundingPanel.SetSuggestedRegion(_regionSuggestion + 1, _regionSuggestions.Count, _world.WorldMap.Grid[tile].Describe().ToLowerInvariant());
+    }
+
+    private void SuggestCamp()
+    {
+        if (_foundingMap is null || _siteSuggestions.Count == 0) return;
+        _siteSuggestion = (_siteSuggestion + 1) % _siteSuggestions.Count;
+        (int x, int y) = _siteSuggestions[_siteSuggestion];
+        bool valid = ColonyFounder.CanFoundAt(_foundingMap, x, y, out string reason);
+        _foundingSite = new Vector2I(x, y);
+        _foundingPreview.SelectedTile = _foundingSite; _foundingPreview.SelectedValid = valid;
+        _foundingPanel.SetSite(x, y, valid, reason, _siteSuggestion + 1, _siteSuggestions.Count);
+        _foundingPreview.QueueRedraw();
         _camera.Position = new Vector2(x + 0.5f, y + 0.5f) * TerrainPainter.TileSize;
     }
 

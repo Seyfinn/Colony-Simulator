@@ -19,7 +19,7 @@ public static class SpriteFactory
     private static ImageTexture? _firepit, _grave, _chat, _sleep;
     private static readonly Dictionary<(int Id, bool Elder, WoodlandBiome Biome), ImageTexture[]> Colonists = [];
 
-    /// <summary>Chêne, bouleau, conifère et saule : quatre silhouettes en 32 × 48 pixels.</summary>
+    /// <summary>Chêne, bouleau, conifère, saule, acacia et arbre tropical en 32 × 48 pixels.</summary>
     public static ImageTexture Tree => TreeVariant(0);
     public static ImageTexture TreeVariant(int variant, int detail = 0)
     {

@@ -47,6 +47,11 @@ public partial class Main
             var worldMap = Descendants(_worldPanel).OfType<WorldMapView>().Single();
             // Le pilote sans affichage ne dimensionne pas les contrôles ; ce rectangle permet d'y tester le même clic.
             if (worldMap.Size == Vector2.Zero) worldMap.Size = new Vector2(1164, 548);
+            Click(_foundingPanel, "Emplacement conseillé");
+            int firstRegion = worldMap.CurrentSuggestion;
+            Click(_foundingPanel, "Emplacement conseillé");
+            Require(firstRegion >= 0 && worldMap.CurrentSuggestion >= 0 && worldMap.CurrentSuggestion != firstRegion && _foundingMap is null,
+                "Chaque clic sur « Emplacement conseillé » doit proposer une autre région sans quitter la carte du monde.");
             worldMap._GuiInput(new InputEventMouseButton
             {
                 ButtonIndex = MouseButton.Left, Pressed = true,
@@ -58,6 +63,12 @@ public partial class Main
             Click(_foundingPanel, "Emplacement conseillé");
             Require(!FindNamed<Button>(_foundingPanel, "ConfirmerFondation").Disabled, "Le site conseillé doit être constructible.");
             var chosen = _foundingSite!.Value;
+            if (_siteSuggestions.Count > 1)
+            {
+                Click(_foundingPanel, "Emplacement conseillé");
+                Require(_foundingSite!.Value != chosen, "Un deuxième clic doit proposer un autre camp conseillé.");
+                chosen = _foundingSite!.Value;
+            }
             await UiFrames(3);
             SaveSmokeCapture("fondation");
             Click(_foundingPanel, "Fonder la colonie");
@@ -128,7 +139,8 @@ public partial class Main
     {
         SetSpeed(GameSpeed.Pause);
         var savedFood = new Dictionary<ResourceType, int>();
-        foreach (var type in new[] { ResourceType.Food, ResourceType.Fish, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour })
+        foreach (var type in new[] { ResourceType.Food, ResourceType.Fish, ResourceType.Eggs, ResourceType.Milk, ResourceType.Meat, ResourceType.SaltedMeat,
+                ResourceType.Cake, ResourceType.Stew, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour })
         {
             savedFood[type] = Observed.Stock.Get(type);
             Observed.Stock.TryTake(type, savedFood[type]);

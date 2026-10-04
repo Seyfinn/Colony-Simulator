@@ -12,6 +12,15 @@ public sealed class Colony
 
     public string Name { get; }
 
+    /// <summary>Les 24 derniers événements, avec position et issue exactes ; effets visuels temporaires.</summary>
+    public IReadOnlyList<RecentEvent> RecentEvents => RecentEventHistory.For(this);
+    internal void RecordEvent(RecentEvent report)
+    {
+        List<RecentEvent> reports = RecentEventHistory.For(this);
+        reports.Add(report);
+        if (reports.Count > 24) reports.RemoveAt(0);
+    }
+
     /// <summary>L'espèce qui peuple la colonie (celle des fondateurs et des voyageurs).</summary>
     public Species Species { get; internal set; } = Species.Human;
 
@@ -124,6 +133,49 @@ public sealed class Colony
 
     /// <summary>Les champs de la colonie.</summary>
     public List<Field> Fields { get; } = [];
+
+    // --- Élevage et textile ---
+
+    public int Chickens { get; internal set; }
+    public int Sheep { get; internal set; }
+    public int Cows { get; internal set; }
+
+    /// <summary>Œufs, laine et lait qui attendent à l'enclos qu'on vienne les ramasser.</summary>
+    public float EggsReady { get; internal set; }
+    public float WoolReady { get; internal set; }
+    public float MilkReady { get; internal set; }
+
+    internal float ChickenGrowth { get; set; }
+    internal float SheepGrowth { get; set; }
+    internal float CowGrowth { get; set; }
+
+    /// <summary>Les bêtes que la colonie a décidé d'abattre aujourd'hui (espèce → nombre), voir <see cref="Husbandry.PlanSlaughter"/>.</summary>
+    public Dictionary<ResourceType, int> SlaughterOrders { get; } = [];
+
+    internal long LastMeatThoughtDay { get; set; } = -100;
+
+    /// <summary>Usure des vêtements : à chaque fois qu'elle atteint 1, un vêtement est perdu.</summary>
+    internal float ClothesWear { get; set; }
+
+    // --- Denrées de négoce ---
+
+    internal float SaltUse { get; set; }
+    internal float SpiceUse { get; set; }
+
+    // --- Santé, saisons, événements ---
+
+    /// <summary>Nombre de fièvres depuis la fondation : l'infirmerie devient une urgence.</summary>
+    public int IllnessCases { get; internal set; }
+
+    /// <summary>Jours restants d'une vague de froid (hiver) ou d'une sécheresse (été), 0 s'il n'y en a pas.</summary>
+    public int ColdSnapDaysLeft { get; internal set; }
+    public int DroughtDaysLeft { get; internal set; }
+
+    internal long LastHealthThoughtDay { get; set; } = -100;
+    internal long LastSpoilageThoughtDay { get; set; } = -100;
+
+    /// <summary>Les jalons atteints (identifiant → moment), voir <see cref="Milestones"/>.</summary>
+    public Dictionary<string, long> Achievements { get; } = [];
 
     /// <summary>Temps passé à semer, pour que le coût des céréales inclue les semailles.</summary>
     private long _sowTicks;

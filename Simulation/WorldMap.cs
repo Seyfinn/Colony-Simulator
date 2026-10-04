@@ -217,10 +217,15 @@ public sealed class WorldMap
     }
 
     /// <summary>Une case libre et agréable pour un peuple, près des colonies existantes (pour les fondations automatiques).</summary>
-    public int SuggestTile(Species species)
+    public int SuggestTile(Species species) => SuggestTiles(species, 1).FirstOrDefault(-1);
+
+    /// <summary>Écart minimal (en cases) entre deux cases conseillées, pour qu'elles représentent de vrais choix différents.</summary>
+    private const int SuggestionSpacing = 3;
+
+    /// <summary>Les cases libres les plus agréables pour un peuple, de la plus à la moins conseillée (au plus <paramref name="count"/>).</summary>
+    public IReadOnlyList<int> SuggestTiles(Species species, int count)
     {
-        int best = -1;
-        float bestScore = float.MinValue;
+        var scored = new List<(int Index, float Score)>();
         foreach (WorldTile tile in Grid.Tiles)
         {
             if (!CanSettle(tile.Index, out _))
@@ -228,13 +233,18 @@ public sealed class WorldMap
             float score = species.Appeal(tile);
             if (_tiles.Count > 0)
                 score -= 0.15f * _tiles.Values.Min(t => Grid.Distance(t, tile.Index));
-            if (score > bestScore)
-            {
-                bestScore = score;
-                best = tile.Index;
-            }
+            scored.Add((tile.Index, score));
         }
-        return best;
+        var chosen = new List<int>();
+        // Le tri est stable : à score égal, la première case de la grille reste la première conseillée.
+        foreach ((int index, _) in scored.OrderByDescending(t => t.Score))
+        {
+            if (chosen.Count >= count)
+                break;
+            if (chosen.All(c => Grid.Distance(c, index) >= SuggestionSpacing))
+                chosen.Add(index);
+        }
+        return chosen;
     }
 
     /// <summary>Numéro de la terre (continent ou île) de chaque case praticable, -1 pour la mer et les sommets.</summary>
