@@ -21,17 +21,21 @@ public partial class Hud : CanvasLayer
     public event Action? PauseRequested;
     public event Action? SelectionClosed;
     public event Action? MenuRequested;
+    public event Action? RecenterRequested;
+    public event Action? HelpRequested;
     public event Action<Colonist, string, string>? ColonistRenameRequested;
 
     private Control _root = null!;
     private Label _colonyName = null!, _colonyMeta = null!, _calendar = null!, _hour = null!, _tileInfo = null!;
     private readonly Dictionary<ResourceType, Label> _stocks = [];
+    private readonly Dictionary<ResourceType, PanelContainer> _resourceCards = [];
     private readonly Dictionary<GameSpeed, Button> _speedButtons = [];
     private Button _pause = null!, _journalTab = null!, _workTab = null!, _collapse = null!;
     private PanelContainer _tray = null!, _help = null!, _colonistPanel = null!;
-    private HBoxContainer _resourceRow = null!;
+    private GridContainer _resourceRow = null!;
     private ScrollContainer _journalBody = null!, _workBody = null!;
     private bool _trayExpanded = true, _showWork;
+    private bool _mapOverlay, _economyOverlay;
     private readonly List<(Label Date, Label Message)> _thoughtRows = [];
     private readonly Dictionary<WorkSector, (ProgressBar Bar, Label Value)> _shares = [];
     private Label _costs = null!;
@@ -55,7 +59,7 @@ public partial class Hud : CanvasLayer
         _root = new Control { Name = "Interface", MouseFilter = Control.MouseFilterEnum.Ignore };
         AddChild(_root);
         _root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        _root.Theme = new Theme { DefaultFontSize = 14, DefaultFont = ArtDirection.BodyFont };
+        _root.Theme = MenuStyle.Theme();
         _root.Theme.SetStylebox("panel", "TooltipPanel", Style(Background, Gold, 6, 10));
         _root.Theme.SetColor("font_color", "TooltipLabel", Ink);
         _root.Theme.SetFontSize("font_size", "TooltipLabel", 13);
@@ -124,16 +128,20 @@ public partial class Hud : CanvasLayer
 
     private void BuildResources()
     {
-        var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        var row = new GridContainer { Columns = 11, MouseFilter = Control.MouseFilterEnum.Ignore };
         _resourceRow = row;
         _root.AddChild(row);
         Place(row, 0, 0, 1, 0, 16, 98, -16, 168);
-        row.AddThemeConstantOverride("separation", 8);
+        row.AddThemeConstantOverride("h_separation", 6);
+        row.AddThemeConstantOverride("v_separation", 6);
         foreach (ResourceType type in Enum.GetValues<ResourceType>())
         {
             var card = Panel();
             card.Name = $"Resource{type}";
             card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+            card.CustomMinimumSize = new Vector2(0, 54);
+            card.AddThemeStyleboxOverride("panel", MenuStyle.Surface(8));
+            _resourceCards[type] = card;
             card.TooltipText = type.ToString() switch
             {
                 "Food" => "Baies et poisson. Les habitants utilisent d'abord cette nourriture pour leurs repas.",
@@ -150,22 +158,24 @@ public partial class Hud : CanvasLayer
                 _ => ResourceIcons.Name(type),
             };
             row.AddChild(card);
-            var content = Row(card, 12);
+            var content = Row(card, 8);
             var icon = new TextureRect
             {
                 Texture = ResourceIcons.Get(type), TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
                 ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize,
                 StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-                CustomMinimumSize = new Vector2(32, 32), MouseFilter = Control.MouseFilterEnum.Ignore,
+                CustomMinimumSize = new Vector2(24, 24), MouseFilter = Control.MouseFilterEnum.Ignore,
                 SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
             };
             content.AddChild(icon);
             var text = Column(content, 0);
             text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            var label = Text(text, ResourceIcons.Name(type), 12, Muted);
+            var label = Text(text, type == ResourceType.IronOre ? "Minerai" : ResourceIcons.Name(type), 12, Muted);
             label.ClipText = true;
             label.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
-            _stocks[type] = Text(text, "0", 22, Ink);
+            _stocks[type] = Text(text, "0", 21, Ink);
+            _stocks[type].ClipText = true;
+            _stocks[type].TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
         }
     }
 
@@ -180,7 +190,7 @@ public partial class Hud : CanvasLayer
         _journalTab = Button(header, "Journal", "Dernières pensées de la colonie", 94);
         _workTab = Button(header, "Travail", "Répartition du travail et coûts de production", 94);
         _journalTab.ToggleMode = _workTab.ToggleMode = true;
-        _journalTab.Pressed += () => { _showWork = false; _trayExpanded = true; UpdateTray(); };
+        _journalTab.Pressed += () => { _showWork = false; _trayExpanded = true; _thoughtStamp = ""; UpdateTray(); };
         _workTab.Pressed += () => { _showWork = true; _trayExpanded = true; UpdateTray(); };
         header.AddChild(new Control { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore });
         _collapse = Button(header, "−", "Replier / déplier ce panneau", 34);
@@ -304,25 +314,34 @@ public partial class Hud : CanvasLayer
         _tileInfo.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _tileInfo.ClipText = true;
         _tileInfo.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        var recenter = Button(row, "⌖  Recentrer", "Revenir au camp ou à l'habitant sélectionné · C", 110);
+        recenter.Name = "Recentrer";
+        recenter.CustomMinimumSize = new Vector2(110, 22);
+        recenter.Pressed += () => RecenterRequested?.Invoke();
         var helpButton = Button(row, "?  Commandes", "Afficher les commandes du jeu", 115);
         helpButton.Name = "Help";
         helpButton.CustomMinimumSize = new Vector2(115, 22);
-        helpButton.Pressed += () => _help.Visible = !_help.Visible;
+        helpButton.Pressed += () => HelpRequested?.Invoke();
         _help = Panel();
         _help.Name = "Commands";
         _root.AddChild(_help);
-        Place(_help, 0.5f, 1, 0.5f, 1, -235, -202, 235, -60);
+        Place(_help, 0.5f, 1, 0.5f, 1, -260, -320, 260, -60);
         _help.Visible = false;
         var commands = Column(_help, 8);
         Section(commands, "COMMANDES");
-        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit maintenu   Glisser la carte   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nFonder une colonie   Choisir une région, puis placer le camp\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   Échap   Menu / annuler", 13, Ink);
+        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit ou molette maintenue   Glisser   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nC   Recentrer sur le camp ou l'habitant sélectionné\nTab   Observer la colonie suivante\nM   Carte du monde   ·   E   Économie   ·   P   Prières\nJ   Journal   ·   H   Afficher / fermer les commandes\nEspace   Pause   ·   1 / 2 / 3   Vitesse\nF5   Sauvegarde rapide   ·   F9   Chargement rapide\nÉchap   Fermer un panneau / menu", 13, Ink);
     }
 
     private void ResizePanels()
     {
+        var layout = InterfaceLayout.For(_root.Size);
+        _resourceRow.Columns = layout.ResourceColumns;
+        _resourceRow.OffsetBottom = 98 + layout.ResourcesHeight;
         float inspectorWidth = Math.Clamp(_root.Size.X * 0.24f, 300, 336);
         _colonistPanel.OffsetLeft = -16 - inspectorWidth;
+        _colonistPanel.OffsetTop = layout.ContentTop;
         _tray.OffsetRight = 16 + Math.Min(420, Math.Max(300, _root.Size.X - inspectorWidth - 56));
+        UpdateTray();
     }
 
     private void UpdateTray()
@@ -332,7 +351,27 @@ public partial class Hud : CanvasLayer
         _journalTab.ButtonPressed = !_showWork;
         _workTab.ButtonPressed = _showWork;
         _collapse.Text = _trayExpanded ? "−" : "+";
-        _tray.OffsetTop = _trayExpanded ? -316 : -122;
+        _tray.OffsetTop = _trayExpanded ? -Math.Min(316, Math.Max(220, _root.Size.Y * 0.35f)) : -122;
+        float bodyHeight = Math.Max(100, -_tray.OffsetTop - 120);
+        _journalBody.CustomMinimumSize = _workBody.CustomMinimumSize = new Vector2(0, bodyHeight);
+    }
+
+    public bool HelpOpen => _help.Visible;
+    public bool IsRenaming => _nameEditor.IsVisibleInTree();
+    public void ToggleHelp() { _help.Visible = !_help.Visible; SetOverlayState(_mapOverlay, _economyOverlay); }
+    public void CloseHelp() { _help.Hide(); SetOverlayState(_mapOverlay, _economyOverlay); }
+    public void ToggleJournal()
+    {
+        _trayExpanded = _mapOverlay || _economyOverlay || !_trayExpanded;
+        _showWork = false; _thoughtStamp = ""; UpdateTray();
+    }
+
+    public void SetOverlayState(bool map, bool economy)
+    {
+        _mapOverlay = map; _economyOverlay = economy;
+        if (map || economy) _help.Hide();
+        _tray.Visible = _resourceRow.Visible && !map && !economy && !HelpOpen;
+        _colonistPanel.Visible = _shownColonist is not null && !map && !HelpOpen;
     }
 
     public void SetStatus(GameClock clock, GameSpeed speed)
@@ -340,21 +379,31 @@ public partial class Hud : CanvasLayer
         string season = clock.Season switch { Season.Printemps => "Printemps", Season.Ete => "Été", Season.Automne => "Automne", _ => "Hiver" };
         _calendar.Text = $"{season} · Jour {clock.DayOfSeason} / 5";
         _hour.Text = $"An {clock.Year}   ·   {clock.Hour:00}:{clock.Minute:00}" + (speed == GameSpeed.Pause ? "   ·   En pause" : "");
-        _pause.ButtonPressed = speed == GameSpeed.Pause;
-        foreach (var (mode, button) in _speedButtons) button.ButtonPressed = speed == mode;
+        _pause.SetPressedNoSignal(speed == GameSpeed.Pause);
+        _pause.Text = speed == GameSpeed.Pause ? "▶" : "Ⅱ";
+        _pause.TooltipText = speed == GameSpeed.Pause ? "Reprendre le temps · Espace" : "Mettre en pause · Espace";
+        foreach (var (mode, button) in _speedButtons) button.SetPressedNoSignal(speed == mode);
     }
 
     public void ShowColony(Colony colony, GameClock clock)
     {
-        _resourceRow.Show(); _tray.Show();
+        _resourceRow.Show(); _tray.Visible = !_mapOverlay && !_economyOverlay && !HelpOpen;
         _colonyName.Text = colony.Name;
         int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
         string population = $"{colony.Members.Count} habitants" + (colony.Children > 0 ? $" · {colony.Children} enfants" : "");
         if (arriving > 0) population += $" · {arriving} en route";
         if (colony.Graves.Count > 0) population += $" · {colony.Graves.Count} tombes";
-        _colonyMeta.Text = $"{population}   ·   Humeur {colony.AverageMood * 100:0} %   ·   Attrait {Migration.Attractiveness(colony, clock) * 100:0} %";
-        _colonyMeta.TooltipText = _colonyMeta.Text;
-        foreach (var (resource, value) in _stocks) value.Text = colony.Stock.Get(resource).ToString("N0");
+        float days = colony.Stock.FoodUnits / (Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay);
+        _colonyMeta.Text = $"{population}   ·   Humeur {colony.AverageMood * 100:0} %   ·   Réserves {days:0.0} j";
+        _colonyMeta.TooltipText = $"{population}\nRéserves de repas : {days:0.0} jours (nourriture, céréales et pain)\nHumeur : {colony.AverageMood * 100:0} % · Attrait : {Migration.Attractiveness(colony, clock) * 100:0} %";
+        foreach (var (resource, value) in _stocks)
+        {
+            int stock = colony.Stock.Get(resource);
+            value.Text = stock.ToString("N0");
+            value.AddThemeColorOverride("font_color", resource == ResourceType.Food && days < 2 ? MenuStyle.Error : stock == 0 ? Muted : Ink);
+        }
+        var foodStyle = (StyleBoxFlat)_resourceCards[ResourceType.Food].GetThemeStylebox("panel");
+        foodStyle.BorderColor = days < 2 ? MenuStyle.Error : Border;
     }
 
     public void ShowUnsettled(string name, string hint)
@@ -415,7 +464,7 @@ public partial class Hud : CanvasLayer
     {
         if (_shownColonist != colonist) CancelRename();
         _shownColonist = colonist;
-        _colonistPanel.Visible = colonist is not null;
+        _colonistPanel.Visible = colonist is not null && !_mapOverlay && !HelpOpen;
         if (colonist is null) return;
         var appearance = PeoplesSprites.Describe(colonist, biome);
         if (_portraitAppearance != appearance)
@@ -630,6 +679,9 @@ public partial class Hud : CanvasLayer
         button.AddThemeStyleboxOverride("normal", Style(new Color(0.1f, 0.17f, 0.14f), Border, 5, 5));
         button.AddThemeStyleboxOverride("hover", Style(new Color(0.16f, 0.24f, 0.18f), Mint, 5, 5));
         button.AddThemeStyleboxOverride("pressed", Style(new Color(0.23f, 0.24f, 0.15f), Gold, 5, 5));
+        button.AddThemeStyleboxOverride("hover_pressed", Style(new Color(0.28f, 0.29f, 0.19f), Gold, 5, 5));
+        button.AddThemeStyleboxOverride("disabled", Style(Background, Border, 5, 5));
+        button.AddThemeColorOverride("font_disabled_color", Muted.Darkened(0.35f));
         parent.AddChild(button); return button;
     }
 

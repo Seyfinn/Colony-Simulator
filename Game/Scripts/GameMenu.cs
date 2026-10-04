@@ -21,6 +21,9 @@ public partial class GameMenu : CanvasLayer
     public Func<int, SaveSlot>? ReadSaveSlot { get; set; }
     private Control _root = null!;
     private VBoxContainer _body = null!;
+    private ScrollContainer _scroll = null!;
+    private MenuBackdrop _backdrop = null!;
+    private ColorRect _shade = null!;
     private ConfirmationDialog _replace = null!;
     private ConfirmationDialog _fileConfirm = null!;
     private Action? _confirmedAction;
@@ -43,17 +46,21 @@ public partial class GameMenu : CanvasLayer
         _root = new Control { Name = "MenuPrincipal", MouseFilter = Control.MouseFilterEnum.Stop, Theme = MenuStyle.Theme() };
         AddChild(_root);
         _root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        var shade = new ColorRect { Color = new Color(0.025f, 0.055f, 0.05f, 0.96f), MouseFilter = Control.MouseFilterEnum.Ignore };
-        _root.AddChild(shade);
-        shade.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _backdrop = new MenuBackdrop();
+        _root.AddChild(_backdrop);
+        _backdrop.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
+        _shade = new ColorRect { Color = new Color(0.025f, 0.055f, 0.05f, 0.85f), MouseFilter = Control.MouseFilterEnum.Ignore };
+        _root.AddChild(_shade);
+        _shade.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
         var center = new CenterContainer();
         _root.AddChild(center);
         center.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-        var panel = new PanelContainer { CustomMinimumSize = new Vector2(600, 0) };
+        var panel = new PanelContainer { CustomMinimumSize = new Vector2(620, 0) };
         center.AddChild(panel);
-        var scroll = new ScrollContainer { CustomMinimumSize = new Vector2(556, 610), HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
-        panel.AddChild(scroll);
-        _body = MenuStyle.Column(scroll, 12);
+        _scroll = new ScrollContainer { HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled };
+        panel.AddChild(_scroll);
+        _body = MenuStyle.Column(_scroll, 12);
+        _root.Resized += ResizeMenu;
         _replace = new ConfirmationDialog
         {
             Title = "Créer un nouveau monde ?", DialogText = "La partie actuelle sera remplacée. Les changements depuis la dernière sauvegarde seront perdus.",
@@ -104,9 +111,14 @@ public partial class GameMenu : CanvasLayer
     private void ShowPage(string page)
     {
         _page = page;
+        _backdrop.Visible = !_pausedPage;
+        _shade.Visible = _pausedPage;
         _root.Show();
+        _scroll.ScrollVertical = 0;
+        ResizeMenu();
         foreach (Node child in _body.GetChildren()) { _body.RemoveChild(child); child.QueueFree(); }
-        MenuStyle.Text(_body, "GODCOLONY", 42, ArtDirection.Brass);
+        MenuStyle.Text(_body, "UN MONDE VIVANT · UNE HISTOIRE À FAÇONNER", 11, MenuStyle.Muted);
+        MenuStyle.Text(_body, "GODCOLONY", 38, ArtDirection.Brass);
         MenuStyle.Text(_body, "Un monde entre vos mains", 17, MenuStyle.Muted);
         _body.AddChild(new HSeparator());
         switch (page)
@@ -124,14 +136,20 @@ public partial class GameMenu : CanvasLayer
             if (child is Button button) { button.GrabFocus(); break; }
     }
 
+    private void ResizeMenu()
+    {
+        _scroll.CustomMinimumSize = new Vector2(576, Math.Clamp(_root.Size.Y - 100, 360, _page == "home" && !HasWorld ? 590 : 680));
+    }
+
     private void BuildHome()
     {
         MenuStyle.Text(_body, _pausedPage ? "Partie en pause" : "Bienvenue", 24);
         MenuStyle.Text(_body, "Façonnez un monde, fondez des colonies et observez leurs habitants construire leur histoire.", 15, MenuStyle.Muted, true);
-        if (HasWorld) MenuStyle.Button(_body, "Reprendre la partie", () => ResumeRequested?.Invoke());
+        if (HasWorld) MenuStyle.Primary(MenuStyle.Button(_body, "Reprendre la partie", () => ResumeRequested?.Invoke()));
+        else MenuStyle.Primary(MenuStyle.Button(_body, "Créer un monde", () => ShowPage("world")));
         if (HasWorld) MenuStyle.Button(_body, "Sauvegarder la partie", () => { _saveMessage = ""; ShowPage("save"); });
         MenuStyle.Button(_body, "Charger une partie", () => { _saveMessage = ""; ShowPage("load"); });
-        MenuStyle.Button(_body, "Créer un monde", () => ShowPage("world"));
+        if (HasWorld) MenuStyle.Button(_body, "Créer un monde", () => ShowPage("world"));
         MenuStyle.Button(_body, "Paramètres", () => ShowPage("settings"));
         MenuStyle.Button(_body, "Comment jouer", () => ShowPage("help"));
         if (_pausedPage) MenuStyle.Button(_body, "Retour à l'accueil", () => { HomeRequested?.Invoke(); ShowHome(); });
@@ -224,13 +242,13 @@ public partial class GameMenu : CanvasLayer
         speed.AddItem("Observation · ×1", 1); speed.AddItem("Rapide · ×4", 4); speed.AddItem("Très rapide · ×30", 30);
         _body.AddChild(speed);
         var error = MenuStyle.Text(_body, "", 14, MenuStyle.Error, true);
-        MenuStyle.Button(_body, "Créer et explorer", () =>
+        MenuStyle.Primary(MenuStyle.Button(_body, "Créer et explorer", () =>
         {
             if (!int.TryParse(seed.Text.Trim(), out int number)) { error.Text = "La graine doit être un nombre entier compris entre −2147483648 et 2147483647."; return; }
             _pendingWorld = new WorldCreationOptions(number, size.GetSelectedId(), colonies.GetSelectedId(), (int)founders.Value,
                 migration.ButtonPressed, lifecycle.ButtonPressed, trade.ButtonPressed, (GameSpeed)speed.GetSelectedId());
             if (HasWorld) _replace.PopupCentered(); else Generate(_pendingWorld);
-        });
+        }));
     }
 
     private void Generate(WorldCreationOptions options)
@@ -262,7 +280,7 @@ public partial class GameMenu : CanvasLayer
         var value = MenuStyle.Text(_body, $"×{sensitivity.Value:0.0}", 14, ArtDirection.Brass);
         sensitivity.ValueChanged += amount => value.Text = $"×{amount:0.0}";
         var result = MenuStyle.Text(_body, "", 14, MenuStyle.Muted, true);
-        MenuStyle.Button(_body, "Appliquer les paramètres", () =>
+        MenuStyle.Primary(MenuStyle.Button(_body, "Appliquer les paramètres", () =>
         {
             _settings.Fullscreen = fullscreen.ButtonPressed; _settings.VSync = vsync.ButtonPressed;
             _settings.AmbientEffects = ambience.ButtonPressed; _settings.CameraSensitivity = (float)sensitivity.Value;
@@ -270,13 +288,13 @@ public partial class GameMenu : CanvasLayer
             Error error = _settings.Save();
             SettingsChanged?.Invoke();
             result.Text = error == Error.Ok ? "Paramètres appliqués et conservés pour les prochains lancements." : "Paramètres appliqués ; impossible de les enregistrer sur ce disque.";
-        });
+        }));
     }
 
     private void BuildHelp()
     {
         MenuStyle.Text(_body, "Comment jouer", 24);
         MenuStyle.Text(_body, "1. Créez un monde vierge ou déjà peuplé.\n\n2. Cliquez sur « Fonder une colonie », choisissez son peuple et ses habitants, puis son emplacement sur la carte du monde.\n\n3. Sur le terrain, choisissez une zone plate. Le contour vert indique un camp valide ; le rouge signale un obstacle. Validez pour faire apparaître les fondateurs.\n\n4. Observez le travail, les naissances, le commerce et les prières de vos colonies.", 15, MenuStyle.Ink, true);
-        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nEspace : pause · 1 / 2 / 3 : vitesse\nF5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nÉchap : annuler la fondation, fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
+        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nC : recentrer · Tab : colonie suivante\nM : carte du monde · E : économie · P : prières\nJ : journal · H : commandes\nEspace : pause · 1 / 2 / 3 : vitesse\nF5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nÉchap : fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
     }
 }

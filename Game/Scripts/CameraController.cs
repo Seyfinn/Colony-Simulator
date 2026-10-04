@@ -16,6 +16,7 @@ public partial class CameraController : Camera2D
     private bool _dragging;
     private bool _controlsEnabled = true;
     public float Sensitivity { get; set; } = 1;
+    public Rect2 WorldBounds { get; set; }
     public bool ControlsEnabled
     {
         get => _controlsEnabled;
@@ -34,7 +35,10 @@ public partial class CameraController : Camera2D
         if (Input.IsKeyPressed(Key.D) || Input.IsKeyPressed(Key.Right)) direction.X += 1;
 
         if (direction != Vector2.Zero)
+        {
             Position += direction.Normalized() * PanSpeed * Sensitivity * (float)delta / Zoom.X;
+            ConstrainPosition();
+        }
     }
 
     public override void _UnhandledInput(InputEvent @event)
@@ -53,6 +57,7 @@ public partial class CameraController : Camera2D
                 break;
             case InputEventMouseMotion motion when _dragging:
                 Position -= motion.Relative / Zoom.X;
+                ConstrainPosition();
                 break;
         }
     }
@@ -65,5 +70,14 @@ public partial class CameraController : Camera2D
         Zoom = new Vector2(zoom, zoom);
         ForceUpdateScroll();
         Position += before - GetGlobalMousePosition();
+        ConstrainPosition();
+    }
+
+    /// <summary>Un déplacement garde le centre sur le terrain pour éviter de perdre la carte dans le vide.</summary>
+    private void ConstrainPosition()
+    {
+        if (WorldBounds.Size.X <= 0 || WorldBounds.Size.Y <= 0) return;
+        Position = new Vector2(Mathf.Clamp(Position.X, WorldBounds.Position.X, WorldBounds.End.X),
+            Mathf.Clamp(Position.Y, WorldBounds.Position.Y, WorldBounds.End.Y));
     }
 }

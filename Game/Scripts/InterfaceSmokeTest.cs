@@ -68,6 +68,7 @@ public partial class Main
             Require(colony.CampX == chosen.X && colony.CampY == chosen.Y, "Le camp doit occuper la case choisie.");
             await UiFrames(6);
             SaveSmokeCapture("colonie");
+            await VerifyObservationInterface();
 
             FindNamed<Button>(_hud, "MenuJeu").EmitSignal(BaseButton.SignalName.Pressed);
             frozen = _world.Clock.Ticks;
@@ -105,7 +106,13 @@ public partial class Main
             _worldPanel.MapOpen = true;
             await UiFrames(4);
             SaveSmokeCapture("monde");
-            GD.Print("INTERFACE_SMOKE_OK : accueil, graine invalide, monde vierge, fondation, pause, paramètres, annulation, reprise et remplacement.");
+            _worldPanel.MapOpen = false;
+            GetViewport().GuiReleaseFocus();
+            PressObservationKey(Key.Tab);
+            Require(_observed == 1, "Tab doit observer la colonie suivante.");
+            PressObservationKey(Key.Tab);
+            Require(_observed == 0, "Tab doit revenir à la première colonie après la dernière.");
+            GD.Print("INTERFACE_SMOKE_OK : menus, fondation, sauvegarde des paramètres, reprise, remplacement, raccourcis, saisie protégée, panneaux et économie stable.");
             GetTree().Quit();
         }
         catch (Exception exception)
@@ -113,6 +120,80 @@ public partial class Main
             GD.PushError($"INTERFACE_SMOKE_FAILED : {exception}");
             GetTree().Quit(1);
         }
+    }
+
+    private void PressObservationKey(Key key) => _UnhandledInput(new InputEventKey { Pressed = true, Keycode = key });
+
+    private async Task VerifyObservationInterface()
+    {
+        SetSpeed(GameSpeed.Pause);
+        GetViewport().GuiReleaseFocus();
+        PressObservationKey(Key.M);
+        Require(_worldPanel.MapOpen, "M doit ouvrir la carte du monde.");
+        PressObservationKey(Key.E);
+        Require(_worldPanel.Open && !_worldPanel.MapOpen, "L'économie et la carte doivent s'exclure.");
+        await UiFrames(35);
+        var scroll = FindNamed<ScrollContainer>(_worldPanel, "DefilementEconomie");
+        ulong contentId = scroll.GetChild(0).GetInstanceId();
+        scroll.ScrollVertical = 30;
+        int position = scroll.ScrollVertical;
+        await UiFrames(35);
+        Require(scroll.GetChild(0).GetInstanceId() == contentId && scroll.ScrollVertical == position,
+            "Actualiser l'économie doit conserver les contrôles et le défilement.");
+        SaveSmokeCapture("economie");
+        _Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+        Require(!_worldPanel.Open && !_menu.IsOpen, "Échap doit fermer l'économie sans ouvrir la pause.");
+
+        Select(Observed.Members[0]);
+        await UiFrames(8);
+        FindNamed<Button>(_hud, "RenameColonist").EmitSignal(BaseButton.SignalName.Pressed);
+        var firstName = FindNamed<LineEdit>(_hud, "ColonistFirstName");
+        firstName.GrabFocus();
+        PressObservationKey(Key.M);
+        PressObservationKey(Key.Key3);
+        Require(!_worldPanel.MapOpen && _speed == GameSpeed.Pause,
+            "Saisir un nom ne doit pas déclencher les raccourcis de jeu.");
+        _Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+        Require(!_hud.IsRenaming && _selected is not null,
+            "Échap pendant le renommage doit conserver l'habitant sélectionné.");
+        GetViewport().GuiReleaseFocus();
+        _camera.Position = Vector2.Zero;
+        FindNamed<Button>(_hud, "Recentrer").EmitSignal(BaseButton.SignalName.Pressed);
+        Require(_camera.Position == _colonistsView!.DisplayPosition(_selected!), "Recentrer doit rejoindre l'habitant sélectionné.");
+        Select(null);
+        PressObservationKey(Key.C);
+        Require(_camera.Position == new Vector2(Observed.CampX + 0.5f, Observed.CampY + 0.5f) * View.TerrainPainter.TileSize,
+            "Sans sélection, C doit rejoindre le camp.");
+        _camera._UnhandledInput(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = true });
+        _camera._UnhandledInput(new InputEventMouseMotion { Relative = -Vector2.One * 100000 });
+        _camera._UnhandledInput(new InputEventMouseButton { ButtonIndex = MouseButton.Right, Pressed = false });
+        Require(_camera.Position == _camera.WorldBounds.End, "Un grand glissement doit rester sur le terrain.");
+        PressObservationKey(Key.C);
+
+        PressObservationKey(Key.H);
+        Require(_hud.HelpOpen, "H doit ouvrir les commandes.");
+        _Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+        Require(!_hud.HelpOpen && !_menu.IsOpen, "Échap doit fermer les commandes.");
+
+        for (int i = 0; i < 8; i++)
+            Observed.Prayers.Ask(DecisionKind.Dam, $"interface-{i}", "Construire un barrage ?", "Une longue liste de prières doit rester accessible dans le panneau.", () => { }, _world.Clock);
+        Select(Observed.Members[0]);
+        PressObservationKey(Key.P);
+        Require(_prayerPanel.Open && _selected is null, "Ouvrir les prières doit libérer leur emplacement à droite.");
+        await UiFrames(8);
+        var prayerScroll = FindNamed<ScrollContainer>(_prayerPanel, "DefilementPrieres");
+        if (prayerScroll.Size.Y > 0)
+        {
+            Require(prayerScroll.GetVScrollBar().MaxValue > prayerScroll.Size.Y, "Plusieurs prières doivent pouvoir défiler.");
+            prayerScroll.ScrollVertical = 100;
+            Require(prayerScroll.ScrollVertical > 0, "Les prières hors écran doivent rester accessibles.");
+            prayerScroll.ScrollVertical = 0;
+        }
+        SaveSmokeCapture("prieres");
+        _Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+        Require(!_prayerPanel.Open && !_menu.IsOpen, "Échap doit fermer les prières.");
+        foreach (var prayer in Observed.Prayers.Pending.ToArray()) _world.AnswerPrayer(prayer, false);
+        SetSpeed(GameSpeed.Observation);
     }
 
     private async Task UiFrames(int count)

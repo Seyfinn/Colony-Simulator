@@ -15,6 +15,7 @@ namespace GodColony;
 /// </summary>
 public partial class PrayerPanel : CanvasLayer
 {
+    public event Action? Expanded;
     private static readonly Color Ink = Color.Color8(230, 237, 221);
     private static readonly Color Muted = Color.Color8(150, 174, 162);
     private static readonly Color Gold = Color.Color8(226, 190, 119);
@@ -22,6 +23,8 @@ public partial class PrayerPanel : CanvasLayer
 
     private WorldState _world = null!;
     private VBoxContainer _stack = null!, _cards = null!;
+    private Control _root = null!;
+    private ScrollContainer _scroll = null!;
     private Button _badge = null!;
     private string _stamp = "";
     private double _time;
@@ -30,7 +33,7 @@ public partial class PrayerPanel : CanvasLayer
     public bool Open
     {
         get => _open;
-        set { _open = value; _stamp = ""; }
+        set { _open = value; _stamp = ""; if (value) Expanded?.Invoke(); }
     }
     private bool _open;
 
@@ -39,7 +42,8 @@ public partial class PrayerPanel : CanvasLayer
     public override void _Ready()
     {
         Layer = 12;
-        var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
+        var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore, Theme = MenuStyle.Theme() };
+        _root = root;
         AddChild(root);
         root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
 
@@ -48,11 +52,12 @@ public partial class PrayerPanel : CanvasLayer
         _stack.AddThemeConstantOverride("separation", 10);
         root.AddChild(_stack);
         _stack.AnchorLeft = 1; _stack.AnchorRight = 1; _stack.AnchorTop = 0; _stack.AnchorBottom = 0;
-        _stack.OffsetLeft = -396; _stack.OffsetRight = -16; _stack.OffsetTop = 184;
+        _stack.AnchorBottom = 1;
+        _stack.OffsetLeft = -396; _stack.OffsetRight = -16; _stack.OffsetBottom = -60;
         _stack.Alignment = BoxContainer.AlignmentMode.Begin;
 
         // La pastille : discrète, alignée à droite, visible seulement quand une prière attend.
-        _badge = new Button { Name = "PastillePriere", Visible = false, SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd, CustomMinimumSize = new Vector2(0, 30) };
+        _badge = new Button { Name = "PastillePriere", Visible = false, ToggleMode = true, SizeFlagsHorizontal = Control.SizeFlags.ShrinkEnd, CustomMinimumSize = new Vector2(0, 32), MouseDefaultCursorShape = Control.CursorShape.PointingHand, FocusMode = Control.FocusModeEnum.None };
         _badge.AddThemeFontSizeOverride("font_size", 13);
         _badge.AddThemeColorOverride("font_color", Gold);
         _badge.AddThemeColorOverride("font_hover_color", Ink);
@@ -62,10 +67,27 @@ public partial class PrayerPanel : CanvasLayer
         _badge.Pressed += () => Open = !Open;
         _stack.AddChild(_badge);
 
+        _scroll = new ScrollContainer
+        {
+            Name = "DefilementPrieres", Visible = false, SizeFlagsVertical = Control.SizeFlags.ExpandFill,
+            HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled, MouseForcePassScrollEvents = false,
+        };
+        _stack.AddChild(_scroll);
         _cards = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _cards.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _cards.AddThemeConstantOverride("separation", 10);
-        _stack.AddChild(_cards);
+        _scroll.AddChild(_cards);
+        root.Resized += ResizePanels;
+        ResizePanels();
     }
+
+    private void ResizePanels()
+    {
+        _stack.OffsetTop = InterfaceLayout.For(_root.Size).NavigationTop;
+        _stack.OffsetLeft = -16 - InterfaceLayout.SideWidth(_root.Size);
+    }
+
+    public void SetMapOverlay(bool open) => _stack.Visible = !open;
 
     private static StyleBoxFlat BadgeStyle(float alpha) => new()
     {
@@ -77,6 +99,7 @@ public partial class PrayerPanel : CanvasLayer
 
     public override void _Process(double delta)
     {
+        if (_world is null) return;
         List<Prayer> pending = _world.Colonies.SelectMany(c => c.Prayers.Pending).ToList();
 
         if (pending.Count == 0)
@@ -93,15 +116,19 @@ public partial class PrayerPanel : CanvasLayer
         _stamp = stamp;
 
         _badge.Visible = pending.Count > 0;
+        _badge.SetPressedNoSignal(_open);
+        _scroll.Visible = _open;
         if (pending.Count > 0)
         {
             string colonies = string.Join(", ", pending.Select(p => p.Colony.Name).Distinct());
-            _badge.Text = pending.Count == 1 ? $"Prière en attente · {colonies}" : $"{pending.Count} prières en attente · {colonies}";
-            _badge.TooltipText = _open ? "Replier" : "Voir la prière et y répondre";
+            _badge.Text = pending.Count == 1 ? "1 prière en attente" : $"{pending.Count} prières en attente";
+            _badge.TooltipText = $"{colonies}\n{(_open ? "Replier les prières" : "Voir les prières et y répondre")} · P";
         }
 
         foreach (Node child in _cards.GetChildren())
-            child.QueueFree();
+        {
+            _cards.RemoveChild(child); child.QueueFree();
+        }
         if (_open)
             foreach (Prayer prayer in pending)
                 _cards.AddChild(BuildCard(prayer));
@@ -154,16 +181,17 @@ public partial class PrayerPanel : CanvasLayer
 
     private static Label MakeLabel(string text, int size, Color color)
     {
-        var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, CustomMinimumSize = new Vector2(340, 0) };
+        var label = new Label { Text = text, AutowrapMode = TextServer.AutowrapMode.WordSmart, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseFilter = Control.MouseFilterEnum.Ignore };
         label.AddThemeFontSizeOverride("font_size", size);
         label.AddThemeColorOverride("font_color", color);
         label.AddThemeFontOverride("font", ArtDirection.BodyFont);
+        if (size >= 17) label.AddThemeFontOverride("font", ArtDirection.HeadingFont);
         return label;
     }
 
     private static Button MakeButton(string text, Color color)
     {
-        var button = new Button { Text = text, CustomMinimumSize = new Vector2(120, 34), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var button = new Button { Text = text, CustomMinimumSize = new Vector2(0, 38), SizeFlagsHorizontal = Control.SizeFlags.ExpandFill, MouseDefaultCursorShape = Control.CursorShape.PointingHand };
         button.AddThemeColorOverride("font_color", color);
         button.AddThemeColorOverride("font_hover_color", Ink);
         button.AddThemeFontSizeOverride("font_size", 14);

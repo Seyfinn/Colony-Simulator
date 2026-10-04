@@ -110,6 +110,7 @@ public partial class Main : Node2D
         {
             Position = new Vector2((colony?.CampX ?? map.Width / 2) + 0.5f, (colony?.CampY ?? map.Height / 2) + 0.5f) * TerrainPainter.TileSize,
             Zoom = new Vector2(1.25f, 1.25f),
+            WorldBounds = new Rect2(Vector2.Zero, new Vector2(map.Width, map.Height) * TerrainPainter.TileSize),
         };
         AddChild(camera);
         camera.MakeCurrent();
@@ -125,6 +126,7 @@ public partial class Main : Node2D
         _prayerPanel = new PrayerPanel();
         AddChild(_prayerPanel);
         _prayerPanel.Init(_world);
+        _prayerPanel.Expanded += () => { if (_hud is not null) Select(null); };
 
         _worldPanel = new WorldPanel();
         AddChild(_worldPanel);
@@ -140,6 +142,8 @@ public partial class Main : Node2D
         _hud.PauseRequested += TogglePause;
         _hud.SelectionClosed += () => Select(null);
         _hud.MenuRequested += () => { _hud.CancelRename(); OpenPauseMenu(); };
+        _hud.RecenterRequested += RecenterCamera;
+        _hud.HelpRequested += ToggleHelp;
         _hud.ColonistRenameRequested += (colonist, name, surname) =>
         {
             if (colonist.TryRename(name, surname)) _hudCooldown = 0;
@@ -185,6 +189,7 @@ public partial class Main : Node2D
 
         _ambience.Init(colony.Map);
         _camera.Position = new Vector2(colony.CampX + 0.5f, colony.CampY + 0.5f) * TerrainPainter.TileSize;
+        _camera.WorldBounds = new Rect2(Vector2.Zero, new Vector2(colony.Map.Width, colony.Map.Height) * TerrainPainter.TileSize);
         _hudCooldown = 0;
     }
 
@@ -315,6 +320,7 @@ public partial class Main : Node2D
     public override void _UnhandledInput(InputEvent @event)
     {
         if (_world is null || _menu.IsOpen) return;
+        if (@event is InputEventKey && GetViewport().GuiGetFocusOwner() is LineEdit or SpinBox) return;
         switch (@event)
         {
             case InputEventKey { Pressed: true, Echo: false } key:
@@ -369,6 +375,7 @@ public partial class Main : Node2D
 
     private void Select(Colonist? colonist)
     {
+        if (colonist is not null) _prayerPanel.Open = false;
         _hud.CancelRename();
         _selected = colonist;
         if (_colonistsView is not null) _colonistsView.Selected = colonist;
@@ -386,7 +393,42 @@ public partial class Main : Node2D
             case Key.Key1: SetSpeed(GameSpeed.Observation); break;
             case Key.Key2: SetSpeed(GameSpeed.Rapide); break;
             case Key.Key3: SetSpeed(GameSpeed.TresRapide); break;
+            case Key.M: _worldPanel.MapOpen = !_worldPanel.MapOpen; break;
+            case Key.E: _worldPanel.Open = !_worldPanel.Open; break;
+            case Key.P:
+                _worldPanel.MapOpen = false;
+                if (_world.Colonies.Any(c => c.Prayers.Pending.Any())) _prayerPanel.Open = !_prayerPanel.Open;
+                else Notify("Aucune prière en attente pour le moment.");
+                break;
+            case Key.J:
+                _worldPanel.MapOpen = false; _worldPanel.Open = false;
+                _hud.CloseHelp(); _hud.ToggleJournal();
+                break;
+            case Key.H: ToggleHelp(); break;
+            case Key.C: RecenterCamera(); break;
+            case Key.Tab when _world.Colonies.Count > 0:
+                _worldPanel.MapOpen = false;
+                ObserveColony((_observed + 1) % _world.Colonies.Count);
+                break;
         }
+    }
+
+    private void ToggleHelp()
+    {
+        _worldPanel.MapOpen = false; _worldPanel.Open = false; _prayerPanel.Open = false;
+        _hud.SetOverlayState(false, false); _hud.ToggleHelp();
+    }
+
+    private void RecenterCamera()
+    {
+        if (_foundingPanel.IsOpen) { SelectSuggestedSite(); return; }
+        _worldPanel.MapOpen = false;
+        Vector2 target = _selected is not null && _colonistsView is not null
+            ? _colonistsView.DisplayPosition(_selected)
+            : _world.Colonies.Count > 0
+                ? new Vector2(Observed.CampX + 0.5f, Observed.CampY + 0.5f) * TerrainPainter.TileSize
+                : new Vector2(_world.Map.Width / 2f, _world.Map.Height / 2f) * TerrainPainter.TileSize;
+        _camera.Position = target;
     }
 
     private void SetSpeed(GameSpeed speed)
@@ -417,14 +459,21 @@ public partial class Main : Node2D
 
     private void UpdateHud()
     {
+        bool mapOverlay = _worldPanel.MapOpen || _foundingPanel.IsOpen;
+        bool stocksVisible = _world.Colonies.Count > 0 && !_foundingPanel.IsOpen && _foundingMap is null;
+        _worldPanel.SetStocksVisible(stocksVisible);
+        _hud.SetOverlayState(mapOverlay, _worldPanel.Open);
+        _prayerPanel.SetMapOverlay(mapOverlay);
         GameClock clock = _world.Clock;
         _hud.SetStatus(clock, _menu.IsOpen || _foundingPanel.IsOpen ? GameSpeed.Pause : _speed);
 
         LocalMap map = ActiveMap;
-        if (_world.Colonies.Count == 0 || _foundingMap is not null)
+        if (!stocksVisible)
         {
-            _hud.ShowUnsettled(_foundingMap is not null ? "Nouvelle région" : "Monde vierge",
-                _foundingMap is not null ? "Choisissez l'emplacement du camp, puis confirmez la fondation." : "Cliquez sur « Fonder une colonie » pour peupler votre monde.");
+            _hud.ShowUnsettled(_foundingMap is not null ? "Nouvelle région" : _foundingPanel.IsOpen ? "Fonder une colonie" : "Monde vierge",
+                _foundingMap is not null ? "Choisissez l'emplacement du camp, puis confirmez la fondation."
+                    : _foundingPanel.IsOpen ? "Choisissez une région libre sur la carte du monde."
+                    : "Cliquez sur « Fonder une colonie » pour peupler votre monde.");
             (int tx, int ty) = TileUnderMouse();
             _hud.SetTileInfo(map.InBounds(tx, ty) ? $"Case ({tx}, {ty}) · {SurfaceName(map.GetSurface(tx, ty))}" : " ");
             return;

@@ -52,6 +52,16 @@ le monde courant. La création d'un autre monde demande confirmation avant de re
 Les préférences de plein écran, de synchronisation verticale, d'ambiance et de caméra sont enregistrées
 dans `user://settings.cfg`.
 
+L'interface adapte les stocks à la largeur de la fenêtre : une rangée sur grand écran, deux rangées sur une fenêtre
+plus petite. Le bandeau indique les jours de repas en réserve ; la nourriture est signalée en rouge sous deux jours.
+L'économie et les prières disposent de panneaux défilants ; l'actualisation de l'économie conserve la position de lecture.
+Les panneaux se replient lorsqu'une carte ou les commandes occupent leur emplacement.
+
+**C** ou **Recentrer** rejoint le camp, ou l'habitant sélectionné. **Tab** passe à la colonie suivante.
+**M** ouvre la carte du monde, **E** l'économie, **P** les prières, **J** le journal et **H** les commandes.
+Ces raccourcis sont suspendus pendant la saisie d'un nom. **Échap** annule le renommage en conservant la fiche,
+puis ferme les panneaux avant d'ouvrir le menu de pause. Les déplacements de caméra restent limités au terrain.
+
 **Sauvegarder la partie** propose trois emplacements avec le nom du monde, la date, les colonies et la population.
 **Charger une partie** les retrouve depuis l'accueil ou le menu de pause. **F5** enregistre dans un quatrième emplacement
 de sauvegarde rapide ; **F9** le charge, après confirmation si une partie est en cours. Les fichiers vivent dans
@@ -76,7 +86,8 @@ godot --path Game --fixed-fps 60 -- --smoke-saves
 ```
 
 Le scénario vérifie l'accueil, une graine invalide, un monde vierge, la fondation, les paramètres persistants,
-la pause, l'annulation, la reprise et le remplacement du monde. Le second scénario vérifie les sauvegardes, leur restauration,
+la pause, l'annulation, la reprise, le remplacement du monde, les raccourcis, la saisie, les limites de caméra et le défilement des panneaux.
+Le second scénario vérifie les sauvegardes, leur restauration,
 les confirmations, les copies de secours, les fichiers endommagés et les raccourcis. Ils fonctionnent aussi avec `--headless`.
 `--smoke-captures=chemin` enregistre les étapes dans un dossier existant lorsque le rendu est activé.
 
