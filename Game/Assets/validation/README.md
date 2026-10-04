@@ -115,3 +115,22 @@ Toutes ces captures ont été inspectées. Résultats : **WORKSHOP_VISUALS_OK**,
 Pendant l'intervention, Claude a commencé `Knowledge.cs` ; la compilation principale a alors signalé `Diplomacy` absent. La vérification et l'export finaux utilisent une copie isolée du jeu avec la dernière simulation compilée (`BuildProjectReferences=false`), puis seuls les 22 PNG sont reportés dans le projet principal. Aucun fichier de simulation ou de test de simulation modifié. Les cinq fichiers de statistiques non suivis de Claude gardent leurs modifications d'apparence locales ; `tools/habillage_statistiques.patch` en conserve **uniquement le delta graphique** pour l'intégration de son socle. Ce patch est déjà appliqué dans le dossier courant : ne pas le réappliquer ici. Pour une copie du socle avant habillage, le patch à contexte nul s'applique avec `git apply --unidiff-zero Game/Assets/tools/habillage_statistiques.patch`. Le commit graphique exclut les fichiers complets non suivis et les changements moteur de Claude.
 
 Vérification finale après arrivée de `Diplomacy.cs` dans le projet principal : compilation **0 avertissement / 0 erreur**, **209 tests verts**, **WORKSHOP_VISUALS_OK** (local, statistiques, secours sans PNG) et **INTERFACE_SMOKE_OK** de nouveau réussis. Le blocage intermédiaire est levé ; le code livré est compilé dans le projet principal.
+## Savoirs, relations et guerriers — T-027 à T-030
+
+Scène isolée `civilisation.tscn`, sources natives `CivilizationArt.cs`. Les 24 PNG de production sont exportés **uniquement** avec `--export-civilization` ; une partie ne crée aucun fichier image. Les sources servent aussi de secours si un PNG manque ou si ses dimensions sont incorrectes.
+
+Validation du 2026-10-04 : compilation sans avertissement ni erreur, **228 tests de simulation réussis**, `INTERFACE_SMOKE_OK`, `SAVE_SMOKE_OK`. `CIVILIZATION_VISUALS_OK` vérifie les tailles, la marge transparente des 19 icônes, leurs silhouettes distinctes, l'identité PNG/source, les quatre poses distinctes, l'identification des guerriers et des civils, les états connu/étudié/accessibles/verrouillés, les effets dans les infobulles, le passage entre les onglets et la conservation des cartes. Stocks, savoirs, opinions, rancunes, positions des colons, pactes, état des bandes et ticks restent identiques pendant les rafraîchissements et le dessin.
+
+Modes validés : `--preview=gallery`, `knowledge`, `relations`, `map`, `return`, `local`. Le mode `--fallback` valide le secours natif avec le chargement des PNG désactivé dans cette scène seulement. La marche mondiale dépend des ticks de la simulation : elle se fige en pause. La marche locale et le mouvement des accessoires suivent la distance déjà parcourue ; aucune activité ni règle de jeu ajoutée.
+
+Captures inspectées :
+
+- `civilisation_gallery.png` : les 19 savoirs, les quatre poses des bandes, les épées croisées et l'équipement des quatre peuples dans les deux sens.
+- `civilisation_knowledge.png`, `civilisation_relations.png` : panneau à 1600 × 900 ; `civilisation_knowledge_compact.png`, `civilisation_relations_compact.png` : 1100 × 700, panneau de 600 pixels et défilement vertical conservé.
+- `civilisation_map.png`, `civilisation_return.png` : vraies routes, aller/retour, liserés des pactes et étiquette placée hors des noms et marqueurs des colonies.
+- `civilisation_local.png` : vraie vue locale, guerriers équipés et civils sans accessoires de guerre.
+- `civilisation_knowledge_en_jeu.png`, `civilisation_relations_en_jeu.png` : deux onglets dans la scène principale, avec `--demo-war`.
+
+Dans cet environnement restreint, Godot émet des diagnostics sur l'accès au magasin de certificats et au cache de shaders ; les scènes, les exports, les captures et les contrôles ci-dessus terminent avec succès.
+
+Les changements de `CivilizationPanel.cs` et `WorldMapView.cs` sont déjà appliqués aux fichiers locaux non commités de Claude. Le delta graphique seul est conservé dans `../tools/habillage_civilisation.patch` ; **ne pas le réappliquer aux fichiers déjà habillés**. Pour une autre copie ayant exactement le socle de cette livraison, utiliser `git apply --unidiff-zero` ; le contrôle inverse valide que le delta est effectivement présent.

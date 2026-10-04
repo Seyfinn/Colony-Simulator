@@ -1,0 +1,112 @@
+--- a/Game/Scripts/CivilizationPanel.cs
++++ b/Game/Scripts/CivilizationPanel.cs
+@@ -19 +19 @@
+-    private static readonly Color Ink = MenuStyle.Ink, Muted = MenuStyle.Muted, Known = ArtDirection.Sage, Danger = MenuStyle.Error;
++    private static readonly Color Ink = DashboardStyle.Ink, Muted = DashboardStyle.Muted, Known = DashboardStyle.Mint, Danger = DashboardStyle.Warning;
+@@ -25 +25 @@
+-    private readonly Dictionary<Discovery, (PanelContainer Card, Label Name, Label State)> _cards = [];
++    private readonly Dictionary<Discovery, (PanelContainer Card, Label Name, Label State, TextureRect Icon)> _cards = [];
+@@ -35,0 +36 @@
++        TextureFilter = TextureFilterEnum.Nearest;
+@@ -82,4 +83,5 @@
+-        var study = new PanelContainer();
+-        study.AddThemeStyleboxOverride("panel", MenuStyle.Box(new Color(0.10f, 0.16f, 0.14f, 0.95f), MenuStyle.Edge, 10));
+-        _knowledge.AddChild(study);
+-        var column = MenuStyle.Column(study, 6);
++        var study = DashboardStyle.Card(_knowledge, 12);
++        var studyRow = DashboardStyle.Row(study, 12);
++        DashboardStyle.Picture(studyRow, CivilizationArt.KnowledgeIcon(Discovery.Writing), 32);
++        var column = MenuStyle.Column(studyRow, 6);
++        column.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+@@ -87,4 +89 @@
+-        _researchBar = new ProgressBar { MinValue = 0, MaxValue = 1, Step = 0.001, ShowPercentage = false, CustomMinimumSize = new Vector2(0, 10) };
+-        _researchBar.AddThemeStyleboxOverride("background", MenuStyle.Box(MenuStyle.Background, MenuStyle.Edge, 0));
+-        _researchBar.AddThemeStyleboxOverride("fill", MenuStyle.Box(ArtDirection.Brass, ArtDirection.Brass, 0));
+-        column.AddChild(_researchBar);
++        _researchBar = DashboardStyle.Bar(column, DashboardStyle.Gold, 10);
+@@ -107 +106,5 @@
+-                var inner = MenuStyle.Column(card, 2);
++                var heading = DashboardStyle.Row(card, 8);
++                var icon = DashboardStyle.Picture(heading, CivilizationArt.KnowledgeIcon(info.Id));
++                icon.Name = $"IconeSavoir{info.Id}";
++                var inner = MenuStyle.Column(heading, 2);
++                inner.SizeFlagsHorizontal = SizeFlags.ExpandFill;
+@@ -112 +115 @@
+-                _cards[info.Id] = (card, name, state);
++                _cards[info.Id] = (card, name, state, icon);
+@@ -152 +155 @@
+-        foreach ((Discovery id, (PanelContainer card, Label name, Label state)) in _cards)
++        foreach ((Discovery id, (PanelContainer card, Label name, Label state, TextureRect icon)) in _cards)
+@@ -162,2 +165,2 @@
+-            Color edge = known ? Known : current ? ArtDirection.Brass : MenuStyle.Edge;
+-            Color fill = known ? new Color(0.12f, 0.20f, 0.15f, 0.96f) : current ? new Color(0.20f, 0.19f, 0.12f, 0.96f) : new Color(0.08f, 0.12f, 0.11f, 0.9f);
++            Color edge = known ? Known : current ? DashboardStyle.Gold : MenuStyle.Edge;
++            Color fill = DashboardStyle.Surface.Lerp(known ? Known : current ? DashboardStyle.Gold : DashboardStyle.PlotSurface, known || current ? 0.12f : 0.25f);
+@@ -166,0 +170 @@
++            icon.Modulate = known || current || open ? Colors.White : new Color(0.45f, 0.52f, 0.47f);
+@@ -228,0 +233 @@
++        private TextureRect _emblem = null!;
+@@ -235,2 +240,2 @@
+-            var heading = new HBoxContainer();
+-            column.AddChild(heading);
++            var heading = DashboardStyle.Row(column);
++            _emblem = DashboardStyle.Picture(heading, CivilizationArt.KnowledgeIcon(Discovery.Diplomacy));
+@@ -240,0 +246,2 @@
++            _pact.SizeFlagsVertical = SizeFlags.ShrinkCenter;
++            _pact.AddThemeStyleboxOverride("normal", MenuStyle.Box(DashboardStyle.Readout, Colors.Transparent, 6));
+@@ -258,0 +266 @@
++            _emblem.Texture = pact?.Kind == PactKind.War ? CivilizationArt.WarPact() : CivilizationArt.KnowledgeIcon(Discovery.Diplomacy);
+@@ -271 +279 @@
+-            AddThemeStyleboxOverride("panel", MenuStyle.Box(new Color(0.08f, 0.13f, 0.12f, 0.95f), edge, 10));
++            AddThemeStyleboxOverride("panel", MenuStyle.Box(DashboardStyle.Surface, edge, 12));
+@@ -287 +295 @@
+-            DrawRect(new Rect2(0, 0, w, h), new Color(0.05f, 0.09f, 0.08f));
++            DrawRect(new Rect2(0, 0, w, h), DashboardStyle.PlotSurface);
+--- a/Game/Scripts/WorldMapView.cs
++++ b/Game/Scripts/WorldMapView.cs
+@@ -414 +414 @@
+-                    g.DrawString(ArtDirection.BodyFont, middle + new Vector2(-9, 5), "⚔", HorizontalAlignment.Center, 18, 13, MenuStyle.Error);
++                    g.DrawTexture(CivilizationArt.WarPact(), middle - new Vector2(8, 8));
+@@ -423 +423 @@
+-    /// <summary>Les bandes de guerriers marchent sur la route de l'ennemi : un fanion rouge et le nombre de guerriers.</summary>
++    /// <summary>Les bandes de guerriers suivent leur route réelle ; quatre poses et une étiquette qui évite les noms des colonies.</summary>
+@@ -434,9 +434,3 @@
+-            // Le fanion flotte un peu : la bande est en marche.
+-            float wave = Mathf.Sin(now / (float)GodColony.Simulation.Time.TimeConstants.TicksPerSecond * 4f) * 1.5f;
+-            Color banner = outbound ? MenuStyle.Error : MenuStyle.Error.Darkened(0.35f);
+-            g.DrawLine(position + new Vector2(0, 10), position + new Vector2(0, -16), ArtDirection.Charcoal, 4f);
+-            g.DrawLine(position + new Vector2(0, 10), position + new Vector2(0, -16), ArtDirection.Cream, 2f);
+-            Vector2[] flag = [position + new Vector2(1, -16), position + new Vector2(17, -11 + wave), position + new Vector2(1, -6)];
+-            g.DrawColoredPolygon(flag, banner);
+-            g.DrawPolyline([.. flag, flag[0]], ArtDirection.Charcoal, 1f);
+-            // L'étiquette passe au-dessus du fanion : sous la colonie de départ s'écrit déjà son nom.
++            bool left = (CenterOf(b).X - CenterOf(a).X) * (outbound ? 1 : -1) < 0;
++            CivilizationArt.DrawWarband(g, position, now, left, !outbound);
++            // Chercher une place autour de la bande qui laisse lisibles les noms des colonies.
+@@ -444,4 +438,22 @@
+-            Vector2 at = position + new Vector2(-60, -22);
+-            g.DrawString(font, at + Vector2.One, label, HorizontalAlignment.Center, 120, 11, ArtDirection.Charcoal);
+-            g.DrawString(font, at, label, HorizontalAlignment.Center, 120, 11, outbound ? MenuStyle.Error.Lightened(0.2f) : Ink);
+-        }
++            Vector2 extent = font.GetStringSize(label, fontSize: 11);
++            Vector2 at = WarLabelPosition(position, extent);
++            g.DrawRect(new Rect2(at + new Vector2(-4, -extent.Y), extent + new Vector2(8, 4)), new Color(ArtDirection.Charcoal, 0.9f));
++            g.DrawString(font, at, label, HorizontalAlignment.Left, -1, 11, outbound ? MenuStyle.Error.Lightened(0.2f) : Ink);
++        }
++    }
++
++    private Vector2 WarLabelPosition(Vector2 position, Vector2 extent)
++    {
++        for (int ring = 0; ring < 12; ring++)
++        {
++            float gap = 18 + ring * 24;
++            Vector2[] offsets = [new(-extent.X / 2, -gap), new(gap, -18), new(-extent.X - gap, -18), new(-extent.X / 2, gap + extent.Y)];
++            foreach (Vector2 offset in offsets)
++            {
++                Vector2 at = position + offset;
++                Rect2 box = new(at + new Vector2(-4, -extent.Y), extent + new Vector2(8, 4));
++                if (Land.Encloses(box) && _world.Colonies.All(c => !box.Intersects(new Rect2(CenterOf(_world.WorldMap.TileOf(c)) + new Vector2(-100, -18), new Vector2(200, 62)))))
++                    return at;
++            }
++        }
++        return position + new Vector2(-extent.X / 2, -18);

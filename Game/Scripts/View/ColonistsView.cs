@@ -414,7 +414,8 @@ public partial class ColonistsView : Node2D
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
         Vector2 feet = DisplayPosition(colonist).Round();
         var appearance = PeoplesSprites.Describe(colonist, BiomeVisuals.At(_colony.Map, colonist.TileX, colonist.TileY));
-        bool traveler = _colony.Transients.Contains(colonist) || _world.Caravans.Exists(c => c.Traders.Contains(colonist));
+        bool warrior = CivilizationArt.IsWarrior(_world, colonist);
+        bool traveler = !warrior && (_colony.Transients.Contains(colonist) || _world.Caravans.Exists(c => c.Traders.Contains(colonist)));
         ImageTexture[] frames = traveler ? RemainingArt.TraderFrames(appearance.People) : PeoplesSprites.Get(appearance);
         Vector2 spriteOffset = new(-frames[0].GetWidth() / 2f, -frames[0].GetHeight());
         float scale = colonist.Stage == LifeStage.Child ? 0.7f : 1f;
@@ -443,6 +444,7 @@ public partial class ColonistsView : Node2D
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
 
         DrawVillageGesture(colonist, feet);
+        if (warrior) CivilizationArt.DrawEquipment(this, feet, appearance, colonist.X < colonist.PrevX, frame);
         if (colonist.Ailment == Ailment.Injured) DrawRect(new Rect2(feet + new Vector2(-3, -22), new Vector2(5, 2)), ArtDirection.Cream);
 
         // Ce qu'il rapporte au camp, en petit sous le bras.

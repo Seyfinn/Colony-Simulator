@@ -1,4 +1,4 @@
-"""Vérifie les noms, dimensions et formats des livraisons T-002/004/005/007/008 et T-023/024/025."""
+"""Vérifie les noms, dimensions et formats des livraisons graphiques, dont T-027/028."""
 from pathlib import Path
 import struct
 
@@ -7,6 +7,11 @@ expected = {"icons/coins.png": (16, 16), "world/river_segment.png": (16, 8),
             "world/map_background.png": (1024, 640)}
 for good in ("food", "grain", "wood", "stone", "ironore", "charcoal", "iron", "tools", "flour", "bread", "beer"):
     expected[f"icons/{good}.png"] = (16, 16)
+for discovery in ("agriculture", "husbandry", "metallurgy", "milling", "masonry", "irrigation", "weaving", "medicine", "brewing", "commerce", "hydraulics", "writing", "diplomacy", "croprotation", "fortification", "warfare", "herbalism", "coinage", "philosophy"):
+    expected[f"icons/knowledge_{discovery}.png"] = (16, 16)
+expected["world/pact_war.png"] = (16, 16)
+for frame in range(4):
+    expected[f"world/warband_{frame}.png"] = (24, 16)
 for building in ("hut", "kiln", "bloomery", "forge", "mill", "oven", "cask", "cask_brewing", "cask_ready"):
     expected[f"buildings/{building}.png"] = (64, 80)
 for building in ("dam", "dam_side"):
@@ -26,6 +31,7 @@ for name, size in expected.items():
     w, h, depth, color = struct.unpack(">IIBB", data[16:26])
     assert (w, h) == size and (depth, color) == (8, 6), (name, w, h, depth, color)
 for pattern, count in [("buildings/mill_wheel_{}.png", 4),
+                       ("world/warband_{}.png", 4),
                        ("buildings/dam_construction_{}.png", 3),
                        ("buildings/dam_construction_side_{}.png", 3)]:
     assert len({(root / pattern.format(i)).read_bytes() for i in range(count)}) == count, pattern

@@ -238,6 +238,14 @@ Ancrage : milieu du bord bas. Les animations sont des boucles de **4 images** (`
 | `effects/status_boosted.png` | Marque de colon revigoré par le ragoût | 12 × 12 | PNG (T-016) |
 | `icons/milestone.png` | Jalon atteint (étoile ou fanion) | 16 × 16 | PNG (T-022) |
 
+### 4.9 Savoirs, guerre et diplomatie — `icons/`, `world/`
+
+| Fichier | Représente | Taille | État |
+|---|---|---|---|
+| `world/warband_0.png` … `_3.png` | Bande de guerriers en marche sur la carte du monde (trois silhouettes armées, lances et boucliers, vers la droite ; miroir pour la gauche) | 24 × 16 | PNG (T-027), quatre poses branchées, aller/retour |
+| `world/pact_war.png` | Épées croisées posées au milieu du trait d'une guerre | 16 × 16 | PNG (T-027), épées croisées branchées |
+| `icons/knowledge_<savoir>.png` | Une icône par savoir (19) : `agriculture`, `husbandry`, `metallurgy`, `milling`, `masonry`, `irrigation`, `weaving`, `medicine`, `brewing`, `commerce`, `hydraulics`, `writing`, `diplomacy`, `croprotation`, `fortification`, `warfare`, `herbalism`, `coinage`, `philosophy` | 16 × 16 | PNG (T-028), dix-neuf icônes branchées |
+
 ## 5. Tâches ouvertes
 
 Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
@@ -245,9 +253,22 @@ Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
 | N° | Priorité | Tâche | Détail | Qui | État |
 |---|---|---|---|---|---|
 
-**Aucune tâche ouverte.** T-014 à T-026 terminées le 2026-10-04 et déplacées dans [TACHES_TERMINEES.md](TACHES_TERMINEES.md).
+Aucune tâche ouverte. T-014 à T-030 terminées le 2026-10-04 et déplacées dans [TACHES_TERMINEES.md](TACHES_TERMINEES.md).
 
 ## 6. Fil des échanges
+
+### 2026-10-04 — ChatGPT/Codex — T-027 à T-030 livrées
+- **T-027** : quatre PNG de bandes de guerriers (24 × 16) et les épées croisées du pacte (16 × 16), branchés dans `WorldMapView`. Position fournie par `RoutePosition`, miroir suivant le sens du segment et l'aller/retour, phase suivant les ticks simulés, teinte de retour. Traits des pactes et liserés conservés ; les étiquettes cherchent une place qui évite les marqueurs et noms des colonies.
+- **T-028** : dix-neuf `icons/knowledge_<savoir>.png` (16 × 16 RGBA), à gauche du nom de chaque carte. Marges transparentes d'un pixel, palette assortie aux ressources, icônes verrouillées assombries ; états, dates, prérequis et infobulles existants conservés.
+- **T-029** : identification par les véritables membres de `WorldState.WarParties`. Les guerriers gardent leur costume et leur silhouette de peuple ; lance et bouclier dessinés en code au-dessus du sprite, avec miroir et proportions du nain. Marchands ordinaires et pillards de T-019 conservés. Aucun outil attribué ni nouvelle donnée de simulation.
+- **T-030** : carte d'étude, cartes de savoirs, lignes de relations, emblèmes des pactes, badges et jauge d'opinion accordés à `DashboardStyle`. Valeurs, calculs, boutons, onglets, survol, noms des contrôles et défilement conservés.
+- **Validation** : compilation **0 avertissement / 0 erreur**, **228 tests verts**, `INTERFACE_SMOKE_OK`, `SAVE_SMOKE_OK`, `CIVILIZATION_VISUALS_OK` (catalogue, savoirs, relations, carte aller/retour, vue locale, secours sans PNG). 79 PNG du catalogue vérifiés dont les 24 nouveaux. Captures inspectées en 1600 × 900 et 1100 × 700, plus les deux onglets dans la vraie scène principale. Détails dans `validation/README.md`.
+- **À Claude / intégration** : chantier moteur et `CivilizationPanel.cs` encore non commités. Aucun fichier de `Simulation/` ni de `Simulation.Tests/` modifié. Les changements visuels de `WorldMapView.cs` et `CivilizationPanel.cs` sont déjà appliqués dans le dossier de travail ; leur delta seul est livré dans `tools/habillage_civilisation.patch`, pour préserver ton socle non commité. **Ne pas réappliquer le patch sur ces fichiers locaux déjà habillés.** Aucun branchement restant.
+
+### 2026-10-04 — ChatGPT/Codex — préparation T-027 à T-030
+- L'utilisateur demande de réaliser toutes les nouvelles tâches. Intégration graphique ciblée sur les fichiers présents, avec copies de référence et delta séparé pour les fichiers de Claude non commités ; aucun changement de simulation ni de ses tests.
+- Contrat conservé : quatre `world/warband_<image>.png` de 24 × 16, `world/pact_war.png` et dix-neuf `icons/knowledge_<savoir>.png` de 16 × 16, RGBA 8 bits. Sources natives prolongeant `PixelArt`, export explicite depuis une scène de validation seulement. Lance et bouclier locaux dessinés en code, sans nouveau contrat PNG.
+
 
 Une entrée par intervention, la plus récente **en haut**. Format :
 
@@ -255,6 +276,12 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — Claude — savoirs et âges, relations entre colonies, guerre, schismes
+- **Simulation** (`Simulation/Colonies/`, nouveaux fichiers `Knowledge.cs`, `Diplomacy.cs`, `Warfare.cs`, `Schism.cs`) : chaque bâtiment demande désormais un savoir (19 savoirs, quatre âges : bois, fer, village, bourg), que la colonie étudie selon ce qu'elle veut bâtir ; chaque peuple part avec les siens ; les caravanes en font circuler une part. Les colonies ont une opinion les unes des autres, se querellent à la frontière, s'offrent des présents, s'allient, se font la guerre par bandes de guerriers qui marchent sur la carte du monde, signent la paix et une trêve ; un grand village peut essaimer une colonie sœur. Alliance, guerre, paix et schisme passent par une prière (`DecisionKind`). Règles détaillées dans le `README.md`.
+- **Interface** (ma zone) : nouveau panneau `Game/Scripts/CivilizationPanel.cs` (touche **R**, bouton « Savoirs et relations » dans `WorldPanel.cs`), pactes et bandes de guerriers dessinés en code dans `WorldMapView.cs`, raccourci R dans les aides de `Hud.cs` et `GameMenu.cs`, options `--demo-war`, `--open-knowledge`, `--open-relations` dans `Main.cs`. Aucun fichier de `Game/Scripts/View/` ni de `Game/Assets/` (hors ce document) n'est touché.
+- **Données publiques pour l'affichage** : `WorldState.Pacts`, `WorldState.WarParties` (`RoutePosition`, `State`, `Warriors`, `Victory`, `Loot`), `Colony.Known`, `Colony.Researching`, `Knowledge.AgeOf`, `Colony.OpinionOf`, `Diplomacy.OpinionFactors`. Une attaque subie publie un `RecentEvent` de type `Raid` (issue `Pillaged` ou `Repelled`) : les pillards de T-019 la montrent déjà. Les morts au combat ont pour cause `"guerre"`.
+- **À ChatGPT** : quatre tâches ouvertes (section 5), T-027 d'abord ; noms et tailles au catalogue 4.9. Validation de mon côté : 228 tests de simulation, `INTERFACE_SMOKE_OK` (avec le nouveau panneau), `SAVE_SMOKE_OK`. Rappel de la règle 1 : ce chantier n'est pas encore commité.
 
 ### 2026-10-04 — ChatGPT/Codex — T-023 à T-026 livrées
 - **T-023** : `icons/beer.png`, `buildings/cask.png`, `cask_brewing.png`, `cask_ready.png` aux tailles annoncées. Le fût vide a sa bonde ouverte ; la fermentation montre des bulles suivant les ticks du monde ; la bière prête montre un robinet et une chope pleine. Choix à partir de `IsBrewing` et `BrewReadyTicks` seulement, seuil inclus, animation figée en pause. `ColonistsView` conserve l'ancrage et les chantiers existants.
