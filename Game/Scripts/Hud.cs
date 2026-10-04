@@ -40,8 +40,8 @@ public partial class Hud : CanvasLayer
     private bool _trayExpanded = true, _showWork;
     private bool _mapOverlay, _economyOverlay;
     private readonly List<(Label Date, Label Message)> _thoughtRows = [];
-    private readonly Dictionary<WorkSector, (ProgressBar Bar, Label Value)> _shares = [];
-    private Label _costs = null!;
+
+    private ProductionDashboard _productionDashboard = null!;
     private string _thoughtStamp = "";
 
     private TextureRect _portrait = null!;
@@ -245,7 +245,8 @@ public partial class Hud : CanvasLayer
         var column = Column(_tray, 8);
         var header = Row(column, 6);
         _journalTab = Button(header, "Journal", "Dernières pensées de la colonie", 94);
-        _workTab = Button(header, "Travail", "Répartition du travail et coûts de production", 94);
+        _workTab = Button(header, "Production", "Travail, recettes des ateliers et coûts de production", 110);
+        _workTab.Name = "Production";
         _journalTab.ToggleMode = _workTab.ToggleMode = true;
         _journalTab.Pressed += () => { _showWork = false; _trayExpanded = true; _thoughtStamp = ""; UpdateTray(); };
         _workTab.Pressed += () => { _showWork = true; _trayExpanded = true; UpdateTray(); };
@@ -266,22 +267,9 @@ public partial class Hud : CanvasLayer
             _thoughtRows.Add((date, message));
         }
         _workBody = Scroll(column, 174);
-        var work = Column(_workBody, 8);
-        work.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        foreach (WorkSector sector in WorkSectors.All)
-        {
-            var line = Row(work, 8);
-            var title = Text(line, SectorName(sector), 12, Ink);
-            title.CustomMinimumSize = new Vector2(145, 0);
-            var bar = Bar(Mint, 7);
-            line.AddChild(bar);
-            var value = Text(line, "", 12, Gold);
-            value.CustomMinimumSize = new Vector2(40, 0);
-            value.HorizontalAlignment = HorizontalAlignment.Right;
-            _shares[sector] = (bar, value);
-        }
-        Section(work, "COÛT PAR UNITÉ · HEURES DE TRAVAIL");
-        _costs = Wrapped(work, "", 12, Muted);
+        _workBody.Name = "DefilementProduction";
+        _productionDashboard = new ProductionDashboard();
+        _workBody.AddChild(_productionDashboard);
         UpdateTray();
     }
 
@@ -397,7 +385,6 @@ public partial class Hud : CanvasLayer
         float inspectorWidth = Math.Clamp(_root.Size.X * 0.24f, 300, 336);
         _colonistPanel.OffsetLeft = -16 - inspectorWidth;
         _colonistPanel.OffsetTop = layout.ContentTop;
-        _tray.OffsetRight = 16 + Math.Min(420, Math.Max(300, _root.Size.X - inspectorWidth - 56));
         UpdateTray();
     }
 
@@ -408,11 +395,16 @@ public partial class Hud : CanvasLayer
         _journalTab.ButtonPressed = !_showWork;
         _workTab.ButtonPressed = _showWork;
         _collapse.Text = _trayExpanded ? "−" : "+";
-        _tray.OffsetTop = _trayExpanded ? -Math.Min(316, Math.Max(220, _root.Size.Y * 0.35f)) : -122;
+        float inspectorWidth = Math.Clamp(_root.Size.X * 0.24f, 300, 336);
+        float width = _trayExpanded && _showWork ? 680 : 420;
+        _tray.OffsetRight = 16 + Math.Min(width, Math.Max(300, _root.Size.X - inspectorWidth - 56));
+        float availableHeight = _root.Size.Y - InterfaceLayout.For(_root.Size).ContentTop - 60;
+        _tray.OffsetTop = _trayExpanded && _showWork
+            ? -60 - Math.Min(600, Math.Max(240, availableHeight))
+            : _trayExpanded ? -Math.Min(316, Math.Max(220, _root.Size.Y * 0.35f)) : -122;
         float bodyHeight = Math.Max(100, -_tray.OffsetTop - 120);
         _journalBody.CustomMinimumSize = _workBody.CustomMinimumSize = new Vector2(0, bodyHeight);
     }
-
     public bool HelpOpen => _help.Visible;
     public bool IsRenaming => _nameEditor.IsVisibleInTree();
     public void ToggleHelp() { _help.Visible = !_help.Visible; SetOverlayState(_mapOverlay, _economyOverlay); }
@@ -489,14 +481,8 @@ public partial class Hud : CanvasLayer
     public void ShowShares(Colony colony)
     {
         if (!_workBody.Visible) return;
-        foreach (var (sector, display) in _shares)
-        {
-            display.Bar.Value = colony.WorkShares[sector];
-            display.Value.Text = $"{colony.WorkShares[sector] * 100:0} %";
-        }
-        _costs.Text = ColonyBrain.CostSummary(colony.Labor);
+        _productionDashboard.Refresh(colony);
     }
-
     public void ShowThoughts(Colony colony)
     {
         if (!_journalBody.Visible) return;

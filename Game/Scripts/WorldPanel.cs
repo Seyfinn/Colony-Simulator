@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Godot;
 using GodColony.Simulation;
 using GodColony.Simulation.Colonies;
-using GodColony.Simulation.Time;
 using GodColony.View;
 
 namespace GodColony;
@@ -21,10 +19,10 @@ public partial class WorldPanel : CanvasLayer
     private HBoxContainer _colonyRow = null!;
     private ScrollContainer _coloniesScroll = null!;
     private readonly List<Button> _colonyButtons = [];
-    private readonly Dictionary<ResourceType, (Label Stock, Label Cost, Label Value)> _goods = [];
+    private EconomyDashboard _economyDashboard = null!;
     private Button _economyButton = null!, _mapButton = null!, _foundingButton = null!;
     private PanelContainer _economyCard = null!;
-    private Label _title = null!, _summary = null!, _grudges = null!, _caravans = null!, _trades = null!;
+    private Label _title = null!;
     private WorldMapView _map = null!;
     private double _sinceRefresh = 1;
     private bool _open, _navigationEnabled = true;
@@ -136,7 +134,7 @@ public partial class WorldPanel : CanvasLayer
         _stack.OffsetTop = layout.NavigationTop;
         _map.OffsetTop = _economyCard.OffsetTop = layout.ContentTop;
         _map.OffsetRight = PickingSite ? -InterfaceLayout.SideWidth(_root.Size) - 40 : -16;
-        _economyCard.OffsetRight = 16 + Math.Clamp(_root.Size.X * 0.30f, 400, 460);
+        _economyCard.OffsetRight = 16 + Math.Clamp(_root.Size.X * 0.49f, 600, 740);
     }
 
     public void SetStocksVisible(bool visible)
@@ -213,70 +211,15 @@ public partial class WorldPanel : CanvasLayer
             SizeFlagsVertical = Control.SizeFlags.ExpandFill, MouseForcePassScrollEvents = false,
         };
         frame.AddChild(scroll);
-        var column = MenuStyle.Column(scroll, 12);
-        _summary = MenuStyle.Text(column, "", 13, MenuStyle.Muted, true);
-        var grid = new GridContainer { Columns = 4, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        grid.AddThemeConstantOverride("h_separation", 12);
-        grid.AddThemeConstantOverride("v_separation", 9);
-        column.AddChild(grid);
-        foreach (string header in new[] { "RESSOURCE", "STOCK", "COÛT¹", "VALEUR¹" })
-            MenuStyle.Text(grid, header, 10, MenuStyle.Muted);
-        foreach (ResourceType good in Economy.Tradable)
-        {
-            var name = new HBoxContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-            name.AddThemeConstantOverride("separation", 8);
-            grid.AddChild(name);
-            name.AddChild(new TextureRect
-            {
-                Texture = ResourceIcons.Get(good), CustomMinimumSize = new Vector2(20, 20),
-                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
-                TextureFilter = CanvasItem.TextureFilterEnum.Nearest, MouseFilter = Control.MouseFilterEnum.Ignore,
-            });
-            MenuStyle.Text(name, good == ResourceType.IronOre ? "Minerai" : ResourceIcons.Name(good), 13);
-            _goods[good] = (Number(grid), Number(grid), Number(grid));
-        }
-        MenuStyle.Text(column, "¹ Heures de travail par unité. ~ indique une estimation.\nLa valeur reflète les besoins actuels de la colonie.", 11, MenuStyle.Muted, true);
-        column.AddChild(new HSeparator());
-        _grudges = MenuStyle.Text(column, "", 12, ArtDirection.Brass, true);
-        MenuStyle.Text(column, "CARAVANES EN ROUTE", 11, ArtDirection.Brass);
-        _caravans = MenuStyle.Text(column, "", 13, MenuStyle.Ink, true);
-        column.AddChild(new HSeparator());
-        MenuStyle.Text(column, "DERNIERS ÉCHANGES", 11, ArtDirection.Brass);
-        _trades = MenuStyle.Text(column, "", 12, MenuStyle.Muted, true);
-    }
-
-    private static Label Number(Node parent)
-    {
-        var label = MenuStyle.Text(parent, "0", 13);
-        label.HorizontalAlignment = HorizontalAlignment.Right;
-        return label;
+        _economyDashboard = new EconomyDashboard();
+        scroll.AddChild(_economyDashboard);
     }
 
     private void RefreshEconomy(Colony colony)
     {
         _title.Text = $"Économie · {colony.Name}";
-        _summary.Text = $"{colony.Stock.Get(ResourceType.Coins):N0} pièces\nTravail épargné grâce au commerce : {colony.LifetimeTradeGainHours:0} h";
-        foreach (var (good, labels) in _goods)
-        {
-            double cost = Economy.Cost(colony, good), value = Economy.Value(colony, good);
-            bool known = colony.Labor.HoursPerUnit(good) is not null;
-            labels.Stock.Text = colony.Stock.Get(good).ToString("N0");
-            labels.Cost.Text = known ? $"{cost:0.0}" : $"~{cost:0.0}";
-            labels.Value.Text = $"{value:0.0}";
-            labels.Value.AddThemeColorOverride("font_color", value > cost * 1.2 ? ArtDirection.Brass : value < cost * 0.8 ? MenuStyle.Mint : MenuStyle.Ink);
-        }
-        _grudges.Text = string.Join("\n", colony.Grudges.OrderByDescending(g => g.Value)
-            .Select(g => $"Rancune envers {g.Key.Name} : {g.Value:0.0} · commerce plus coûteux"));
-        _grudges.Visible = colony.Grudges.Count > 0;
-        _caravans.Text = _world.Caravans.Count == 0 ? "Aucune caravane en route pour le moment."
-            : string.Join("\n\n", _world.Caravans.Select(c => $"{c.From.Name} → {c.To.Name}\n{(c.State == CaravanState.Outbound ? "Aller" : "Retour")} · {c.Progress(_world.Clock.Ticks) * 100:0} %"));
-        var records = colony.Trades.TakeLast(3).Reverse();
-        _trades.Text = string.Join("\n\n", records.Select(r =>
-            $"J{r.Ticks / TimeConstants.TicksPerDay + 1} · {r.Partner} · {r.NetCoins:+0;-0;0} pièces\n" +
-            string.Join(", ", r.Lines.Select(l => $"{(l.IsSale ? "Vend" : "Achète")} {l.Units} {Trade.GoodName(l.Good, l.Units)}"))));
-        if (_trades.Text.Length == 0) _trades.Text = "La colonie n'a pas encore réalisé d'échange.";
+        _economyDashboard.Refresh(_world, colony);
     }
-
     private static Button Chip(string text, string hint)
     {
         var button = new Button

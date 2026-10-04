@@ -1,5 +1,17 @@
 # Validation graphique — GodColony
 
+## Économie et production — 2026-10-04
+
+Les captures `ui_economy.png`, `ui_commerce.png`, `ui_recipes.png` et `ui_active.png` montrent les **vrais contrôles** de `WorldPanel` et `Hud`, en 1600 × 900. Les variantes `ui_economy_compact.png`, `ui_production_compact.png`, `ui_recipes_compact.png` et `ui_costs_compact.png` vérifient l'affichage en 1100 × 700. Les petites fenêtres masquent les renseignements régionaux secondaires dans la vue des stocks ; ils restent dans l'infobulle. Aucune sauvegarde utilisateur n'est chargée.
+
+La scène `economie_production.tscn` crée un monde de contrôle de graine 42 et ajoute explicitement des **données de démonstration** (stocks, mesures de travail, ateliers et comptes rendus d'échange). La caravane est créée par `Trade.Depart`. Le mode `active` fait avancer ce monde avec `WorldState.Step` jusqu'à une véritable action d'artisanat commencée : sa jauge est comparée à la progression du modèle. Le fond vient du même `TerrainPainter` que le jeu ; les stocks de ces captures ne sont donc pas ceux d'une partie sauvegardée.
+
+Après compilation, lancer Godot avec `--path Game res://Assets/validation/economie_production.tscn -- --preview=economy --capture=chemin.png`. Modes disponibles : `economy`, `commerce`, `production`, `recipes`, `costs`, `active`. Ajouter `--compact` pour la petite fenêtre. La scène se ferme après 50 images, après contrôle des stocks, des besoins, de la simulation inchangée par l'affichage, de l'identité du contenu et du défilement à travers plusieurs rafraîchissements, des boutons d'onglet et de repli, des manques et de la fabrication réelle. Résultat : **ECONOMY_PRODUCTION_UI_OK** dans les huit scénarios capturés.
+
+Projet principal : `dotnet build Game/GodColony.csproj --no-restore` **0 avertissement / 0 erreur** ; parcours des menus, de la fondation, de la reprise, des raccourcis et du panneau économie : **INTERFACE_SMOKE_OK**. Le contrôle complet a été relancé avec l'accès aux fichiers temporaires Godot, car le bac à sable empêchait initialement la relecture de son fichier de paramètres. Les avertissements de cache/certificats du lancement restreint n'ont pas empêché les captures.
+
+Intégration par remplacement ciblé des seuls panneaux, après comparaison avec la copie de préparation : les modifications récentes de Claude sur le lait, les vaches et l'abondance des bêtes ont été conservées. Les tableaux utilisent ses API de village présentes dans le dossier de travail ; ses fichiers de simulation et tests n'ont pas été modifiés ni inclus dans le commit graphique. Aucun changement de scène principale.
+
 ## T-012 / T-013 — biomes du monde et paysages locaux — 2026-10-04
 
 - `t012_biomes.png` : onze hexagones et trois reliefs, agrandis ×4, puis à taille native ; chaque biome est aussi montré à 13 pixels de large. Les PNG de production font exactement **32 × 37, RGBA 8 bits**, avec sol opaque dans l'hexagone et coins transparents.
