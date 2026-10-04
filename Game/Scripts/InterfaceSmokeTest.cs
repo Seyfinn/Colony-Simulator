@@ -50,7 +50,7 @@ public partial class Main
             worldMap._GuiInput(new InputEventMouseButton
             {
                 ButtonIndex = MouseButton.Left, Pressed = true,
-                Position = new Vector2(worldMap.Size.X / 2, 76 + (worldMap.Size.Y - 120) / 2),
+                Position = worldMap.ScreenPositionOf(_world.WorldMap.SuggestTile(_foundingPanel.Species)),
             });
             Require(_foundingMap is not null && !_worldPanel.MapOpen, "Choisir une région par un clic sur la carte.");
             SelectFoundingSite(0, 0);
@@ -81,7 +81,7 @@ public partial class Main
 
             SetSpeed(GameSpeed.Pause);
             FindNamed<Button>(_worldPanel, "FonderColonie").EmitSignal(BaseButton.SignalName.Pressed);
-            PreviewRegion(0, -9);
+            PreviewRegion(_world.WorldMap.SuggestTile(_foundingPanel.Species));
             Click(_foundingPanel, "Annuler");
             Require(_world.Colonies.Count == 1 && _foundingMap is null && _speed == GameSpeed.Pause,
                 "Annuler doit conserver les colonies, leur carte et la vitesse précédente.");

@@ -16,8 +16,6 @@ public readonly record struct RiverTile(int X, int Y, int DownX, int DownY, int 
 /// </summary>
 public static class Rivers
 {
-    private const int RiverCount = 2;
-
     /// <summary>
     /// Une rivière plus courte que cela (pour une carte de 200 cases) n'est qu'un ruisseau sans intérêt : on cherche une autre source.
     /// La seconde rivière, qui doit s'écarter de la première, peut être un peu plus courte.
@@ -56,7 +54,8 @@ public static class Rivers
     /// Les cases de toutes les rivières, de la source à l'embouchure. Aplanit au passage le lit des tronçons larges
     /// (modifie <paramref name="elevation"/>).
     /// </summary>
-    public static List<RiverTile> Generate(int[] elevation, int width, int height, int seed)
+    /// <param name="riverCount">Nombre de rivières cherchées (deux d'ordinaire ; moins dans une région sèche).</param>
+    public static List<RiverTile> Generate(int[] elevation, int width, int height, int seed, int riverCount = 2)
     {
         float scale = MathF.Max(width, height) / 200f;
         int spacing = (int)(MinSourceSpacing * scale);
@@ -66,7 +65,7 @@ public static class Rivers
         var sources = new List<(int X, int Y)>();
         var rivers = new List<(List<(int X, int Y)> Path, (int X, int Y) Mouth)>();
 
-        for (int river = 0; river < RiverCount; river++)
+        for (int river = 0; river < riverCount; river++)
         {
             int minLength = (int)((river == 0 ? MinLength : MinSecondLength) * scale);
             List<(int X, int Y)>? best = null;

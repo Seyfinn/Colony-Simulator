@@ -16,23 +16,18 @@ public static class MapGenerator
     /// <summary>Côté d'une carte locale, en cases.</summary>
     public const int DefaultSize = 200;
 
-    /// <summary>
-    /// Part de la carte qui reste de la terre nue, sèche, hors forêt (le reste des plaines est de l'herbe).
-    /// L'humidité va de 0,30 (très sec) à 0,70 (détrempé) ; sous <see cref="DryMoisture"/>, le sol est nu.
-    /// </summary>
-    private const float DryShare = 0.20f;
-    private const float DryMoisture = 0.30f + 0.40f * DryShare;
-
     public static LocalMap Generate(int width, int height, int seed, MapStyle? style = null)
     {
         style ??= MapStyle.Temperate;
         var map = new LocalMap(width, height, seed);
         int[] elevation = ComputeElevation(width, height, seed, style);
         // Les rivières larges aplanissent leur lit : on les trace avant de poser le sol et les arbres.
-        List<RiverTile> rivers = Rivers.Generate(elevation, width, height, seed);
+        List<RiverTile> rivers = Rivers.Generate(elevation, width, height, seed, style.RiverCount);
         float[] humidity = ComputeHumidity(width, height, seed);
         float forestThreshold = 1f - style.ForestShare;
         float scale = MathF.Max(width, height) / 200f;
+        // L'humidité va de 0,30 (très sec) à 0,70 (détrempé) ; sous ce seuil, le sol est de la terre nue (une part DryShare des cases).
+        float dryMoisture = 0.30f + 0.40f * style.DryShare;
 
         for (int y = 0; y < height; y++)
         for (int x = 0; x < width; x++)
@@ -40,7 +35,7 @@ public static class MapGenerator
             int e = elevation[y * width + x];
             float u = humidity[y * width + x];
             float moisture = 0.30f + 0.40f * u;
-            SoilType soil = ChooseSoil(x, y, e, moisture, elevation, width, height);
+            SoilType soil = ChooseSoil(x, y, e, moisture, dryMoisture, elevation, width, height);
             (FloraType flora, float growth) = ChooseFlora(x, y, e, soil, u, forestThreshold, style.ForestShare, seed, scale);
             map.SetGenerated(x, y, e, soil, flora, growth, moisture);
         }
@@ -49,6 +44,7 @@ public static class MapGenerator
             map.SetRiver(river.X, river.Y, river.DownX, river.DownY, river.Width);
         map.ComputeBanks();
         map.SoilRichness = style.SoilRichness;
+        map.Biome = style.Biome;
         return map;
     }
 
@@ -127,11 +123,11 @@ public static class MapGenerator
         return humidity;
     }
 
-    private static SoilType ChooseSoil(int x, int y, int e, float moisture, int[] elevation, int width, int height)
+    private static SoilType ChooseSoil(int x, int y, int e, float moisture, float dryMoisture, int[] elevation, int width, int height)
     {
         if (e == LocalMap.WaterLevel + 1 && IsNearWater(x, y, elevation, width, height))
             return SoilType.Sand;
-        return moisture < DryMoisture ? SoilType.Dirt : SoilType.Grass;
+        return moisture < dryMoisture ? SoilType.Dirt : SoilType.Grass;
     }
 
     private static bool IsNearWater(int x, int y, int[] elevation, int width, int height)

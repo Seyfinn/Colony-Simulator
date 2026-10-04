@@ -23,7 +23,7 @@ public class TradeTests(ITestOutputHelper output)
 
     private static void RunHours(WorldState world, int hours)
     {
-        for (long i = 0; i < hours * (long)TimeConstants.TicksPerHour; i++)
+        for (long i = 0; i < (long)Math.Ceiling(hours * (double)TimeConstants.TicksPerHour); i++)
             world.Step();
     }
 

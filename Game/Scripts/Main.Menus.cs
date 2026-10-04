@@ -16,7 +16,7 @@ public partial class Main
     private FoundingPreview _foundingPreview = null!;
     private LocalMap? _foundingMap;
     private Vector2I? _foundingSite;
-    private float _foundingWorldX, _foundingWorldY;
+    private int _foundingTile = -1;
     private bool _mapBeforeFounding;
     private Label? _notification;
     private double _notificationTime;
@@ -48,7 +48,7 @@ public partial class Main
             StartWorld(new WorldCreationOptions(Seed, 200, empty ? 0 : ColonyCount, 8, true, true, true, GameSpeed.Observation), development: true);
             if (args.Contains("--demo-foundation"))
             {
-                BeginFounding(); PreviewRegion(0, -9); SelectSuggestedSite();
+                BeginFounding(); PreviewRegion(_world.WorldMap.SuggestTile(_foundingPanel.Species)); SelectSuggestedSite();
             }
         }
         else foreach (string arg in args)
@@ -137,14 +137,14 @@ public partial class Main
         _worldPanel.PickingSite = true; _camera.ControlsEnabled = false;
     }
 
-    private void PreviewRegion(float x, float y)
+    private void PreviewRegion(int tile)
     {
-        if (!_foundingPanel.IsOpen || !_world.WorldMap.CanPlace(x, y, out _)) return;
-        _foundingWorldX = x; _foundingWorldY = y;
-        _foundingMap = _world.GenerateColonyMap(_foundingPanel.Species);
+        if (!_foundingPanel.IsOpen || !_world.WorldMap.CanSettle(tile, out _)) return;
+        _foundingTile = tile;
+        _foundingMap = _world.GenerateColonyMap(tile);
         DisplayMap(_foundingMap, null);
         _worldPanel.PickingSite = false; _worldPanel.MapOpen = false;
-        _foundingPanel.ShowTerrainStage(x, y);
+        _foundingPanel.ShowTerrainStage(_world.WorldMap.Grid[tile].Describe().ToLowerInvariant());
         _foundingPreview.SelectedTile = null; _foundingPreview.Show();
         (int cx, int cy) = ColonyFounder.FindCampSite(_foundingMap);
         _camera.Position = new Vector2(cx + 0.5f, cy + 0.5f) * TerrainPainter.TileSize;
@@ -173,7 +173,7 @@ public partial class Main
     {
         if (_foundingMap is null || _foundingSite is not { } site) return;
         if (!_world.TryFoundColony(_foundingMap, site.X, site.Y, _foundingPanel.ColonyName, _foundingPanel.Species,
-            _foundingPanel.Founders, _foundingWorldX, _foundingWorldY, out Colony? colony, out string reason))
+            _foundingPanel.Founders, _foundingTile, out Colony? colony, out string reason))
         {
             _foundingPanel.SetError(reason); return;
         }

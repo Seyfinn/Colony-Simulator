@@ -102,11 +102,11 @@ public partial class ColonyCreationPanel : CanvasLayer
         UpdateConfirm();
     }
 
-    public void ShowTerrainStage(float worldX, float worldY)
+    public void ShowTerrainStage(string region)
     {
         _terrainStage = true; _validSite = false;
         _species.Disabled = true;
-        _step.Text = $"2 / 2 · Placez le camp · région ({worldX:0.0}, {worldY:0.0})";
+        _step.Text = $"2 / 2 · Placez le camp · {region}";
         _site.Text = "Cliquez sur le terrain pour fixer le camp. Cherchez de l'eau, des baies, des arbres et de la roche à proximité.";
         _site.AddThemeColorOverride("font_color", MenuStyle.Ink);
         _error.Text = "";

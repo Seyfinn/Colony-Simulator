@@ -175,8 +175,8 @@ public class DamTests(ITestOutputHelper output)
     {
         var world = new WorldState(12345, startingColonists: 8, migration: false, lifecycle: false, colonyCount: 2, trade: false);
         Colony upstream = world.Colonies[0], downstream = world.Colonies[1];
-        Assert.Same(downstream, upstream.Downstream);
-        Assert.Null(downstream.Downstream);
+        // Les deux colonies ne sont pas forcément sur le même fleuve du monde : on place la seconde en aval pour l'étude.
+        upstream.Downstream = downstream;
 
         (int rx, int ry) = Enumerable.Range(0, downstream.Map.Width * downstream.Map.Height)
             .Select(i => (X: i % downstream.Map.Width, Y: i / downstream.Map.Width))

@@ -436,6 +436,9 @@ public sealed class LocalMap
     /// <summary>Richesse du sol cultivable (1 au naturel) : les terres de montagne rendent moins aux semailles.</summary>
     public float SoilRichness { get; internal set; } = 1f;
 
+    /// <summary>Le biome de la case du monde d'où vient cette carte (l'affichage peut s'en servir pour teinter le sol).</summary>
+    public World.Biome Biome { get; internal set; } = World.Biome.TemperateForest;
+
     public Material TopMaterial(int x, int y) => MaterialAt(x, y, GetElevation(x, y) - 1);
 
     public Surface GetSurface(int x, int y)

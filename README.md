@@ -17,6 +17,7 @@ Règle d'or : **la simulation ne connaît pas l'affichage**. Godot lit `WorldSta
 ## Dans `Simulation/`
 
 - `WorldState` : l'horloge, les colonies, les caravanes. `Step()` avance d'un tick.
+- `World/` : la carte du monde, une grille de 64 × 40 hexagones (`WorldGenerator`) : continents, climat du nord glacé au sud tropical, onze biomes, relief, fleuves. Chaque case donne sa carte locale à la colonie qui s'y installe (`MapStyle.For`).
 - `Map/LocalMap` : la carte locale d'une colonie (relief en couches, eau, rivières, canaux, retenues d'eau).
 - `Generation/` : génération des cartes. Chaque carte locale fait 200 × 200 cases (`MapGenerator.DefaultSize`) et se compose de grandes zones (un massif de montagne, de vastes forêts et plaines, un grand lac) ; les rivières naissent en ruisseau puis s'élargissent en fleuve de 3 à 8 cases (`Rivers`).
 - `Colonies/` — une colonie, c'est :
@@ -24,7 +25,7 @@ Règle d'or : **la simulation ne connaît pas l'affichage**. Godot lit `WorldSta
   - `ColonistAI` : le comportement individuel (besoins, déplacements, travail) ;
   - la vie : `Needs`, `Personality`, `Skills`, `Relations`, `Lifecycle`, `Migration`, `Species` ;
   - l'économie du sol : `Farming`, `Irrigation`/`Canal`, `Hydrology` (barrages), `ToolChain` (fer), `FoodChain` (blé), `Crafting` ;
-  - les échanges : `Economy` (valeurs), `Trade` (caravanes), `WorldMap` ;
+  - les échanges : `Economy` (valeurs), `Trade` (caravanes), `WorldMap` (case de chaque colonie, routes des caravanes) ;
   - les grandes décisions : `Prayers` (la colonie demande l'accord du joueur).
 
 Les durées sont en « ticks » (voir `Time/TimeConstants`) : une année = 4 saisons × 5 jours = 20 jours,
@@ -51,8 +52,8 @@ le monde courant. La création d'un autre monde demande confirmation avant de re
 Les préférences de plein écran, de synchronisation verticale, d'ambiance et de caméra sont enregistrées
 dans `user://settings.cfg`. Les parties elles-mêmes ne sont pas encore sauvegardées sur disque.
 
-**Fonder une colonie** ouvre le choix du nom, du peuple et de 5 à 20 fondateurs. Cliquez d'abord sur une région libre
-de la carte du monde, puis sur une zone plate de 5 × 5 cases sur le terrain. Le contour vert indique un site valide,
+**Fonder une colonie** ouvre le choix du nom, du peuple et de 5 à 20 fondateurs. Cliquez d'abord sur une case libre
+de la carte du monde (son biome et son relief donnent le terrain de la région), puis sur une zone plate de 5 × 5 cases sur le terrain. Le contour vert indique un site valide,
 le rouge un obstacle ; **Emplacement conseillé** choisit un camp proche des ressources. **Fonder la colonie** installe
 les habitants à la case choisie, avec leurs provisions et 400 pièces. Le monde peut accueillir jusqu'à 16 colonies.
 Chaque colonie possède sa propre carte locale ; les anciennes colonies restent à leur emplacement lors d'une fondation.
@@ -71,7 +72,7 @@ la pause, l'annulation, la reprise et le remplacement du monde. Il fonctionne au
 ### Options de développement (en ligne de commande, après `--`)
 
 `--capture=chemin.png` (capture puis quitte), `--advance-hours=N`, `--speed=1|4|30`, `--zoom=N`,
-`--colony=N` (colonie observée), `--open-world` (panneau économie), `--open-prayers`, `--demo-prayer`,
+`--colony=N` (colonie observée), `--open-world` (panneau économie), `--open-map` (carte du monde), `--open-prayers`, `--demo-prayer`,
 `--demo-dam`, `--auto-dam`, `--focus-dam`, `--demo-workshops`, `--demo-quarry`, `--select-first`,
 `--focus-fields`, `--focus-quarry`. Les options sont lues dans l'ordre : `--auto-dam --advance-hours=1000 --focus-dam`.
 

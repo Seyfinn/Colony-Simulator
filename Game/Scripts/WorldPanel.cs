@@ -24,7 +24,7 @@ public partial class WorldPanel : CanvasLayer
 
     public event Action<int>? ColonyRequested;
     public event Action? FoundingRequested;
-    public event Action<float, float>? SiteRequested;
+    public event Action<int>? SiteRequested;
 
     private WorldState _world = null!;
     private VBoxContainer _stack = null!, _details = null!;
@@ -38,7 +38,13 @@ public partial class WorldPanel : CanvasLayer
     public bool PickingSite
     {
         get => _map.PickingSite;
-        set { _map.PickingSite = value; if (value) MapOpen = true; }
+        set
+        {
+            _map.PickingSite = value;
+            // Pendant une fondation, le panneau de fondation occupe la droite de l'écran.
+            _map.OffsetRight = value ? -420 : -16;
+            if (value) MapOpen = true;
+        }
     }
 
     public void SetNavigationEnabled(bool enabled)
@@ -117,11 +123,11 @@ public partial class WorldPanel : CanvasLayer
         _map = new WorldMapView { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop };
         root.AddChild(_map);
         _map.AnchorRight = 1; _map.AnchorBottom = 1;
-        _map.OffsetLeft = 16; _map.OffsetRight = -420; _map.OffsetTop = 282; _map.OffsetBottom = -70;
+        _map.OffsetLeft = 16; _map.OffsetRight = -16; _map.OffsetTop = 276; _map.OffsetBottom = -16;
         if (_world is not null)
             _map.Init(_world);
         _map.ColonyClicked += index => { MapOpen = false; ColonyRequested?.Invoke(index); };
-        _map.SiteClicked += (x, y) => SiteRequested?.Invoke(x, y);
+        _map.SiteClicked += tile => SiteRequested?.Invoke(tile);
 
         _details = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
         _details.AddThemeConstantOverride("separation", 4);

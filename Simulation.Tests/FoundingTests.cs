@@ -16,15 +16,17 @@ public class FoundingTests
         world.Step();
         Assert.Equal(start + 1, world.Clock.Ticks);
 
-        LocalMap map = world.GenerateColonyMap(Species.Elf);
+        int tile = world.WorldMap.SuggestTile(Species.Elf);
+        LocalMap map = world.GenerateColonyMap(tile);
         (int x, int y) = ColonyFounder.FindCampSite(map);
-        Assert.True(world.TryFoundColony(map, x, y, "  Clairerive  ", Species.Elf, 12, -4, 3,
+        Assert.True(world.TryFoundColony(map, x, y, "  Clairerive  ", Species.Elf, 12, tile,
             out Colony? colony, out string reason), reason);
         Assert.Same(colony, Assert.Single(world.Colonies));
         Assert.Same(map, world.Map);
         Assert.Equal("Clairerive", colony!.Name);
         Assert.Equal((x, y), (colony.CampX, colony.CampY));
-        Assert.Equal((-4f, 3f), world.WorldMap.PositionOf(colony));
+        Assert.Equal(tile, world.WorldMap.TileOf(colony));
+        Assert.Equal(world.WorldMap.Grid[tile].Biome, map.Biome);
         Assert.Equal(48, colony.Stock.Get(ResourceType.Food));
         Assert.Equal(ColonyFounder.StartingCoins, colony.Stock.Get(ResourceType.Coins));
         Assert.Equal(12, colony.Members.Count);
@@ -42,17 +44,16 @@ public class FoundingTests
     public void La_fondation_en_partie_conserve_les_positions_et_les_identifiants()
     {
         var world = new WorldState(12345, colonyCount: 2, migration: false, lifecycle: false);
-        var originalPositions = world.Colonies.Select(world.WorldMap.PositionOf).ToArray();
+        var originalTiles = world.Colonies.Select(world.WorldMap.TileOf).ToArray();
         var oldIds = world.Colonies.SelectMany(c => c.Members).Select(c => c.Id).ToHashSet();
-        Colony upstream = world.Colonies[^1];
-        LocalMap map = world.GenerateColonyMap(Species.Orc);
+        int tile = world.WorldMap.SuggestTile(Species.Orc);
+        LocalMap map = world.GenerateColonyMap(tile);
         (int x, int y) = ColonyFounder.FindCampSite(map);
         long ticks = world.Clock.Ticks;
-        Assert.True(world.TryFoundColony(map, x, y, "Nouvelle steppe", Species.Orc, 8, 0, -9,
+        Assert.True(world.TryFoundColony(map, x, y, "Nouvelle steppe", Species.Orc, 8, tile,
             out Colony? colony, out string reason), reason);
         Assert.Equal(ticks, world.Clock.Ticks);
-        Assert.Equal(originalPositions, world.Colonies.Take(2).Select(world.WorldMap.PositionOf));
-        Assert.Same(colony, upstream.Downstream);
+        Assert.Equal(originalTiles, world.Colonies.Take(2).Select(world.WorldMap.TileOf));
         Assert.NotSame(world.Map, colony!.Map);
         Assert.All(colony.Members, c => Assert.DoesNotContain(c.Id, oldIds));
         Assert.True(world.WorldMap.TravelDays(world.Colonies[0], colony) > 0);
@@ -60,23 +61,23 @@ public class FoundingTests
     }
 
     [Theory]
-    [InlineData("", 8, 0, 0)]
-    [InlineData("Test", 4, 0, 0)]
-    [InlineData("Test", 21, 0, 0)]
-    [InlineData("Test", 8, 13, 0)]
-    [InlineData("Première colonie", 8, 0, -9)]
-    public void Une_demande_invalide_ne_modifie_pas_le_monde(string name, int founders, float wx, float wy)
+    [InlineData("", 8, false)]
+    [InlineData("Test", 4, false)]
+    [InlineData("Test", 21, false)]
+    [InlineData("Test", 8, true)]
+    [InlineData("Première colonie", 8, false)]
+    public void Une_demande_invalide_ne_modifie_pas_le_monde(string name, int founders, bool inTheSea)
     {
         var world = new WorldState(12345);
-        LocalMap map = world.GenerateColonyMap(Species.Dwarf);
+        int tile = inTheSea ? 0 : world.WorldMap.SuggestTile(Species.Dwarf);
+        LocalMap map = world.GenerateColonyMap(world.WorldMap.SuggestTile(Species.Dwarf));
         (int x, int y) = ColonyFounder.FindCampSite(map);
         int count = world.Colonies.Count;
-        Assert.False(world.TryFoundColony(map, x, y, name, Species.Dwarf, founders, wx, wy,
+        Assert.False(world.TryFoundColony(map, x, y, name, Species.Dwarf, founders, tile,
             out Colony? colony, out string reason));
         Assert.Null(colony);
         Assert.NotEmpty(reason);
         Assert.Equal(count, world.Colonies.Count);
-        Assert.Null(world.Colonies[^1].Downstream);
     }
 
     [Fact]
@@ -84,13 +85,14 @@ public class FoundingTests
     {
         var world = new WorldState(12345);
         var control = new WorldState(12345);
-        LocalMap map = world.GenerateColonyMap(Species.Human);
+        int tile = world.WorldMap.SuggestTile(Species.Human);
+        LocalMap map = world.GenerateColonyMap(tile);
         (int x, int y) = ColonyFounder.FindCampSite(map);
-        Assert.False(world.TryFoundColony(map, 0, 0, "Bord", Species.Human, 8, 0, -9, out _, out _));
-        var occupied = world.WorldMap.PositionOf(world.Colonies[0]);
-        Assert.False(world.TryFoundColony(map, x, y, "Chevauchement", Species.Human, 8, occupied.X, occupied.Y, out _, out _));
-        Assert.False(world.TryFoundColony(world.Map, x, y, "Même carte", Species.Human, 8, 0, -9, out _, out _));
-        Assert.False(world.TryFoundColony(map, x, y, "Position infinie", Species.Human, 8, float.NaN, 0, out _, out _));
+        Assert.False(world.TryFoundColony(map, 0, 0, "Bord", Species.Human, 8, tile, out _, out _));
+        int occupied = world.WorldMap.TileOf(world.Colonies[0]);
+        Assert.False(world.TryFoundColony(map, x, y, "Chevauchement", Species.Human, 8, occupied, out _, out _));
+        Assert.False(world.TryFoundColony(world.Map, x, y, "Même carte", Species.Human, 8, tile, out _, out _));
+        Assert.False(world.TryFoundColony(map, x, y, "Hors du monde", Species.Human, 8, -1, out _, out _));
         Assert.Equal(control.Random.Next(), world.Random.Next());
         Assert.Single(world.Colonies);
     }

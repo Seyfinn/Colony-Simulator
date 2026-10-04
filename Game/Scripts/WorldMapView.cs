@@ -4,13 +4,17 @@ using System.Linq;
 using Godot;
 using GodColony.Simulation;
 using GodColony.Simulation.Colonies;
+using GodColony.Simulation.World;
 using GodColony.View;
 
 namespace GodColony;
 
 /// <summary>
-/// La carte du monde : marqueurs par peuple, fleuve et caravanes animées avec secours procédural.
-/// Un clic sur une colonie la fait observer.
+/// La carte du monde : une grille d'hexagones colorés par biome, avec le relief, les fleuves, les colonies et les caravanes
+/// qui suivent leur route de case en case. Visuel volontairement rudimentaire (aplats de couleur), à remplacer par les
+/// illustrations (voir le cahier des charges, tâche T-012).
+/// Un clic sur une colonie la fait observer ; pendant une fondation, un clic sur une case libre la choisit.
+/// La molette zoome, le clic droit (ou du milieu) maintenu fait glisser la carte.
 /// </summary>
 public partial class WorldMapView : Control
 {
@@ -18,12 +22,12 @@ public partial class WorldMapView : Control
     private static readonly Color Muted = Color.Color8(150, 174, 162);
     private static readonly Color Panel = new(0.065f, 0.115f, 0.105f, 0.97f);
     private static readonly Color Edge = Color.Color8(65, 89, 75);
-    private static readonly Color River = Color.Color8(91, 151, 157);
-    private const float DotRadius = 13f;
-    private const float Margin = 80f;
+    private static readonly Color RiverColor = Color.Color8(78, 140, 196);
+    private const float DotRadius = 9f;
+    private const float Sqrt3 = 1.7320508f;
 
     public event Action<int>? ColonyClicked;
-    public event Action<float, float>? SiteClicked;
+    public event Action<int>? SiteClicked;
     public bool PickingSite { get; set; }
     private string _placementMessage = "";
 
@@ -32,7 +36,38 @@ public partial class WorldMapView : Control
     /// <summary>Colonie actuellement observée (cerclée d'or).</summary>
     public int Observed { get; set; }
 
-    public void Init(WorldState world) => _world = world;
+    /// <summary>Zoom (1 = tout le monde tient dans le cadre) et décalage de la carte, en pixels.</summary>
+    private float _zoom = 1f;
+    private Vector2 _pan;
+    private bool _dragging;
+    private int _hovered = -1;
+
+    /// <summary>À la première ouverture, la carte se centre sur les colonies, un peu zoomée (comme dans RimWorld).</summary>
+    private bool _needsFocus;
+    private const float StartZoom = 2.2f;
+
+    public void Init(WorldState world)
+    {
+        _world = world;
+        _zoom = 1f;
+        _pan = Vector2.Zero;
+        _needsFocus = true;
+    }
+
+    /// <summary>Centre la carte sur le milieu des colonies (ou sur le monde entier s'il n'y en a pas).</summary>
+    private void FocusOnColonies()
+    {
+        _needsFocus = false;
+        if (_world.Colonies.Count == 0)
+            return;
+        _zoom = StartZoom;
+        _pan = Vector2.Zero;
+        Vector2 middle = Vector2.Zero;
+        foreach (Colony colony in _world.Colonies)
+            middle += CenterOf(_world.WorldMap.TileOf(colony));
+        middle /= _world.Colonies.Count;
+        _pan = Land.Position + Land.Size / 2 - middle;
+    }
 
     public static Color ColorOf(Species species) =>
         species == Species.Dwarf ? Color.Color8(214, 142, 84)
@@ -40,144 +75,408 @@ public partial class WorldMapView : Control
         : species == Species.Orc ? Color.Color8(205, 98, 86)
         : Color.Color8(226, 190, 119);
 
+    /// <summary>La couleur d'aplat de chaque biome (provisoire, en attendant les tuiles dessinées).</summary>
+    public static Color BiomeColor(Biome biome) => biome switch
+    {
+        Biome.Ocean => Color.Color8(38, 72, 112),
+        Biome.IceSheet => Color.Color8(228, 236, 242),
+        Biome.Tundra => Color.Color8(160, 168, 150),
+        Biome.BorealForest => Color.Color8(58, 96, 78),
+        Biome.TemperateForest => Color.Color8(68, 128, 62),
+        Biome.Grassland => Color.Color8(146, 182, 92),
+        Biome.Steppe => Color.Color8(188, 178, 112),
+        Biome.Desert => Color.Color8(224, 198, 132),
+        Biome.Savanna => Color.Color8(198, 170, 86),
+        Biome.TropicalForest => Color.Color8(34, 116, 56),
+        Biome.Swamp => Color.Color8(86, 108, 78),
+        _ => Colors.Magenta,
+    };
+
+    // ---------- Géométrie des hexagones ----------
+
+    private Rect2 Land => new(16, 64, Math.Max(1, Size.X - 32), Math.Max(1, Size.Y - 64 - 52));
+
+    /// <summary>Largeur d'un hexagone à l'écran, en pixels.</summary>
+    private float HexWidth
+    {
+        get
+        {
+            WorldGrid grid = _world.WorldMap.Grid;
+            float fit = Math.Min(Land.Size.X / (grid.Width + 0.5f), Land.Size.Y / ((grid.Height - 1) * 0.8660254f + 1.1547f));
+            return fit * _zoom;
+        }
+    }
+
+    private Vector2 Origin
+    {
+        get
+        {
+            WorldGrid grid = _world.WorldMap.Grid;
+            float w = HexWidth;
+            var size = new Vector2((grid.Width + 0.5f) * w, ((grid.Height - 1) * 0.8660254f + 1.1547f) * w);
+            // Centré dans le cadre, puis décalé par le glisser ; le premier centre est à une demi-case du coin.
+            return Land.Position + (Land.Size - size) / 2 + _pan + new Vector2(w / 2, w / Sqrt3);
+        }
+    }
+
+    private Vector2 CenterOf(int index)
+    {
+        WorldTile tile = _world.WorldMap.Grid[index];
+        (float x, float y) = WorldGrid.Center(tile.Col, tile.Row);
+        return Origin + new Vector2(x, y) * HexWidth;
+    }
+
+    /// <summary>Où se trouve le centre d'une case dans ce contrôle (pour les tests d'interface).</summary>
+    public Vector2 ScreenPositionOf(int tile) => CenterOf(tile);
+
+    private Vector2[] Hexagon(Vector2 center, float shrink = 1f)
+    {
+        float radius = HexWidth / Sqrt3 * shrink;
+        var points = new Vector2[6];
+        for (int i = 0; i < 6; i++)
+        {
+            float angle = Mathf.DegToRad(60 * i - 30);
+            points[i] = center + new Vector2(Mathf.Cos(angle), Mathf.Sin(angle)) * radius;
+        }
+        return points;
+    }
+
+    /// <summary>La case sous un point de l'écran, ou -1 hors de la carte.</summary>
+    private int TileAt(Vector2 point)
+    {
+        WorldGrid grid = _world.WorldMap.Grid;
+        Vector2 local = (point - Origin) / HexWidth;
+        int row = Mathf.RoundToInt(local.Y / 0.8660254f);
+        int col = Mathf.RoundToInt(local.X - 0.5f * (row & 1));
+        int best = -1;
+        float bestDistance = float.MaxValue;
+        for (int r = row - 1; r <= row + 1; r++)
+        for (int c = col - 1; c <= col + 1; c++)
+        {
+            if (!grid.InBounds(c, r))
+                continue;
+            float distance = CenterOf(grid.IndexOf(c, r)).DistanceSquaredTo(point);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = grid.IndexOf(c, r);
+            }
+        }
+        float radius = HexWidth / Sqrt3;
+        return best >= 0 && bestDistance <= radius * radius && Land.HasPoint(point) ? best : -1;
+    }
+
+    // ---------- Dessin ----------
+
+    /// <summary>Un calque de dessin : le terrain (fixe, redessiné seulement au zoom ou au déplacement) ou ce qui bouge.</summary>
+    private sealed partial class Layer : Control
+    {
+        public Action<CanvasItem>? Paint;
+        public override void _Draw() => Paint?.Invoke(this);
+    }
+
+    private Layer? _terrain, _overlay;
+    private (float Zoom, Vector2 Pan, Vector2 Size, WorldState? World) _terrainKey;
+
+    public override void _Ready()
+    {
+        ClipContents = true;
+        _terrain = new Layer { MouseFilter = MouseFilterEnum.Ignore, Paint = PaintTerrain };
+        _overlay = new Layer { MouseFilter = MouseFilterEnum.Ignore, Paint = PaintOverlay };
+        foreach (Layer layer in new[] { _terrain, _overlay })
+        {
+            AddChild(layer);
+            layer.SetAnchorsAndOffsetsPreset(LayoutPreset.FullRect);
+        }
+    }
+
     public override void _Process(double delta)
     {
-        if (Visible)
-            QueueRedraw();
+        if (!Visible || _world is null || _terrain is null || _overlay is null)
+            return;
+        if (_needsFocus && Size.X > 100)
+            FocusOnColonies();
+        var key = (_zoom, _pan, Size, _world);
+        if (key != _terrainKey)
+        {
+            _terrainKey = key;
+            _terrain.QueueRedraw();
+        }
+        _overlay.QueueRedraw();
     }
 
-    /// <summary>Position à l'écran (dans ce contrôle) de chaque colonie, la carte du monde étant mise à l'échelle pour tenir.</summary>
-    private List<Vector2> Layout()
+    public override void _Draw() => DrawRect(new Rect2(Vector2.Zero, Size), Panel);
+
+    private void PaintTerrain(CanvasItem g)
     {
-        return _world.Colonies.Select(c => ToScreen(_world.WorldMap.PositionOf(c))).ToList();
+        if (_world is null)
+            return;
+        WorldGrid grid = _world.WorldMap.Grid;
+        g.DrawRect(Land, BiomeColor(Biome.Ocean).Darkened(0.2f));
+        float w = HexWidth;
+        // Tant que le contrôle n'a pas sa taille, les cases n'ont pas de surface : rien à dessiner.
+        if (w < 2f)
+            return;
+        Rect2 visible = Land.Grow(w);
+        foreach (WorldTile tile in grid.Tiles)
+        {
+            Vector2 center = CenterOf(tile.Index);
+            if (!visible.HasPoint(center))
+                continue;
+            Color color = BiomeColor(tile.Biome);
+            // Une légère variation de teinte par case évite l'effet « damier uni ».
+            float jitter = (((tile.Col * 73856093) ^ (tile.Row * 19349663)) & 15) / 15f - 0.5f;
+            color = color.Lightened(0.04f * jitter);
+            if (AssetLibrary.Get($"world/hex_{BiomeKey(tile.Biome)}.png") is { } texture)
+                g.DrawTextureRect(texture, HexBox(center), false);
+            else
+                g.DrawColoredPolygon(Hexagon(center, 1.02f), color);
+            DrawRelief(g, tile, center, w);
+        }
+        DrawRivers(g, grid, visible);
     }
 
-    private Rect2 Land => new(Margin, 76, Math.Max(1, Size.X - 2 * Margin), Math.Max(1, Size.Y - 120));
-    private Vector2 ToScreen((float X, float Y) point) => Land.Position +
-        new Vector2((point.X + WorldMap.Extent) / (2 * WorldMap.Extent) * Land.Size.X,
-            (point.Y + WorldMap.Extent) / (2 * WorldMap.Extent) * Land.Size.Y);
-    private (float X, float Y) ToWorld(Vector2 point)
-    {
-        Vector2 uv = (point - Land.Position) / Land.Size;
-        return ((uv.X * 2 - 1) * WorldMap.Extent, (uv.Y * 2 - 1) * WorldMap.Extent);
-    }
-
-    public override void _Draw()
+    private void PaintOverlay(CanvasItem g)
     {
         if (_world is null)
             return;
         var font = ArtDirection.BodyFont;
-        DrawRect(new Rect2(Vector2.Zero, Size), Panel);
-        if (AssetLibrary.Get("world/map_background.png") is { } background)
-            DrawTextureRect(background, new Rect2(Vector2.Zero, Size), false);
-        TextureFilter = TextureFilterEnum.Nearest;
-        DrawRect(new Rect2(Vector2.Zero, Size), Edge, false, 2);
-        DrawString(ArtDirection.HeadingFont, new Vector2(20, 30), "Carte du monde", HorizontalAlignment.Left, -1, 18, ArtDirection.Brass);
-        DrawString(font, new Vector2(20, 50), PickingSite
-            ? "Cliquez dans le cadre pour choisir une région libre."
-            : "Cliquez sur une colonie pour l'observer · fondez de nouveaux peuples", HorizontalAlignment.Left, -1, 12, Muted);
-
-        DrawRect(Land, new Color(0, 0, 0, 0.12f));
-        DrawRect(Land, Edge, false, 1);
-        if (PickingSite && Land.HasPoint(GetLocalMousePosition()))
+        _hovered = TileAt(GetLocalMousePosition());
+        if (_hovered >= 0)
         {
-            Vector2 mouse = GetLocalMousePosition();
-            var point = ToWorld(mouse);
-            bool valid = _world.WorldMap.CanPlace(point.X, point.Y, out _);
-            Color color = valid ? ArtDirection.Sage : MenuStyle.Error;
-            DrawCircle(mouse, 13, new Color(color, 0.35f));
-            DrawArc(mouse, 18, 0, Mathf.Tau, 32, color, 2);
+            bool valid = !PickingSite || _world.WorldMap.CanSettle(_hovered, out _);
+            Color outline = PickingSite ? (valid ? ArtDirection.Sage : MenuStyle.Error) : Ink;
+            Vector2[] hex = Hexagon(CenterOf(_hovered));
+            g.DrawPolyline([.. hex, hex[0]], outline, 2);
         }
 
-        List<Vector2> points = Layout();
+        DrawColonies(g, font);
+        DrawCaravans(g, font);
 
-        // Le fleuve : il traverse les colonies dans l'ordre, chacune étant en amont de la suivante.
-        for (int i = 0; i + 1 < points.Count; i++)
-        {
-            if (AssetLibrary.Get("world/river_segment.png") is { } segment)
-            {
-                Vector2 delta = points[i + 1] - points[i];
-                DrawSetTransform(points[i], delta.Angle());
-                for (float along = 0; along < delta.Length(); along += 16)
-                {
-                    float width = Math.Min(16, delta.Length() - along);
-                    DrawTextureRectRegion(segment, new Rect2(along, -4, width, 8), new Rect2(0, 0, width, 8));
-                }
-                DrawSetTransform(Vector2.Zero);
-            }
-            else DrawDashedLine(points[i], points[i + 1], River, 3, 9);
-        }
-        // Les distances (jours de marche) entre colonies voisines.
-        for (int i = 0; i < points.Count; i++)
-        for (int j = i + 1; j < points.Count; j++)
-        {
-            DrawLine(points[i], points[j], new Color(1, 1, 1, 0.08f), 1);
-            float days = _world.WorldMap.TravelDays(_world.Colonies[i], _world.Colonies[j]);
-            if (j == i + 1 || points.Count == 2)
-            {
-                // Au milieu de la route, décalée sur le côté pour ne pas masquer le fleuve.
-                Vector2 along = (points[j] - points[i]).Normalized();
-                Vector2 label = (points[i] + points[j]) / 2 + new Vector2(-along.Y, along.X) * 24f;
-                DrawString(font, label - new Vector2(16, 0), $"{days:0.0} j", HorizontalAlignment.Center, 32, 11, Muted);
-            }
-        }
+        // Le titre et la ligne du bas passent par-dessus les cases qui débordent du cadre quand on zoome.
+        g.DrawRect(new Rect2(0, 0, Size.X, Land.Position.Y), Panel);
+        g.DrawRect(new Rect2(0, Land.End.Y, Size.X, Size.Y - Land.End.Y), Panel);
+        g.DrawRect(new Rect2(0, 0, Land.Position.X, Size.Y), Panel);
+        g.DrawRect(new Rect2(Land.End.X, 0, Size.X - Land.End.X, Size.Y), Panel);
+        g.DrawRect(Land, Edge, false, 1);
+        g.DrawRect(new Rect2(Vector2.Zero, Size), Edge, false, 2);
+        g.DrawString(ArtDirection.HeadingFont, new Vector2(20, 30), "Carte du monde", HorizontalAlignment.Left, -1, 18, ArtDirection.Brass);
+        g.DrawString(font, new Vector2(20, 50), PickingSite
+            ? "Cliquez sur une case libre pour y fonder la colonie : chaque case donne sa propre région."
+            : "Cliquez sur une colonie pour l'observer · molette : zoom · clic droit maintenu : déplacer",
+            HorizontalAlignment.Left, -1, 12, Muted);
+        DrawLegend(g, font);
+        g.DrawString(font, new Vector2(20, Size.Y - 18), BottomLine(), HorizontalAlignment.Left, Size.X - 40, 12, Muted);
+    }
 
-        // Les colonies.
-        for (int i = 0; i < points.Count; i++)
+    /// <summary>Nom de fichier d'un biome : <c>world/hex_&lt;clé&gt;.png</c> (voir le cahier des charges, T-012).</summary>
+    public static string BiomeKey(Biome biome) => biome switch
+    {
+        Biome.Ocean => "ocean", Biome.IceSheet => "ice", Biome.Tundra => "tundra", Biome.BorealForest => "taiga",
+        Biome.TemperateForest => "temperate_forest", Biome.Grassland => "grassland", Biome.Steppe => "steppe",
+        Biome.Desert => "desert", Biome.Savanna => "savanna", Biome.TropicalForest => "jungle", Biome.Swamp => "swamp",
+        _ => "unknown",
+    };
+
+    /// <summary>Le rectangle d'une image d'hexagone (32 × 37 à l'échelle 1) centré sur la case.</summary>
+    private Rect2 HexBox(Vector2 center)
+    {
+        float w = HexWidth * 1.02f, h = w * 2f / Sqrt3;
+        return new Rect2(center - new Vector2(w, h) / 2, new Vector2(w, h));
+    }
+
+    /// <summary>Collines : deux bosses ; montagnes : un pic ; sommets infranchissables : un pic enneigé.</summary>
+    private void DrawRelief(CanvasItem g, WorldTile tile, Vector2 center, float w)
+    {
+        if (tile.IsOcean || tile.Relief == Relief.Flat)
+            return;
+        string reliefKey = tile.Relief switch { Relief.Hills => "hills", Relief.Mountains => "mountains", _ => "peaks" };
+        if (AssetLibrary.Get($"world/relief_{reliefKey}.png") is { } overlay)
+        {
+            g.DrawTextureRect(overlay, HexBox(center), false);
+            return;
+        }
+        Color shade = BiomeColor(tile.Biome).Darkened(0.35f);
+        float s = w * 0.28f;
+        if (tile.Relief == Relief.Hills)
+        {
+            g.DrawArc(center + new Vector2(-s * 0.6f, s * 0.3f), s * 0.55f, Mathf.Pi, Mathf.Tau, 8, shade, Math.Max(1, w / 12));
+            g.DrawArc(center + new Vector2(s * 0.6f, s * 0.1f), s * 0.55f, Mathf.Pi, Mathf.Tau, 8, shade, Math.Max(1, w / 12));
+            return;
+        }
+        float h = tile.Relief == Relief.Impassable ? 1.5f : 1.2f;
+        Vector2[] peak = [center + new Vector2(-s * 1.1f, s * 0.7f), center + new Vector2(0, -s * h), center + new Vector2(s * 1.1f, s * 0.7f)];
+        g.DrawColoredPolygon(peak, Color.Color8(112, 104, 96));
+        if (tile.Relief == Relief.Impassable)
+            g.DrawColoredPolygon([center + new Vector2(-s * 0.42f, -s * 0.45f), center + new Vector2(0, -s * h), center + new Vector2(s * 0.42f, -s * 0.45f)],
+                Color.Color8(240, 244, 248));
+    }
+
+    /// <summary>Chaque case de rivière est reliée à la case vers laquelle elle coule ; les grands fleuves sont plus épais.</summary>
+    private void DrawRivers(CanvasItem g, WorldGrid grid, Rect2 visible)
+    {
+        float w = HexWidth;
+        foreach (WorldTile tile in grid.Tiles)
+        {
+            if (tile.River == 0 || tile.IsOcean || tile.FlowsTo < 0)
+                continue;
+            Vector2 from = CenterOf(tile.Index);
+            if (!visible.HasPoint(from))
+                continue;
+            Vector2 to = CenterOf(tile.FlowsTo);
+            if (grid[tile.FlowsTo].IsOcean)
+                to = from.Lerp(to, 0.6f);
+            g.DrawLine(from, to, RiverColor, Math.Max(1.5f, w * (tile.River == 2 ? 0.2f : 0.1f)), true);
+        }
+    }
+
+    private void DrawColonies(CanvasItem g, Font font)
+    {
+        for (int i = 0; i < _world.Colonies.Count; i++)
         {
             Colony colony = _world.Colonies[i];
+            Vector2 point = CenterOf(_world.WorldMap.TileOf(colony));
             Color color = ColorOf(colony.Species);
-            DrawCircle(points[i], DotRadius, color.Darkened(0.35f));
-            DrawCircle(points[i], DotRadius - 3, color);
+            g.DrawCircle(point, DotRadius, color.Darkened(0.45f));
+            g.DrawCircle(point, DotRadius - 2.5f, color);
             if (AssetLibrary.Get($"world/colony_{PeoplesSprites.LookOf(colony.Species).ToString().ToLowerInvariant()}.png") is { } marker)
-                DrawTexture(marker, points[i] - new Vector2(16, 16));
+                g.DrawTexture(marker, point - new Vector2(16, 16));
             if (i == Observed)
-                DrawArc(points[i], DotRadius + 5, 0, Mathf.Tau, 32, ArtDirection.Brass, 2);
-            DrawString(font, points[i] + new Vector2(-100, DotRadius + 18), colony.Name, HorizontalAlignment.Center, 200, 13, Ink);
-            DrawString(font, points[i] + new Vector2(-100, DotRadius + 33),
-                $"{colony.Species.Plural} · {colony.Members.Count} habitants · {colony.Stock.Get(ResourceType.Coins)} pièces",
+                g.DrawArc(point, DotRadius + 4, 0, Mathf.Tau, 32, ArtDirection.Brass, 2);
+            // Les noms se chevauchent quand on voit tout le monde : on les montre une fois un peu zoomé.
+            if (_zoom < 1.6f && i != Observed)
+                continue;
+            g.DrawString(font, point + new Vector2(-100, DotRadius + 15), colony.Name, HorizontalAlignment.Center, 200, 12, Ink);
+            g.DrawString(font, point + new Vector2(-100, DotRadius + 28), $"{colony.Species.Plural} · {colony.Members.Count} hab.",
                 HorizontalAlignment.Center, 200, 10, Muted);
         }
+    }
 
-        // Les caravanes suivent la position simulée ; seul leur dessin change.
+    /// <summary>Les caravanes avancent sur leur route de case en case, à la position que calcule la simulation.</summary>
+    private void DrawCaravans(CanvasItem g, Font font)
+    {
         long now = _world.Clock.Ticks;
         foreach (Caravan caravan in _world.Caravans)
         {
-            Vector2 from = points[_world.Colonies.IndexOf(caravan.From)], to = points[_world.Colonies.IndexOf(caravan.To)];
-            Vector2 direction = (to - from).Normalized();
-            Vector2 side = new Vector2(-direction.Y, direction.X) * 7f;
-            Vector2 position = from.Lerp(to, caravan.RoutePosition(now)) + side;
-            bool left = (to.X - from.X) * (caravan.State == CaravanState.Outbound ? 1 : -1) < 0;
-            CaravanSprites.Draw(this, position, now / (double)GodColony.Simulation.Time.TimeConstants.TicksPerSecond, left);
-            string state = caravan.State == CaravanState.Outbound ? "→" : "←";
-            DrawString(font, position + new Vector2(18, -6), $"{state} {caravan.Traders.Count} colons", HorizontalAlignment.Left, -1, 10, Ink);
+            if (_world.WorldMap.Route(caravan.From, caravan.To) is not { } route)
+                continue;
+            var path = route.Tiles.Select(CenterOf).ToArray();
+            if (path.Length >= 2)
+                g.DrawPolyline(path, new Color(1, 1, 1, 0.25f), 1.5f);
+            (int a, int b, float t) = route.At(caravan.RoutePosition(now));
+            Vector2 position = CenterOf(a).Lerp(CenterOf(b), t);
+            bool outbound = caravan.State == CaravanState.Outbound;
+            bool left = (CenterOf(b).X - CenterOf(a).X) * (outbound ? 1 : -1) < 0;
+            CaravanSprites.Draw(g, position, now / (double)GodColony.Simulation.Time.TimeConstants.TicksPerSecond, left);
+            g.DrawString(font, position + new Vector2(14, -8), $"{(outbound ? "→" : "←")} {caravan.To.Name}",
+                HorizontalAlignment.Left, -1, 10, Ink);
         }
-        DrawString(font, new Vector2(20, Size.Y - 16), PickingSite ? _placementMessage
-            : _world.Colonies.Count == 0 ? "Monde vierge · fondez votre première colonie."
-            : _world.Caravans.Count == 0 ? "Aucune caravane en route." : "", HorizontalAlignment.Left, Size.X - 40, 12, Muted);
     }
+
+    private static readonly Biome[] LegendOrder =
+    [
+        Biome.IceSheet, Biome.Tundra, Biome.BorealForest, Biome.TemperateForest, Biome.Grassland, Biome.Steppe,
+        Biome.Desert, Biome.Savanna, Biome.TropicalForest, Biome.Swamp, Biome.Ocean,
+    ];
+
+    private void DrawLegend(CanvasItem g, Font font)
+    {
+        const float rowHeight = 15f, width = 128f;
+        var box = new Rect2(Size.X - width - 24, 64 + 8, width, LegendOrder.Length * rowHeight + 10);
+        g.DrawRect(box, new Color(Panel, 0.85f));
+        g.DrawRect(box, Edge, false, 1);
+        for (int i = 0; i < LegendOrder.Length; i++)
+        {
+            Vector2 at = box.Position + new Vector2(8, 6 + i * rowHeight);
+            g.DrawRect(new Rect2(at, new Vector2(11, 11)), BiomeColor(LegendOrder[i]));
+            g.DrawString(font, at + new Vector2(17, 10), BiomeInfo.Of(LegendOrder[i]).Name, HorizontalAlignment.Left, -1, 10, Ink);
+        }
+    }
+
+    /// <summary>La ligne du bas : la case survolée (biome, relief, climat), ou l'état des caravanes.</summary>
+    private string BottomLine()
+    {
+        if (_hovered >= 0)
+        {
+            WorldTile tile = _world.WorldMap.Grid[_hovered];
+            if (tile.IsOcean)
+                return "Océan";
+            string line = $"{tile.Describe()} · {tile.Temperature:0} °C en moyenne · pluies {tile.Rainfall * 100:0} %";
+            if (tile.River > 0) line += tile.River == 2 ? " · grand fleuve" : " · rivière";
+            if (tile.Coastal) line += " · côte";
+            if (tile.Habitable) line += $" · sol {tile.Info.SoilRichness * 100:0} %";
+            if (_world.WorldMap.ColonyAt(_hovered) is { } colony)
+                line += $" · {colony.Name}";
+            else if (PickingSite)
+            {
+                _world.WorldMap.CanSettle(_hovered, out string reason);
+                line += $" — {reason}";
+            }
+            return line;
+        }
+        if (PickingSite)
+            return _placementMessage;
+        return _world.Colonies.Count == 0 ? "Monde vierge · fondez votre première colonie."
+            : _world.Caravans.Count == 0 ? "Aucune caravane en route." : $"{_world.Caravans.Count} caravane(s) en route.";
+    }
+
+    // ---------- Souris ----------
 
     public override void _GuiInput(InputEvent @event)
     {
-        if (@event is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } click || _world is null)
+        if (_world is null)
             return;
-        if (PickingSite)
+        switch (@event)
         {
-            if (Land.HasPoint(click.Position))
-            {
-                GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
-                var point = ToWorld(click.Position);
-                if (_world.WorldMap.CanPlace(point.X, point.Y, out _placementMessage)) SiteClicked?.Invoke(point.X, point.Y);
-            }
-            AcceptEvent();
+            case InputEventMouseButton { Pressed: true, ButtonIndex: MouseButton.WheelUp or MouseButton.WheelDown } wheel:
+                Zoom(wheel.ButtonIndex == MouseButton.WheelUp ? 1.2f : 1f / 1.2f, wheel.Position);
+                AcceptEvent();
+                return;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Right or MouseButton.Middle } drag:
+                _dragging = drag.Pressed;
+                AcceptEvent();
+                return;
+            case InputEventMouseMotion motion when _dragging:
+                _pan += motion.Relative;
+                AcceptEvent();
+                return;
+            case InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } click:
+                Click(click.Position);
+                AcceptEvent();
+                return;
+        }
+    }
+
+    private void Zoom(float factor, Vector2 around)
+    {
+        float before = _zoom;
+        _zoom = Math.Clamp(_zoom * factor, 1f, 6f);
+        if (_zoom == 1f)
+        {
+            _pan = Vector2.Zero;
             return;
         }
-        List<Vector2> points = Layout();
-        for (int i = 0; i < points.Count; i++)
-            if (points[i].DistanceTo(click.Position) <= DotRadius + 8)
+        // On garde sous la souris le point qui y était.
+        Vector2 center = Land.Position + Land.Size / 2 + _pan;
+        _pan += (around - center) * (1 - _zoom / before);
+    }
+
+    private void Click(Vector2 position)
+    {
+        int tile = TileAt(position);
+        if (PickingSite)
+        {
+            if (tile < 0)
+                return;
+            GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
+            if (_world.WorldMap.CanSettle(tile, out _placementMessage))
+                SiteClicked?.Invoke(tile);
+            return;
+        }
+        for (int i = 0; i < _world.Colonies.Count; i++)
+            if (CenterOf(_world.WorldMap.TileOf(_world.Colonies[i])).DistanceTo(position) <= Math.Max(DotRadius + 6, HexWidth * 0.6f))
             {
                 ColonyClicked?.Invoke(i);
-                AcceptEvent();
                 return;
             }
     }
