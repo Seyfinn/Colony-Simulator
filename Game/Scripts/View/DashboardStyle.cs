@@ -8,11 +8,33 @@ internal static class DashboardStyle
 {
     public static readonly Color Gold = ArtDirection.Brass, Mint = MenuStyle.Mint, Muted = MenuStyle.Muted,
         Ink = MenuStyle.Ink, Warning = MenuStyle.Error;
+    public static readonly Color Surface = new(0.09f, 0.16f, 0.135f), PlotSurface = new(0.055f, 0.115f, 0.09f),
+        PlotGrid = new(0.255f, 0.35f, 0.29f, 0.55f), Readout = new(0.045f, 0.095f, 0.075f, 0.98f);
+
+    /// <summary>Teintes des matériaux et denrées, reprises de leurs pixels natifs.</summary>
+    public static Color ResourceTint(ResourceType good) => good switch
+    {
+        ResourceType.Food or ResourceType.Meat or ResourceType.SaltedMeat => Color.Color8(237, 147, 126),
+        ResourceType.Grain or ResourceType.Bread or ResourceType.Beer or ResourceType.Cake or ResourceType.Coins => Color.Color8(222, 175, 78),
+        ResourceType.Wood or ResourceType.Hardwood or ResourceType.Chickens => Color.Color8(190, 139, 83),
+        ResourceType.IronOre => Color.Color8(224, 156, 83),
+        ResourceType.Stone or ResourceType.Iron or ResourceType.Tools or ResourceType.Salt => Color.Color8(187, 211, 193),
+        ResourceType.Charcoal => Color.Color8(130, 149, 133),
+        ResourceType.Flour or ResourceType.Wool or ResourceType.Eggs or ResourceType.Sheep or ResourceType.Cows => Color.Color8(245, 233, 201),
+        ResourceType.Milk or ResourceType.Fish or ResourceType.Stew => Color.Color8(111, 169, 173),
+        _ => Color.Color8(137, 198, 158),
+    };
+
+    public static Color MetricTint(ColonyMetric metric) => metric switch
+    {
+        ColonyMetric.FoodDays => ResourceTint(ResourceType.Grain), ColonyMetric.Coins => ResourceTint(ResourceType.Coins),
+        ColonyMetric.Mood => Mint, _ => Ink,
+    };
 
     public static PanelContainer Card(Node parent, int padding = 12)
     {
         var card = new PanelContainer { SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
-        card.AddThemeStyleboxOverride("panel", MenuStyle.Box(new Color(0.09f, 0.16f, 0.135f), MenuStyle.Edge, padding));
+        card.AddThemeStyleboxOverride("panel", MenuStyle.Box(Surface, MenuStyle.Edge, padding));
         parent.AddChild(card);
         return card;
     }

@@ -313,8 +313,12 @@ public partial class ColonistsView : Node2D
         if (building.IsComplete)
         {
             DrawGroundShadow(basePoint + new Vector2(34, -1), 29, 5, 0.22f);
-            Texture2D sprite = SpriteFactory.BuildingSprite(building.Type.ToString(), BiomeVisuals.At(_colony.Map, building.X, building.Y));
+            Texture2D sprite = building.Type == BuildingType.Cask ? WorkshopArt.Cask(building, _world.Clock.Ticks)
+                : SpriteFactory.BuildingSprite(building.Type.ToString(), BiomeVisuals.At(_colony.Map, building.X, building.Y));
             DrawTexture(sprite, basePoint - new Vector2(0, sprite.GetHeight()));
+            if (building.Type == BuildingType.Cask && WorkshopArt.CaskState(building, _world.Clock.Ticks) == "brewing")
+                foreach (Vector2 bubble in WorkshopArt.Bubbles(_world.Clock.Ticks))
+                    DrawRect(new Rect2(basePoint - new Vector2(0, 80) + bubble, new Vector2(2, 2)), ArtDirection.Cream);
             if (building.Type == BuildingType.Mill)
             {
                 float flow = Hydrology.MillFlow(_colony.Map, building);

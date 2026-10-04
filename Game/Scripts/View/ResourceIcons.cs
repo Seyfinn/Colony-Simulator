@@ -19,6 +19,9 @@ public static class ResourceIcons
         if (AssetLibrary.Get($"icons/{resource.ToLowerInvariant()}.png") is { } provided)
             return Cache[resource] = provided;
 
+        if (System.Array.IndexOf(WorkshopArt.Goods, resource) >= 0)
+            return Cache[resource] = WorkshopArt.Icon(resource);
+
         if (System.Array.IndexOf(VillageArt.Goods, resource) >= 0 || resource == "Milestone")
             return Cache[resource] = VillageArt.Icon(resource);
 

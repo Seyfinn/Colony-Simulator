@@ -6,6 +6,10 @@ Une ligne par tâche, la plus récente **en haut**. Quand une tâche du cahier e
 
 | Date | N° | Tâche | Par | Fichiers / commit | Notes |
 |---|---|---|---|---|---|
+| 2026-10-04 | T-026 | Habillage des statistiques | ChatGPT/Codex | `DashboardStyle.cs`, `StatsPanel.cs`, `ResourceChart.cs`, `ResourceGraphs.cs`, `Sparkline.cs`, `ColonyComparison.cs` ; delta `tools/habillage_statistiques.patch` | Apparence appliquée localement sur le socle non commité de Claude : fonds, axes, légendes, accents des ressources, cartes et icônes ; données et commandes conservées. Grandes/petites fenêtres et survol vérifiés. |
+| 2026-10-04 | T-025 | Bâtiments des métiers en PNG | ChatGPT/Codex | `buildings/hut.png`, `kiln.png`, `bloomery.png`, `forge.png`, `mill.png`, `oven.png`, `dam.png`, `dam_side.png` | Six images 64 × 80, deux 32 × 48 RGBA ; assise assortie au village, roue indépendante et chantiers conservés. |
+| 2026-10-04 | T-024 | Icônes de base en PNG | ChatGPT/Codex | Dix PNG 16 × 16 dans `icons/`, `WorkshopArt.cs` | Palette du village, marge transparente d'un pixel ; farine/sel, minerai/pierre, charbon/minerai et pain/gâteau distincts. |
+| 2026-10-04 | T-023 | Bière et trois états du fût | ChatGPT/Codex | `icons/beer.png`, `buildings/cask.png`, `cask_brewing.png`, `cask_ready.png`, `ColonistsView.cs` | Chope 16 × 16, fûts 64 × 80 RGBA, bonde vide, bulles figées en pause, robinet et chope pleine quand l'échéance est atteinte. |
 | 2026-10-04 | T-022 | Jalons visibles | ChatGPT/Codex | `icons/milestone.png`, `VillageNotices.cs`, `EconomyDashboard.cs` | PNG 16 × 16, annonce datée des nouveaux jalons, liste atteints/restants dans Économie ; anciens jalons non rejoués. |
 | 2026-10-04 | T-021 | Plats de fête à table | ChatGPT/Codex | `ColonistsView.Village.cs`, `icons/cake.png`, `stew.png` | Plat réel de `Activity.Meal`, geste du mangeur et fête près du camp ; aucune consommation supplémentaire. |
 | 2026-10-04 | T-020 | Gestes des métiers | ChatGPT/Codex | `ColonistsView.Village.cs` | Élevage, abattage, soins, étude, taverne, tissage et marché, accessoires seulement quand l'action est commencée. |

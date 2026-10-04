@@ -24,6 +24,10 @@ public static partial class BuildingSprites
         if ((AssetLibrary.Get($"buildings/{file}_{variant}.png") ?? AssetLibrary.Get($"buildings/{file}.png")) is { } provided)
             return Textures[key] = provided;
 
+        if (System.Array.IndexOf(WorkshopArt.Buildings, kind) >= 0)
+            return Textures[key] = WorkshopSource(kind, biome).Texture();
+        if (kind == "Cask") return Textures[key] = CaskSource("empty").Texture();
+
         bool dam = kind is "Dam" or "DamSide";
         var art = new PixelArt(dam ? 32 : 64, dam ? 48 : 80);
         switch (kind)
