@@ -35,6 +35,16 @@ public partial class ColonistsView : Node2D
         _world = world;
         _colony = colonyToShow;
         TextureFilter = TextureFilterEnum.Nearest;
+        _villageNotices = new VillageNotices();
+        AddChild(_villageNotices);
+        _villageNotices.Init(world, colonyToShow);
+        var seasonGround = new SeasonGround
+        {
+            ShowBehindParent = true, Paint = DrawSeasonGround,
+            State = () => ((int)_world.Clock.Season << 10) | ((int)_colony.Map.Biome << 2) | (_colony.ColdSnapDaysLeft > 0 ? 2 : 0) | (_colony.DroughtDaysLeft > 0 ? 1 : 0),
+        };
+        AddChild(seasonGround);
+        seasonGround.Init(colonyToShow.Map);
 
         // Halo à plusieurs paliers : chaleur locale, sans surexposer le village en journée.
         foreach (Colony colony in new[] { colonyToShow })
@@ -101,7 +111,8 @@ public partial class ColonistsView : Node2D
             foreach (Building building in colony.Buildings)
             {
                 Building b = building;
-                _standing.Add(((b.Y + b.Height) * Tile - 4, () => DrawBuilding(b)));
+                _standing.Add(((b.Y + b.Height) * Tile - (b.IsComplete && b.Type == BuildingType.Pen ? 29 : 4), () => DrawBuilding(b)));
+                if (b.IsComplete && b.Type == BuildingType.Pen) AddPenAnimals(b);
                 CollectFlora(b.X - 1, b.Y, b.X + b.Width, b.Y + b.Height + 2);
             }
             _standing.Add(((colony.CampY + 0.5f) * Tile + 9, () => DrawCampfire(colony)));
@@ -120,6 +131,7 @@ public partial class ColonistsView : Node2D
                 _standing.Add((FloraPainter.FootY(fx, fy), () => FloraPainter.Draw(this, _colony.Map, fx, fy, new Vector2(fx, fy) * Tile, shadow: false)));
             }
 
+            DrawRecentEvents();
             _standing.Sort((a, b) => a.Y.CompareTo(b.Y));
             foreach ((float _, Action draw) in _standing)
                 draw();
@@ -133,6 +145,7 @@ public partial class ColonistsView : Node2D
                 speakers.Add(partner);
             }
             foreach (Colonist speaker in speakers) DrawBubble(speaker);
+            foreach (Colonist member in colony.Members) DrawVillageStatus(member);
         }
     }
 
@@ -182,6 +195,12 @@ public partial class ColonistsView : Node2D
         {
             Vector2 origin = new Vector2(plot.X, plot.Y) * Tile;
             DrawRect(new Rect2(origin, new Vector2(Tile, Tile)), Color.Color8(118, 88, 61));
+            if (_colony.DroughtDaysLeft > 0)
+            {
+                DrawLine(origin + new Vector2(4, 1), origin + new Vector2(12, 6), Color.Color8(76, 61, 43));
+                DrawLine(origin + new Vector2(12, 6), origin + new Vector2(16, 2), Color.Color8(76, 61, 43));
+                DrawLine(origin + new Vector2(22, 21), origin + new Vector2(28, 28), Color.Color8(76, 61, 43));
+            }
             for (int row = 0; row < 3; row++)
             {
                 int bed = 5 + row * 10;
@@ -200,7 +219,7 @@ public partial class ColonistsView : Node2D
                     int height = ripe ? 12 : 3 + (int)(plot.Growth * 8);
                     int sway = height > 6 ? (int)Math.Round(Math.Sin(_time * 1.6 + plot.X * 0.4 + row) * 0.8) : 0;
                     Vector2 tip = basePoint + new Vector2(sway, -height);
-                    Color stalk = ripe ? Color.Color8(214, 176, 83) : Color.Color8(108, 153, 87);
+                    Color stalk = ripe || _colony.DroughtDaysLeft > 0 ? Color.Color8(214, 176, 83) : Color.Color8(108, 153, 87);
                     DrawLine(basePoint, tip, stalk, 1);
                     DrawLine(basePoint + new Vector2(0, -3), basePoint + new Vector2(-3, -5), stalk.Darkened(0.16f), 1);
                     DrawLine(basePoint + new Vector2(0, -5), basePoint + new Vector2(3, -7), stalk, 1);
@@ -307,7 +326,7 @@ public partial class ColonistsView : Node2D
             }
             return;
         }
-        if (building.IsWorkshop)
+        if (building.IsWorkshop || building.IsCivic)
         {
             DrawWorkshopSite(building, footprint, basePoint);
             return;
@@ -416,8 +435,11 @@ public partial class ColonistsView : Node2D
         bool walking = colonist.X != colonist.PrevX || colonist.Y != colonist.PrevY;
         int frame = walking ? (int)(colonist.DistanceWalked * 6f) % frames.Length : 0;
         DrawSetTransform(feet, 0, new Vector2(scale, scale));
-        DrawTexture(frames[frame], spriteOffset);
+        DrawTexture(frames[frame], spriteOffset, colonist.Ailment == Ailment.Sick ? Color.Color8(209, 219, 197) : Colors.White);
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
+
+        DrawVillageGesture(colonist, feet);
+        if (colonist.Ailment == Ailment.Injured) DrawRect(new Rect2(feet + new Vector2(-3, -22), new Vector2(5, 2)), ArtDirection.Cream);
 
         // Ce qu'il rapporte au camp, en petit sous le bras.
         if (colonist.Carrying is { } load)

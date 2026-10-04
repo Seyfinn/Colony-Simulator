@@ -220,6 +220,13 @@ public partial class Hud : CanvasLayer
         {
             string name = type == ResourceType.Food ? "Baies" : ResourceIcons.Name(type);
             var line = Row(detail, 12);
+            line.AddChild(new TextureRect
+            {
+                Texture = ResourceIcons.Get(type), TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                CustomMinimumSize = new Vector2(16, 16), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+                MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
             Text(line, name, 14, Ink).CustomMinimumSize = new Vector2(85, 0);
             _foodDetails[type] = Text(line, "", 13, Ink);
             _foodDetails[type].Name = $"FoodDetail{type}";
@@ -227,6 +234,9 @@ public partial class Hud : CanvasLayer
         Text(detail, "Farine : à transformer en pain", 12, Muted);
         _foodDropdown.Hide();
     }
+
+    internal static int ResourceCardCount => Enum.GetValues<ResourceType>().Count(type =>
+        (type == ResourceType.Food || !FoodResources.Contains(type)) && !TradeGoods.Contains(type));
 
     private void PositionFoodDetails()
     {

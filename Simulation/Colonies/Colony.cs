@@ -12,6 +12,15 @@ public sealed class Colony
 
     public string Name { get; }
 
+    /// <summary>Les 24 derniers événements, avec position et issue exactes ; effets visuels temporaires.</summary>
+    public IReadOnlyList<RecentEvent> RecentEvents => RecentEventHistory.For(this);
+    internal void RecordEvent(RecentEvent report)
+    {
+        List<RecentEvent> reports = RecentEventHistory.For(this);
+        reports.Add(report);
+        if (reports.Count > 24) reports.RemoveAt(0);
+    }
+
     /// <summary>L'espèce qui peuple la colonie (celle des fondateurs et des voyageurs).</summary>
     public Species Species { get; internal set; } = Species.Human;
 

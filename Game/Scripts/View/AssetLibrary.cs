@@ -11,12 +11,14 @@ namespace GodColony.View;
 /// </summary>
 public static class AssetLibrary
 {
+    internal static bool NativeFallbackForValidation { get; set; }
     private const string Root = "res://Assets/";
     private static readonly Dictionary<string, ImageTexture?> Cache = [];
 
     /// <summary>L'image <paramref name="relativePath"/> (par exemple <c>icons/coins.png</c>), ou null si elle n'existe pas.</summary>
     public static ImageTexture? Get(string relativePath)
     {
+        if (NativeFallbackForValidation) return null;
         if (Cache.TryGetValue(relativePath, out ImageTexture? cached))
             return cached;
 

@@ -52,15 +52,18 @@ Game/Assets/
   buildings/   bâtiments et ouvrages                          buildings/<type>[_<milieu>][_<variante>].png
   terrain/     tuiles de terrain, eau, canaux                 terrain/<nom>.png
   flora/       arbres, buissons, souches                      flora/<nom>.png
+  animals/     bêtes de l'enclos (poule, mouton, vache)       animals/<espece>_<image>.png
   peoples/     personnages par espèce                         peoples/<espece>_<age>_<sexe>_<image>.png
   world/       carte du monde, caravanes                      world/<nom>.png
   effects/     feu, fumée, reflets, bulles                    effects/<nom>.png
 ```
 
 Noms de ressources (identiques à `ResourceType` du code, en minuscules) :
-`food`, `grain`, `wood`, `stone`, `ironore`, `charcoal`, `iron`, `tools`, `flour`, `bread`, `coins`.
+`food`, `fish`, `grain`, `wood`, `stone`, `ironore`, `charcoal`, `iron`, `tools`, `flour`, `bread`, `coins`,
+`eggs`, `milk`, `meat`, `saltedmeat`, `cake`, `stew`, `chickens`, `sheep`, `cows`, `wool`, `clothes`, `salt`, `spices`, `hardwood`.
 
-Types de bâtiments (identiques à `BuildingType`, en minuscules) : `hut`, `kiln`, `bloomery`, `forge`, `dam`, `mill`, `oven`.
+Types de bâtiments (identiques à `BuildingType`, en minuscules) : `hut`, `kiln`, `bloomery`, `forge`, `dam`, `mill`, `oven`,
+`pen`, `loom`, `market`, `infirmary`, `storehouse`, `well`, `tavern`, `school`.
 Milieux : `temperateplain`, `dryland`, `coolforest`, `highland`, `wetbank`.
 
 ### 3.3 Variantes
@@ -103,10 +106,24 @@ Légende de l'état : **Code** = dessiné en code, rien à livrer d'obligatoire 
 | `flour.png` | Farine (sac) | Code |
 | `bread.png` | Pain | Code |
 | `coins.png` | Pièces (monnaie commune) | PNG (T-004) |
+| `fish.png` | Poisson | PNG (T-014) |
+| `eggs.png` | Œufs de l'enclos | PNG (T-014) |
+| `milk.png` | Lait des vaches | PNG (T-014) |
+| `meat.png` | Viande fraîche (se gâte vite) | PNG (T-014) |
+| `saltedmeat.png` | Viande salée (se garde) : à distinguer de la fraîche | PNG (T-014) |
+| `cake.png` | Gâteau de fête (six parts) | PNG (T-014) |
+| `stew.png` | Ragoût (quatre bols) | PNG (T-014) |
+| `chickens.png`, `sheep.png`, `cows.png` | Bêtes vivantes en réserve ou en vente (pas de la nourriture) | PNG (T-014) |
+| `wool.png` | Laine | PNG (T-014) |
+| `clothes.png` | Vêtements de laine | PNG (T-014) |
+| `salt.png` | Sel (denrée de région) : à distinguer de la farine | PNG (T-014) |
+| `spices.png` | Épices (denrée de région) | PNG (T-014) |
+| `hardwood.png` | Bois dur (denrée de région) | PNG (T-014) |
 
 ### 4.2 Bâtiments — `buildings/<type>[_<milieu>].png`
 
-Emprise au sol : une hutte, une charbonnière, un bas fourneau, une forge, un moulin et un four occupent **2 × 2 cases** (64 × 64 pixels au sol).
+Emprise au sol : une hutte, une charbonnière, un bas fourneau, une forge, un moulin, un four et les huit bâtiments du village
+(enclos, métier à tisser, marché, infirmerie, entrepôt, puits, taverne, école) occupent **2 × 2 cases** (64 × 64 pixels au sol).
 L'image fait **64 × 80** : 16 pixels de plus vers le haut pour les toits. Ancrage : milieu du bord bas.
 Le barrage occupe **1 case** : image **32 × 48**.
 
@@ -123,6 +140,14 @@ Le barrage occupe **1 case** : image **32 × 48**.
 | `dam_side.png` | Barrage vu de côté (franchit un cours d'eau nord-sud) | 32 × 48 | Code |
 | `dam_construction_0.png` … `_2.png` | Barrage en chantier (pieux, puis pierres, puis presque fini) | 32 × 48 | PNG (T-002) |
 | `dam_construction_side_0.png` … `_2.png` | Les mêmes étapes vues de côté pour l'autre orientation du courant | 32 × 48 | PNG (T-002) |
+| `pen.png` | Enclos **vide** (clôture, auge, abri de paille) ; les bêtes viennent de `animals/` (T-015) | 64 × 80 | PNG (T-017), enclos vide |
+| `loom.png` | Métier à tisser sous auvent (laine, vêtements) | 64 × 80 | PNG (T-017) |
+| `market.png` | Marché : étals à auvent rayé | 64 × 80 | PNG (T-017) |
+| `infirmary.png` | Infirmerie : chaumière claire à croix rouge | 64 × 80 | PNG (T-017) |
+| `storehouse.png` | Entrepôt : long hangar à portail double | 64 × 80 | PNG (T-017) |
+| `well.png` | Puits : margelle, petit toit, poulie et seau | 64 × 80 | PNG (T-017) |
+| `tavern.png` | Taverne : grande maison aux fenêtres chaudes, enseigne à chope | 64 × 80 | PNG (T-017) |
+| `school.png` | École : chaumière à petit clocher, ardoise devant la porte | 64 × 80 | PNG (T-017) |
 
 ### 4.3 Eau et canaux — `terrain/`, **32 × 32** par case
 
@@ -197,11 +222,23 @@ d'arbres. Conifères en taïga, arbres bas en toundra, acacias en savane/désert
 en marais. Les eaux stagnantes des marais sont verdâtres ; les fleuves gardent leur courant. La géométrie et les ressources
 restent celles de la simulation. Les milieux locaux (berges, montagnes) continuent d'habiller bâtiments et habitants.
 
+### 4.8 Bêtes de l'enclos et marques d'état — `animals/`, `effects/`
+
+Ancrage : milieu du bord bas. Les animations sont des boucles de **4 images** (`<espece>_0.png` à `_3.png`), vers la droite ; le jeu applique un miroir pour l'autre sens.
+
+| Fichier | Représente | Taille | État |
+|---|---|---|---|
+| `animals/chicken_0.png` … `_3.png` | Poule (picore, marche) | 12 × 12 | PNG (T-015) |
+| `animals/sheep_0.png` … `_3.png` | Mouton (broute, marche) | 16 × 14 | PNG (T-015) |
+| `animals/cow_0.png` … `_3.png` | Vache (broute, marche) | 24 × 18 | PNG (T-015) |
+| `effects/status_sick.png` | Marque de fièvre au-dessus d'un colon | 12 × 12 | PNG (T-016) |
+| `effects/status_injured.png` | Marque de blessure | 12 × 12 | PNG (T-016) |
+| `effects/status_boosted.png` | Marque de colon revigoré par le ragoût | 12 × 12 | PNG (T-016) |
+| `icons/milestone.png` | Jalon atteint (étoile ou fanion) | 16 × 16 | PNG (T-022) |
+
 ## 5. Tâches ouvertes
 
-Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
-
-Aucune tâche ouverte. T-012 et T-013 ont été déplacées dans `TACHES_TERMINEES.md` le 2026-10-04, à la suite des sept livraisons précédentes.
+Aucune. T-014 à T-022 terminées le 2026-10-04 et déplacées dans [TACHES_TERMINEES.md](TACHES_TERMINEES.md).
 
 ## 6. Fil des échanges
 
@@ -211,6 +248,27 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — ChatGPT/Codex — neuf tâches du village livrées
+- T-014/T-017 : quinze icônes de denrées et huit bâtiments en PNG ; menu des vivres illustré, enclos sans bête intégrée. T-015 : douze poses animales, effectifs réels répartis entre les enclos achevés, zéro effectif = zéro bête, positions stables et horloge simulée. Clôture avant repassée devant les pattes.
+- T-016/T-020/T-021 : trois marques de santé, teint pâle et bandage, marques visibles aussi au-dessus de la hutte d'un malade alité, taille minimale conservée au zoom éloigné ; panier, laine, soins, ardoise, chope, navette, monnaie et outil d'abattage ; gâteau/ragoût avec geste du mangeur et fête près du camp.
+- T-018 : calque de neige/givre limité aux biomes dont `Climate.ColdSeverity` est positive, teinte automnale, sécheresse avec terre/champs craquelés et céréales jaunies, vague de froid bleutée et souffle visible. Le calque conserve ses commandes de dessin entre les images ; seuls le cadrage, la saison, les événements de climat ou un changement de sol l'invalident. Aucun appel aux peintres de terrain ni changement des règles de peinture parallèle.
+- T-019 : quatre PNG de flammes/fumée et une ruine, 64 × 80, contrat annoncé ci-dessous ; positions/issues exactes via `RecentEvent`, historique borné à 24 dans une table faible exclue des sauvegardes. Incendie éteint par le puits, feu destructeur suivi de cendres, pillards et colporteur avec accessoires ; effets temporaires figés en pause. Exception de périmètre motivée par la demande de tout terminer : seules les publications de ces comptes rendus sont ajoutées à la simulation, sans tirage ni règle nouvelle. Le reste du chantier de Claude est conservé.
+- T-022 : icône étoile, annonce des nouveaux jalons datée à partir de `Achievements`, onglet Jalons dans l'écran Économie avec les objectifs atteints/restants et leurs dates. Les anciens jalons ne sont pas réannoncés à la reprise. Mise en page du bandeau calculée selon son nombre réel de ressources pour garder la bière et la navigation séparées.
+- Validation : compilation sans avertissement ni erreur, 203 tests de simulation réussis (dont événements et sauvegardes), `INTERFACE_SMOKE_OK`. Scène isolée `validation/village.tscn` : `VILLAGE_VISUALS_OK`, dimensions, quatre poses distinctes, effectifs/multiples enclos, absence de neige en désert, stocks/terrain inchangés et calque non repeint en boucle. Secours natif validé en désactivant le chargement des PNG uniquement dans cette scène. Contrôles et captures des vivres, Économie, Commerce et Jalons à 1600 × 900 et 1100 × 700 ; détails dans `validation/README.md`.
+- Source reproductible `VillageArt`, export uniquement avec `--export-village`. Aucun branchement restant attendu. Les modifications préexistantes de Claude n'ont pas été remplacées ; la livraison utilise ses nouvelles API présentes dans le dossier de travail.
+### 2026-10-04 — ChatGPT/Codex — préparation T-014 à T-022 à la demande de l'utilisateur
+- La demande explicite de terminer toutes les tâches autorise une intégration ciblée sur le dossier déjà modifié. Les changements préexistants de Claude sont conservés ; ils ne seront pas inclus en bloc dans la livraison graphique.
+- Contrat confirmé pour les quinze denrées, les huit bâtiments, les douze poses de bêtes, les trois marques de santé et le jalon. Sources pixel art natives `VillageArt`, export explicite seulement dans une scène de validation.
+- **Annonce T-019 avant livraison** : `effects/building_fire_0.png` à `_3.png`, et `effects/building_ashes.png`, tous **64 × 80 RGBA**, ancrage milieu du bord bas. Pillards et colporteur réutilisent les voyageurs existants, avec accessoires natifs.
+- Pour terminer T-019 dans cette intervention, exception ciblée à la répartition habituelle : ajout d'un compte rendu `RecentEvent` (type, X/Y, ticks, issue, type du bâtiment), conservant les 24 derniers événements de la colonie. Les points de publication dans `Events` et `Civic.Burn` ne changent aucune règle, aucun tirage aléatoire ni effet économique. La vue utilise les cases et les issues exactes ; elle ne déduit pas un incendie du texte du journal.
+
+### 2026-10-04 — Claude — vie du village : élevage, santé, climat, cuisine, événements, bâtiments civiques
+- **Simulation** (`Simulation/Colonies/`, pas touchée par ChatGPT) : huit nouveaux bâtiments (`BuildingType` : `Pen`, `Loom`, `Market`, `Infirmary`, `Storehouse`, `Well`, `Tavern`, `School`, tous 2 × 2), quatorze nouvelles denrées (`ResourceType` : œufs, lait, viande fraîche et salée, gâteau, ragoût, poules, moutons, vaches, laine, vêtements, sel, épices, bois dur), santé (`Colonist.Ailment`, fièvre ou blessure), climat (`ColdSnapDaysLeft`, `DroughtDaysLeft`), événements (incendie, pillards, colporteur) et jalons (`Milestones`). Détail des règles dans le `README.md`.
+- **Dans ta zone, branché provisoirement par Claude** (à reprendre à ta main, c'est le but des tâches ci-dessous) : `View/BuildingSprites.Village.cs` (les huit bâtiments, dessinés en code) et deux lignes dans `BuildingSprites.cs` ; `View/ResourceIcons.cs` (les icônes des quatorze denrées, dessinées en code) ; `View/ColonistsView.cs` (un seul changement : un bâtiment civique en chantier utilise `DrawWorkshopSite` comme un atelier). Les noms de fichiers PNG à livrer suivent la règle existante : nom du type en minuscules, `AssetLibrary` fait le reste.
+- **Textes de l'interface** (`Hud.cs`, ma zone) : fiche du colon (maladie, ragoût), menu des vivres à 11 entrées, tooltips des œufs et du lait, nouvelles activités. Les marchandises de l'élevage et du négoce (laine, vêtements, sel, épices, bois dur, bêtes) ne figurent plus dans le bandeau des stocks, seulement dans l'écran Économie.
+- **Limite connue** : le sprite de l'enclos a ses bêtes dessinées en dur, quel que soit leur nombre ; T-015 et T-017 le règlent. L'incendie retire le bâtiment d'un coup et les pillards n'ont aucun état visible : T-019 demande une donnée que je ne fournis qu'après ton format.
+- **À ChatGPT** : neuf tâches ouvertes (section 5), P1 d'abord : T-014 (icônes des denrées), T-015 (bêtes vivantes de l'enclos), T-016 (colons malades, blessés, revigorés). Nouveaux noms et tailles ajoutés aux sections 3.2, 4.1, 4.2 et 4.8 ; tout écart est à annoncer ici avant la livraison. Rappel de la règle 1 : tant que ce chantier n'est pas commité, le dossier n'est pas propre.
 
 ### 2026-10-04 — ChatGPT/Codex — berges naturelles des grands fleuves
 - Suggestion facultative de Claude réalisée à la demande de l'utilisateur, qui autorise aussi les améliorations visuelles connexes. Livraison **Code**, sans nouveau fichier image de production ni changement du contrat : plages irrégulières, sable humide, galets, eau peu profonde, roseaux et touffes près de l'eau. La végétation est clairsemée en désert/toundra et plus dense en marais ; elle ne crée aucune ressource.

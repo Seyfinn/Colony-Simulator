@@ -19,6 +19,9 @@ public partial class EconomyDashboard : VBoxContainer
     private readonly Dictionary<ResourceType, GoodCard> _goods = [];
     private readonly List<RouteCard> _routeCards = [];
     private readonly List<ExchangeCard> _exchangeCards = [];
+    private VBoxContainer _milestones = null!;
+    private Button _milestonesTab = null!;
+    private readonly Dictionary<string, Label> _milestoneRows = [];
 
     public override void _Ready()
     {
@@ -33,6 +36,9 @@ public partial class EconomyDashboard : VBoxContainer
         var tabs = DashboardStyle.Row(this);
         _stocksTab = Tab(tabs, "Stocks et besoins", "StocksEconomie", false);
         _commerceTab = Tab(tabs, "Commerce", "CommerceEconomie", true);
+        _milestonesTab = new Button { Text = "Jalons", Name = "JalonsEconomie", ToggleMode = true, Icon = ResourceIcons.Get("Milestone"),
+            CustomMinimumSize = new Vector2(0, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        tabs.AddChild(_milestonesTab); _milestonesTab.Pressed += ShowMilestones;
         _stocks = MenuStyle.Column(this, 10);
         _legend = DashboardStyle.Row(_stocks);
         DashboardStyle.Text(_legend, "RÉSERVES DE LA COLONIE", 11, DashboardStyle.Gold);
@@ -61,6 +67,10 @@ public partial class EconomyDashboard : VBoxContainer
         {
             var card = new ExchangeCard(); _trades.AddChild(card); _exchangeCards.Add(card);
         }
+        _milestones = MenuStyle.Column(this, 9);
+        DashboardStyle.Text(_milestones, "HISTOIRE DE LA COLONIE", 12, DashboardStyle.Gold);
+        foreach (Milestone milestone in Milestones.All)
+            _milestoneRows[milestone.Id] = DashboardStyle.Text(_milestones, milestone.Title, 13, DashboardStyle.Muted, true);
         ShowCommerce(false);
         Resized += ResizeDashboard;
         GetViewport().SizeChanged += ResizeDashboard;
@@ -84,12 +94,27 @@ public partial class EconomyDashboard : VBoxContainer
 
     public void ShowCommerce(bool commerce)
     {
+        _milestones.Visible = false; _milestonesTab.SetPressedNoSignal(false);
         _stocks.Visible = !commerce; _commerce.Visible = commerce;
         _stocksTab.SetPressedNoSignal(!commerce); _commerceTab.SetPressedNoSignal(commerce);
     }
 
+    public void ShowMilestones()
+    {
+        _stocks.Visible = _commerce.Visible = false; _milestones.Visible = true;
+        _stocksTab.SetPressedNoSignal(false); _commerceTab.SetPressedNoSignal(false); _milestonesTab.SetPressedNoSignal(true);
+    }
+
     public void Refresh(WorldState world, Colony colony)
     {
+        foreach (Milestone milestone in Milestones.All)
+        {
+            bool reached = colony.Achievements.TryGetValue(milestone.Id, out long ticks);
+            var when = new GameClock(ticks);
+            var label = _milestoneRows[milestone.Id];
+            label.Text = reached ? $"★ {milestone.Title}\n   {when.Season} · jour {when.DayOfSeason} · année {when.Year}" : $"○ {milestone.Title} · à atteindre";
+            label.AddThemeColorOverride("font_color", reached ? DashboardStyle.Gold : DashboardStyle.Muted);
+        }
         _coins.Text = $"{colony.Stock.Get(ResourceType.Coins):N0}";
         float days = colony.Stock.FoodUnits / (Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay);
         _food.Text = $"{days:0.0} j";

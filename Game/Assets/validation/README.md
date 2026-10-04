@@ -1,5 +1,19 @@
 # Validation graphique — GodColony
 
+## Vie du village — T-014 à T-022 — 2026-10-04
+
+Les **44 PNG** de production sont issus de `VillageArt` et du système pixel art natif : 15 denrées et 1 jalon en 16 × 16 ; 8 bâtiments en 64 × 80 ; poules (12 × 12), moutons (16 × 14), vaches (24 × 18), quatre poses distinctes chacun ; 3 marques de santé en 12 × 12 ; 4 flammes/fumées et 1 ruine en 64 × 80. PNG RGBA8 transparents, noms du contrat conservés. L'enclos est vide : les bêtes viennent exclusivement des effectifs de la colonie.
+
+Scène isolée `village.tscn`, avec des **données de démonstration** : bâtiments posés explicitement, troupeau, activités, maladies et climat préparés dans un nouveau monde, sans sauvegarde utilisateur. Le fond utilise `TerrainPainter`, les bâtiments et personnages utilisent le vrai `ColonistsView`, les vivres le vrai `Hud`, les jalons le vrai `WorldPanel`/`EconomyDashboard`. Les événements sont publiés par `Civic.Burn` et `Events.Peddler` ; le scénario pillards injecte explicitement un compte rendu de démonstration, sans attaque réelle ni perte ajoutée.
+
+Après compilation, lancer Godot avec `--path Game res://Assets/validation/village.tscn -- --preview=<mode> --capture=<chemin>`. Modes : `gallery`, `village`, `empty`, `winter`, `drought`, `events`, `ashes`, `food`, `milestones`. `--compact` règle 1100 × 700. **Seul `--export-village` écrit les images de production**. `--fallback` ignore les PNG dans cette scène uniquement pour contrôler tous les secours natifs, sans déplacer ni supprimer de fichier.
+
+Résultat attendu : **VILLAGE_VISUALS_OK**. Contrôles : tailles et quatre poses distinctes, troupeau nul, répartition entre plusieurs enclos et capacité maximale, zéro neige en désert même avec un état de froid, stocks/terrain inchangés par l'affichage. À cadrage fixe, le calque saisonnier doit être dessiné au plus trois fois pendant les 45 images du contrôle : il conserve ses commandes, sans peinture de terrain chaque image. Les changements de sol l'invalident via `TileChanged`, avec désabonnement à la fermeture de la vue.
+
+Captures inspectées : `village_catalogue.png`, `village_village.png`, `village_empty.png`, `village_winter.png`, `village_drought.png`, `village_events.png`, `village_ashes.png`, `village_food.png`, `village_food_compact.png`, `village_milestones.png`, `village_milestones_compact.png`. `village_ui_economy*.png` et `village_ui_commerce*.png` utilisent la scène `economie_production.tscn` et ses contrôles d'onglets, jauges et défilement : **ECONOMY_PRODUCTION_UI_OK**, aux deux tailles. Le nombre réel de cartes de stocks détermine la hauteur du bandeau pour éviter que l'ajout récent de la bière recouvre la navigation.
+
+Build **0 avertissement / 0 erreur**, **203 tests de simulation réussis**, parcours des menus **INTERFACE_SMOKE_OK**. Les tests `RecentEventTests` couvrent l'incendie avec/sans puits, le colporteur sans argent, la limite de 24 événements et l'absence d'impact de l'historique sur les données sérialisées (hasard inclus). Cet historique temporaire utilise une table faible, ne change pas le schéma des sauvegardes et ne rejoue pas les effets après chargement. Les tests de sauvegarde passent également. Le chantier préexistant de Claude reste présent dans le dossier ; seules les publications des comptes rendus sont ajoutées à ses fonctions d'événements.
+
 ## Berges des grands fleuves — 2026-10-04
 
 `berges.png` compare prairie, désert, taïga et marais sur quatre cartes de démonstration générées avec la même géométrie (graine 42, 200 × 200) et des paramètres de biome distincts. Les cadrages contiennent de vrais fleuves générés ; aucune eau ni ressource n'est ajoutée pour la capture. Chaque panneau utilise `TerrainPainter.Paint`, `EnvironmentDetails.Draw` et `FloraPainter.Draw`, comme le jeu. `berges_en_jeu.png` montre le rendu dans la vraie scène principale, à l'embouchure du fleuve, avec `--focus-river --zoom=2`.
