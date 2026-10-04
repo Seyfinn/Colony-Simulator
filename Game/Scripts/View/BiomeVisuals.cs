@@ -1,5 +1,6 @@
 using Godot;
 using GodColony.Simulation.Map;
+using GodColony.Simulation.World;
 
 namespace GodColony.View;
 
@@ -7,7 +8,19 @@ namespace GodColony.View;
 public static class BiomeVisuals
 {
     public static WoodlandBiome At(LocalMap map, int x, int y) => map.InBounds(x, y)
-        ? TreeDistribution.BiomeAt(map, x, y) : WoodlandBiome.TemperatePlain;
+        ? TreeDistribution.BiomeAt(map, x, y) : RegionalEnvironment(map.Biome, WoodlandBiome.TemperatePlain);
+
+    /// <summary>Le biome du monde fixe le climat ; les berges et les hauteurs restent des milieux locaux.</summary>
+    public static WoodlandBiome RegionalEnvironment(Biome region, WoodlandBiome local) => region switch
+    {
+        Biome.IceSheet or Biome.Tundra => WoodlandBiome.Highland,
+        Biome.Desert or Biome.Steppe or Biome.Savanna => local == WoodlandBiome.WetBank
+            ? local : WoodlandBiome.Dryland,
+        Biome.BorealForest or Biome.TropicalForest => local is WoodlandBiome.Highland or WoodlandBiome.WetBank
+            ? local : WoodlandBiome.CoolForest,
+        Biome.Swamp => WoodlandBiome.WetBank,
+        _ => local,
+    };
 
     public static Color Clothing(WoodlandBiome biome, int id, Color plain)
     {

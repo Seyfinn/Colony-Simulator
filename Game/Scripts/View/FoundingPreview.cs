@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Godot;
 
 namespace GodColony.View;
@@ -10,10 +11,26 @@ public partial class FoundingPreview : Node2D
     public bool Valid { get; set; }
     public bool SelectedValid { get; set; }
 
+    /// <summary>Les emplacements conseillés, le meilleur d'abord.</summary>
+    public IReadOnlyList<Vector2I> Suggestions { get; set; } = [];
+
     public override void _Draw()
     {
+        DrawSuggestions();
         if (SelectedTile is { } selected) DrawSite(selected, SelectedValid, true);
         if (SelectedTile != HoverTile) DrawSite(HoverTile, Valid, false);
+    }
+
+    private void DrawSuggestions()
+    {
+        int size = TerrainPainter.TileSize;
+        for (int i = 0; i < Suggestions.Count; i++)
+        {
+            Vector2 center = new Vector2(Suggestions[i].X + 0.5f, Suggestions[i].Y + 0.5f) * size;
+            DrawCircle(center, 13, new Color(ArtDirection.Brass, 0.35f));
+            DrawArc(center, 13, 0, Mathf.Tau, 24, ArtDirection.Brass, 2);
+            DrawString(ArtDirection.BodyFont, center + new Vector2(-10, 5), (i + 1).ToString(), HorizontalAlignment.Center, 20, 15, ArtDirection.Brass);
+        }
     }
 
     private void DrawSite(Vector2I tile, bool valid, bool selected)

@@ -421,7 +421,11 @@ public partial class Main : Node2D
 
     private void RecenterCamera()
     {
-        if (_foundingPanel.IsOpen) { SelectSuggestedSite(); return; }
+        if (_foundingPanel.IsOpen)
+        {
+            if (_foundingSite is { } site) _camera.Position = new Vector2(site.X + 0.5f, site.Y + 0.5f) * TerrainPainter.TileSize;
+            return;
+        }
         _worldPanel.MapOpen = false;
         Vector2 target = _selected is not null && _colonistsView is not null
             ? _colonistsView.DisplayPosition(_selected)

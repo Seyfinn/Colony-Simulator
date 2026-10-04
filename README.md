@@ -77,7 +77,7 @@ Le format est versionné et lié au schéma de simulation ; une évolution de ce
 
 **Fonder une colonie** ouvre le choix du nom, du peuple et de 5 à 20 fondateurs. Cliquez d'abord sur une case libre
 de la carte du monde (son biome et son relief donnent le terrain de la région), puis sur une zone plate de 5 × 5 cases sur le terrain. Le contour vert indique un site valide,
-le rouge un obstacle ; **Emplacement conseillé** choisit un camp proche des ressources. **Fonder la colonie** installe
+le rouge un obstacle ; **Emplacement conseillé** propose, sur la carte du monde comme sur le terrain, jusqu'à 5 choix numérotés (régions agréables pour le peuple, camps proches des ressources) : chaque clic passe au suivant. **Fonder la colonie** installe
 les habitants à la case choisie, avec leurs provisions et 400 pièces. Le monde peut accueillir jusqu'à 16 colonies.
 Chaque colonie possède sa propre carte locale ; les anciennes colonies restent à leur emplacement lors d'une fondation.
 La simulation est suspendue pendant les menus et la fondation ; annuler conserve la vitesse et la partie précédentes.

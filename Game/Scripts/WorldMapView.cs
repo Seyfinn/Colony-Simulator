@@ -29,6 +29,10 @@ public partial class WorldMapView : Control
     public event Action<int>? ColonyClicked;
     public event Action<int>? SiteClicked;
     public bool PickingSite { get; set; }
+
+    /// <summary>Les régions conseillées pendant une fondation (la meilleure d'abord) et celle qui est mise en avant (-1 : aucune).</summary>
+    public IReadOnlyList<int> Suggestions { get; set; } = [];
+    public int CurrentSuggestion { get; set; } = -1;
     private string _placementMessage = "";
 
     private WorldState _world = null!;
@@ -128,6 +132,13 @@ public partial class WorldMapView : Control
 
     /// <summary>Où se trouve le centre d'une case dans ce contrôle (pour les tests d'interface).</summary>
     public Vector2 ScreenPositionOf(int tile) => CenterOf(tile);
+
+    /// <summary>Ramène une case au centre du cadre quand la carte est zoomée (dézoomée, tout est déjà visible).</summary>
+    public void CenterOn(int tile)
+    {
+        if (_zoom > 1f)
+            _pan += Land.Position + Land.Size / 2 - CenterOf(tile);
+    }
 
     private Vector2[] Hexagon(Vector2 center, float shrink = 1f)
     {
@@ -250,6 +261,8 @@ public partial class WorldMapView : Control
             g.DrawPolyline([.. hex, hex[0]], outline, 2);
         }
 
+        if (PickingSite)
+            DrawSuggestions(g, font);
         DrawColonies(g, font);
         DrawCaravans(g, font);
 
@@ -267,6 +280,22 @@ public partial class WorldMapView : Control
             HorizontalAlignment.Left, -1, 12, Muted);
         DrawLegend(g, font);
         g.DrawString(font, new Vector2(20, Size.Y - 18), BottomLine(), HorizontalAlignment.Left, Size.X - 40, 12, Muted);
+    }
+
+    /// <summary>Les régions conseillées : un contour numéroté par case, plus épais et plein pour celle qui est proposée.</summary>
+    private void DrawSuggestions(CanvasItem g, Font font)
+    {
+        for (int i = 0; i < Suggestions.Count; i++)
+        {
+            bool current = Suggestions[i] == CurrentSuggestion;
+            Vector2 center = CenterOf(Suggestions[i]);
+            Vector2[] hex = Hexagon(center, 0.9f);
+            if (current)
+                g.DrawColoredPolygon(hex, new Color(ArtDirection.Brass, 0.28f));
+            g.DrawPolyline([.. hex, hex[0]], ArtDirection.Brass, current ? 3 : 2);
+            g.DrawString(font, center + new Vector2(-20, 5), (i + 1).ToString(), HorizontalAlignment.Center, 40, 13,
+                current ? Ink : ArtDirection.Brass);
+        }
     }
 
     /// <summary>Nom de fichier d'un biome : <c>world/hex_&lt;clé&gt;.png</c> (voir le cahier des charges, T-012).</summary>

@@ -36,6 +36,13 @@ public partial class WorldPanel : CanvasLayer
         set { _map.PickingSite = value; ResizePanels(); if (value) MapOpen = true; }
     }
 
+    /// <summary>Met en avant les régions conseillées sur la carte et recentre sur celle qui est proposée.</summary>
+    public void ShowSuggestions(IReadOnlyList<int> tiles, int current)
+    {
+        _map.Suggestions = tiles; _map.CurrentSuggestion = current;
+        if (current >= 0) _map.CenterOn(current);
+    }
+
     public void SetNavigationEnabled(bool enabled)
     {
         _navigationEnabled = enabled;

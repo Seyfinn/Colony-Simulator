@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using GodColony.Simulation.Generation;
 using GodColony.Simulation.Map;
+using GodColony.Simulation.World;
 
 namespace GodColony.View;
 
@@ -12,19 +13,22 @@ public enum WoodlandBiome { TemperatePlain, Dryland, CoolForest, Highland, WetBa
 /// <summary>Répartition déterministe des apparences, figée avant que les colons ne transforment la carte.</summary>
 public static class TreeDistribution
 {
-    public readonly record struct Shares(float Oak, float Birch, float Pine, float Willow)
+    public readonly record struct Shares(float Oak, float Birch, float Pine, float Willow, float Acacia = 0, float Tropical = 0)
     {
         public Shares Blend(Shares other, float amount) => new(
             Oak + (other.Oak - Oak) * amount, Birch + (other.Birch - Birch) * amount,
-            Pine + (other.Pine - Pine) * amount, Willow + (other.Willow - Willow) * amount);
+            Pine + (other.Pine - Pine) * amount, Willow + (other.Willow - Willow) * amount,
+            Acacia + (other.Acacia - Acacia) * amount, Tropical + (other.Tropical - Tropical) * amount);
 
         public int Choose(float roll)
         {
-            float choice = roll * (Oak + Birch + Pine + Willow);
+            float choice = roll * (Oak + Birch + Pine + Willow + Acacia + Tropical);
             if (choice < Oak) return 0;
             if (choice < Oak + Birch) return 1;
             if (choice < Oak + Birch + Pine) return 2;
-            return 3;
+            if (choice < Oak + Birch + Pine + Willow) return 3;
+            if (choice < Oak + Birch + Pine + Willow + Acacia) return 4;
+            return 5;
         }
     }
 
@@ -47,6 +51,19 @@ public static class TreeDistribution
     public static WoodlandBiome BiomeAt(LocalMap map, int x, int y) => Forests.GetValue(map, Generate).Biomes[y * map.Width + x];
 
     public static Shares WeightsFor(int elevation, float moisture, int waterDistance) => Environment(elevation, moisture, waterDistance).Shares;
+
+    /// <summary>Essences décoratives uniquement : le nombre de plantes et leur croissance viennent de la simulation.</summary>
+    private static Shares RegionalShares(Biome region, Shares local, int waterDistance) => region switch
+    {
+        Biome.BorealForest => new(0, 5, 95, 0),
+        Biome.Tundra or Biome.IceSheet => new(0, 65, 35, 0),
+        Biome.TropicalForest => new(5, 0, 0, 5, 0, 90),
+        Biome.Swamp => new(10, 0, 0, 80, 0, 10),
+        Biome.Desert or Biome.Savanna => waterDistance <= 2
+            ? new(10, 0, 0, 20, 70) : new(5, 0, 0, 0, 95),
+        Biome.Steppe => new(55, 10, 25, 10),
+        _ => local,
+    };
 
     private static (Shares Shares, WoodlandBiome Biome) Environment(int elevation, float moisture, int waterDistance)
     {
@@ -83,8 +100,8 @@ public static class TreeDistribution
             // Quelques groupes cohérents au milieu d'une majorité de tirages individuels.
             // Les points irréguliers évitent les anciens bosquets en carrés de 9 × 9 cases.
             if (Noise.Hash01(x, y, 109, map.Seed) < 0.3f) roll = GroveRoll(x, y, map.Seed);
-            styles[index] = (byte)environment.Shares.Choose(roll);
-            biomes[index] = environment.Biome;
+            styles[index] = (byte)RegionalShares(map.Biome, environment.Shares, distance[index]).Choose(roll);
+            biomes[index] = BiomeVisuals.RegionalEnvironment(map.Biome, environment.Biome);
         }
         return new Forest(styles, biomes);
     }

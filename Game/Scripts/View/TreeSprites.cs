@@ -3,10 +3,10 @@ using Godot;
 
 namespace GodColony.View;
 
-/// <summary>Quatre apparences en 32 × 48 pixels. Elles partagent le même arbre dans la simulation.</summary>
+/// <summary>Six apparences en 32 × 48 pixels. Elles partagent le même arbre dans la simulation.</summary>
 public static class TreeSprites
 {
-    public const int StyleCount = 4;
+    public const int StyleCount = 6;
     public const int DetailCount = 6;
 
     public static ImageTexture Create(int style, int detail = 0)
@@ -17,6 +17,8 @@ public static class TreeSprites
             case 1: Birch(image); break;
             case 2: Pine(image); break;
             case 3: Willow(image); break;
+            case 4: Acacia(image); break;
+            case 5: Tropical(image); break;
             default: Oak(image); break;
         }
         if (detail != 0) AddDetails(image, style, detail);
@@ -28,6 +30,8 @@ public static class TreeSprites
         1 => (Color.Color8(59, 106, 71), Color.Color8(104, 153, 91), Color.Color8(157, 184, 113)),
         2 => (Color.Color8(36, 76, 63), Color.Color8(56, 111, 85), Color.Color8(103, 150, 112)),
         3 => (Color.Color8(64, 98, 62), Color.Color8(102, 143, 75), Color.Color8(154, 174, 102)),
+        4 => (Color.Color8(77, 90, 47), Color.Color8(119, 136, 65), Color.Color8(172, 175, 93)),
+        5 => (Color.Color8(29, 76, 53), Color.Color8(49, 126, 69), Color.Color8(103, 168, 85)),
         _ => (Color.Color8(43, 82, 56), Color.Color8(77, 119, 64), Color.Color8(127, 161, 84)),
     };
 
@@ -178,6 +182,37 @@ public static class TreeSprites
                 Box(image, x + drift, y, y % 3 == 0 ? 2 : 1, 1, color);
                 if (x < 16 && y % 4 == 1) Box(image, x - 1, y, 1, 1, light);
             }
+        }
+    }
+
+    private static void Acacia(Image image)
+    {
+        Color bark = Color.Color8(158, 115, 67), shade = Color.Color8(91, 73, 45);
+        Box(image, 15, 24, 4, 24, shade); Box(image, 15, 26, 2, 21, bark);
+        Box(image, 12, 47, 10, 1, shade);
+        Branch(image, 15, 33, -1, 9, bark); Branch(image, 18, 30, 1, 8, shade);
+        var (dark, leaf, light) = LeafColors(4);
+        Crown(image, 9, 18, 9, 5, dark, leaf, light, 11);
+        Crown(image, 22, 17, 9, 5, dark, leaf, light, 12);
+        Crown(image, 15, 12, 12, 5, dark, leaf, light, 13);
+    }
+
+    private static void Tropical(Image image)
+    {
+        Color bark = Color.Color8(132, 105, 58), shade = Color.Color8(63, 71, 43);
+        Box(image, 13, 22, 7, 26, shade); Box(image, 14, 24, 3, 23, bark);
+        Branch(image, 15, 31, -1, 8, bark); Branch(image, 18, 30, 1, 8, shade);
+        Box(image, 10, 46, 14, 2, shade);
+        var (dark, leaf, light) = LeafColors(5);
+        Crown(image, 9, 22, 9, 11, dark, leaf, light, 14);
+        Crown(image, 22, 20, 9, 11, dark, leaf, light, 15);
+        Crown(image, 16, 11, 13, 10, dark, leaf, light, 16);
+        // Lianes devant le tronc, sans augmenter l'emprise ni la quantité de bois.
+        for (int y = 28; y < 43; y++)
+        {
+            int x = 21 + y / 6 % 2;
+            image.SetPixel(x, y, leaf);
+            if (y % 4 == 0) Box(image, x - 1, y, 3, 1, light);
         }
     }
 

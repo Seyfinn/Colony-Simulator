@@ -118,8 +118,14 @@ public partial class ColonyCreationPanel : CanvasLayer
         _site.AddThemeColorOverride("font_color", MenuStyle.Ink);
         _error.Text = "";
         _region.Text = "Choisir sur la carte du monde";
-        _suggest.Visible = false;
         UpdateConfirm();
+    }
+
+    /// <summary>La région conseillée du moment : elle est cerclée sur la carte du monde, un clic dessus la choisit.</summary>
+    public void SetSuggestedRegion(int rank, int count, string description)
+    {
+        _site.Text = $"Région conseillée {rank} / {count} : {description}\nCliquez sur la case cerclée pour la choisir, ou sur « Emplacement conseillé » pour voir la suivante.";
+        _site.AddThemeColorOverride("font_color", ArtDirection.Sage);
     }
 
     public void ShowTerrainStage(string region)
@@ -131,14 +137,15 @@ public partial class ColonyCreationPanel : CanvasLayer
         _site.AddThemeColorOverride("font_color", MenuStyle.Ink);
         _error.Text = "";
         _region.Text = "← Choisir une autre région";
-        _suggest.Visible = true;
         UpdateConfirm();
     }
 
-    public void SetSite(int x, int y, bool valid, string reason)
+    /// <summary>Le camp choisi ; <paramref name="rank"/> et <paramref name="count"/> indiquent qu'il s'agit d'un emplacement conseillé.</summary>
+    public void SetSite(int x, int y, bool valid, string reason, int rank = 0, int count = 0)
     {
         _validSite = valid;
-        _site.Text = $"Camp choisi : ({x}, {y})\n{reason}";
+        string origin = rank > 0 ? $" · conseillé {rank} / {count}" : "";
+        _site.Text = $"Camp choisi : ({x}, {y}){origin}\n{reason}";
         _site.AddThemeColorOverride("font_color", valid ? ArtDirection.Sage : MenuStyle.Error);
         _error.Text = "";
         UpdateConfirm();
