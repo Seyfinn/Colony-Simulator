@@ -42,7 +42,7 @@ Règle d'or : **la simulation ne connaît pas l'affichage**. Godot lit `WorldSta
 Après les huttes et les ateliers du fer et du blé, une colonie dont la survie est assurée bâtit, dans cet ordre et un chantier à la fois
 (`Civic.NextToBuild`) : un **enclos** (dès 6 habitants et des champs), un **puits** (8 habitants), un **métier à tisser** (quand la laine s'accumule),
 un **entrepôt**, une **infirmerie** (après deux fièvres ou 12 habitants), un **marché** (après une caravane ou 14 habitants), une **taverne** (12) et
-une **école** (3 enfants ou 16 habitants). Elle passe ceux dont elle ignore encore le savoir (voir ci-dessous) et les étudie en attendant.
+une **école** (3 enfants ou 16 habitants). Elle passe ceux dont elle ignore encore le savoir et les étudie en attendant.
 
 ### Savoirs et âges
 
