@@ -139,8 +139,9 @@ public static class ColonyFounder
             if (Math.Min(water[i], river[i]) > 26)
                 score -= 60f;
             if (water[i] <= 12) score += 20f;
-            // Une rivière à portée : pêche, berges fertiles, et plus tard de quoi irriguer.
-            if (river[i] <= 14) score += 25f;
+            // Une rivière à portée : pêche, berges fertiles, et plus tard de quoi irriguer. Les rivières sont rares : quand il y en a une,
+            // le camp s'installe tout près, d'autant plus volontiers qu'elle est proche.
+            if (river[i] <= 14) score += 25f + 2.5f * (14 - river[i]);
             // De la roche à portée de marche : plus elle est proche, mieux c'est ; trop loin, pas de carrière.
             score += rock[i] <= 24 ? 30f - 1.25f * Math.Max(0, rock[i] - 8) : -80f;
             score -= 0.1f * (Math.Abs(x - map.Width / 2) + Math.Abs(y - map.Height / 2));

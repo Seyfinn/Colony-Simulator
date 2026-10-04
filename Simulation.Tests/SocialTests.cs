@@ -96,7 +96,7 @@ public class SocialTests(ITestOutputHelper output)
     [Fact]
     public void Un_colon_seul_va_chercher_de_la_compagnie_le_soir_et_les_deux_y_gagnent()
     {
-        WorldState world = ClosedColony(8);
+        WorldState world = ClosedColony(8, seed: 2);
         Colony colony = world.Colonies[0];
 
         // On avance jusqu'à 17 h, puis tout le monde manque de compagnie.

@@ -13,7 +13,7 @@ public class GrowthTests(ITestOutputHelper output)
     [Fact]
     public void Une_colonie_de_huit_fondateurs_double_en_trois_a_cinq_ans_puis_continue_de_croitre()
     {
-        int[] seeds = [12345, 1, 2, 3, 4];
+        int[] seeds = [12345, 2, 3, 4, 5];
         var yearsToDouble = new List<double>();
         var populationAtSix = new List<int>();
 

@@ -190,6 +190,9 @@ public sealed class WorldMap
                     {
                         (float x, float y) = WorldGrid.Center(tile.Col, tile.Row);
                         score -= 0.12f * MathF.Sqrt((x - cx) * (x - cx) + (y - cy) * (y - cy));
+                        // Les fleuves sont rares et changent la vie d'une colonie (pêche, champs irrigués, moulin, barrage) :
+                        // le premier peuple s'installe sur leurs rives ; les autres, plus loin, n'ont pas toujours cette chance.
+                        score += tile.River switch { 2 => 3f, 1 => 2f, _ => 0f };
                     }
                     else
                     {

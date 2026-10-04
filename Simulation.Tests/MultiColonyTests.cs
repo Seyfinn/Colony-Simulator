@@ -98,7 +98,9 @@ public class MultiColonyTests(ITestOutputHelper output)
         {
             output.WriteLine($"{colony.Name} : {colony.Members.Count} colons, nourriture {colony.Stock.FoodUnits}, bois {colony.Stock.Get(ResourceType.Wood)}, " +
                              $"pierre {colony.Stock.Get(ResourceType.Stone)}, minerai {colony.Stock.Get(ResourceType.IronOre)}, humeur {colony.AverageMood:P0}");
-            Assert.Equal(8, colony.Members.Count);
+            // Les marchands en caravane ne sont pas au camp : on les compte, personne ne doit manquer.
+            int away = world.Caravans.Where(c => c.From == colony).Sum(c => c.Traders.Count);
+            Assert.Equal(8, colony.Members.Count + away);
             Assert.Null(watches[colony].Victim);
         }
     }

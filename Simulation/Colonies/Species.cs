@@ -19,10 +19,10 @@ public sealed record MapStyle(float MountainShare, float WaterShare, float Fores
     public static MapStyle For(WorldTile tile)
     {
         BiomeInfo info = tile.Info;
-        float water = Math.Max(0.03f, 0.06f + info.ExtraWater + (tile.Coastal ? 0.12f : 0f));
-        // Un grand fleuve du monde donne deux cours d'eau à la région, une rivière un seul ; sans rivière, un ruisseau
-        // naît quand même dans les régions humides.
-        int rivers = tile.River >= 2 ? 2 : tile.River == 1 || tile.Rainfall > 0.3f ? 1 : 0;
+        float water = Math.Max(0.015f, 0.03f + info.ExtraWater + (tile.Coastal ? 0.12f : 0f));
+        // L'eau est rare : une région sans rivière sur la carte du monde n'a aucun cours d'eau. Un grand fleuve donne deux
+        // cours d'eau à la région, une rivière un seul.
+        int rivers = tile.River >= 2 ? 2 : tile.River == 1 ? 1 : 0;
         return new MapStyle(BiomeInfo.MountainShare(tile.Relief), water, info.ForestBias, info.SoilRichness,
             info.DryShare, rivers, tile.Biome);
     }

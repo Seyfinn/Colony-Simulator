@@ -127,6 +127,46 @@ public partial class Main
     private async Task VerifyObservationInterface()
     {
         SetSpeed(GameSpeed.Pause);
+        var savedFood = new Dictionary<ResourceType, int>();
+        foreach (var type in new[] { ResourceType.Food, ResourceType.Fish, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour })
+        {
+            savedFood[type] = Observed.Stock.Get(type);
+            Observed.Stock.TryTake(type, savedFood[type]);
+        }
+        Observed.Stock.Add(ResourceType.Food, 10);
+        Observed.Stock.Add(ResourceType.Fish, 2);
+        Observed.Stock.Add(ResourceType.Grain, 4);
+        Observed.Stock.Add(ResourceType.Bread, 1);
+        Observed.Stock.Add(ResourceType.Flour, 5);
+        await UiFrames(3);
+        Require(FindNamed<Label>(_hud, "FoodTotal").Text == 10.45m.ToString("0.##"), "Le total doit pondérer les aliments par leur valeur nutritive.");
+        Require(!Descendants(_hud).Any(n => n.Name == "ResourceGrain" || n.Name == "ResourceBread" || n.Name == "ResourceFlour" || n.Name == "ResourceFish"),
+            "Tous les aliments doivent partager une seule case.");
+        var foodToggle = FindNamed<Button>(_hud, "ToggleFoodDetails");
+        var foodDetails = FindNamed<PanelContainer>(_hud, "FoodDetails");
+        Require(!foodDetails.Visible, "Le détail doit démarrer replié.");
+        foodToggle.EmitSignal(BaseButton.SignalName.Pressed);
+        await UiFrames(3);
+        Require(foodDetails.Visible && FindNamed<Label>(_hud, "FoodDetailFish").Text.StartsWith("2 ×"), "Le clic doit ouvrir le stock détaillé, poisson compris.");
+        Require(foodDetails.GlobalPosition.Y >= foodToggle.GlobalPosition.Y + foodToggle.Size.Y, "Le détail doit s'ouvrir sous la case.");
+        SaveSmokeCapture("nourriture");
+        Observed.Stock.Add(ResourceType.Fish, 1);
+        await UiFrames(3);
+        Require(FindNamed<Label>(_hud, "FoodTotal").Text == 11.05m.ToString("0.##")
+            && FindNamed<Label>(_hud, "FoodDetailFish").Text.StartsWith("3 ×"), "Le total et le détail doivent suivre les variations du stock.");
+        foodToggle.EmitSignal(BaseButton.SignalName.Pressed);
+        Require(!foodDetails.Visible, "Un second clic doit replier le stock.");
+        foodToggle.EmitSignal(BaseButton.SignalName.Pressed);
+        _hud._Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+        Require(!foodDetails.Visible, "Échap doit fermer le détail.");
+        foodToggle.EmitSignal(BaseButton.SignalName.Pressed);
+        _hud._Input(new InputEventMouseButton { Pressed = true, ButtonIndex = MouseButton.Left, Position = Vector2.Zero });
+        Require(!foodDetails.Visible, "Un clic ailleurs doit fermer le détail.");
+        foreach (var (type, amount) in savedFood)
+        {
+            Observed.Stock.TryTake(type, Observed.Stock.Get(type));
+            Observed.Stock.Add(type, amount);
+        }
         GetViewport().GuiReleaseFocus();
         PressObservationKey(Key.M);
         Require(_worldPanel.MapOpen, "M doit ouvrir la carte du monde.");

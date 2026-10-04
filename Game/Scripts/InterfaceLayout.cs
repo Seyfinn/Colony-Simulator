@@ -8,8 +8,8 @@ internal readonly record struct InterfaceLayout(int ResourceColumns, float Resou
 {
     public static InterfaceLayout For(Vector2 size, bool showStocks = true)
     {
-        int columns = size.X >= 1480 ? 11 : 6;
-        float height = columns == 11 ? 64 : 116;
+        int columns = size.X >= 1200 ? 8 : 4;
+        float height = columns == 8 ? 64 : 116;
         return showStocks ? new(columns, height, 98 + height + 12, 98 + height + 94) : new(columns, 0, 98, 180);
     }
 

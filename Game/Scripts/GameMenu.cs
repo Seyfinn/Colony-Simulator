@@ -217,7 +217,7 @@ public partial class GameMenu : CanvasLayer
         MenuStyle.Text(_body, "Graine · le même nombre reproduit le même terrain", 14, MenuStyle.Muted);
         var seedRow = new HBoxContainer();
         _body.AddChild(seedRow);
-        var seed = new LineEdit { Name = "Graine", Text = "12345", MaxLength = 11, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
+        var seed = new LineEdit { Name = "Graine", Text = Random.Shared.Next(1, int.MaxValue).ToString(), MaxLength = 11, SizeFlagsHorizontal = Control.SizeFlags.ExpandFill };
         seedRow.AddChild(seed);
         MenuStyle.Button(seedRow, "Aléatoire", () => seed.Text = Random.Shared.Next(1, int.MaxValue).ToString());
         MenuStyle.Text(_body, "Taille des régions", 14, MenuStyle.Muted);

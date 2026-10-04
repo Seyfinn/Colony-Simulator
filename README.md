@@ -17,7 +17,7 @@ Règle d'or : **la simulation ne connaît pas l'affichage**. Godot lit `WorldSta
 ## Dans `Simulation/`
 
 - `WorldState` : l'horloge, les colonies, les caravanes. `Step()` avance d'un tick.
-- `World/` : la carte du monde, une grille de 64 × 40 hexagones (`WorldGenerator`) : continents, climat du nord glacé au sud tropical, onze biomes, relief, fleuves. Chaque case donne sa carte locale à la colonie qui s'y installe (`MapStyle.For`).
+- `World/` : la carte du monde, une grille de 64 × 40 hexagones (`WorldGenerator`) : continents, climat du nord glacé au sud tropical, onze biomes, relief, fleuves. Les fleuves sont rares : deux à trois grands fleuves traversent le continent de la montagne à la mer, rejoints par quelques rivières ; seule une case traversée par l'un d'eux a une rivière sur sa carte locale, les autres régions n'ont presque pas d'eau, et une colonie y vit sans (les colons ne boivent pas). Chaque case donne sa carte locale à la colonie qui s'y installe (`MapStyle.For`).
 - `Map/LocalMap` : la carte locale d'une colonie (relief en couches, eau, rivières, canaux, retenues d'eau).
 - `Generation/` : génération des cartes. Chaque carte locale fait 200 × 200 cases (`MapGenerator.DefaultSize`) et se compose de grandes zones (un massif de montagne, de vastes forêts et plaines, un grand lac) ; les rivières naissent en ruisseau puis s'élargissent en fleuve de 3 à 8 cases (`Rivers`).
 - `Colonies/` — une colonie, c'est :
@@ -54,6 +54,10 @@ dans `user://settings.cfg`.
 
 L'interface adapte les stocks à la largeur de la fenêtre : une rangée sur grand écran, deux rangées sur une fenêtre
 plus petite. Le bandeau indique les jours de repas en réserve ; la nourriture est signalée en rouge sous deux jours.
+La case **Nourriture** additionne la valeur nutritive des baies, du poisson, des céréales et du pain :
+100 points de faim valent 1 nourriture (0,6 par baie, poisson ou céréale ; 0,85 par pain).
+Un clic ouvre le détail sous la case, avec les quantités et leur contribution. La farine y figure avec une valeur nulle
+tant qu'elle n'est pas cuite en pain. Un second clic, un clic ailleurs ou Échap replie le détail.
 L'économie et les prières disposent de panneaux défilants ; l'actualisation de l'économie conserve la position de lecture.
 Les panneaux se replient lorsqu'une carte ou les commandes occupent leur emplacement.
 

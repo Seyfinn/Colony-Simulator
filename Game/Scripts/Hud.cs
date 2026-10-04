@@ -29,6 +29,9 @@ public partial class Hud : CanvasLayer
     private Label _colonyName = null!, _colonyMeta = null!, _calendar = null!, _hour = null!, _tileInfo = null!;
     private readonly Dictionary<ResourceType, Label> _stocks = [];
     private readonly Dictionary<ResourceType, PanelContainer> _resourceCards = [];
+    private readonly Dictionary<ResourceType, Label> _foodDetails = [];
+    private PanelContainer _foodDropdown = null!;
+    private static readonly ResourceType[] FoodResources = [ResourceType.Food, ResourceType.Fish, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour];
     private readonly Dictionary<GameSpeed, Button> _speedButtons = [];
     private Button _pause = null!, _journalTab = null!, _workTab = null!, _collapse = null!;
     private PanelContainer _tray = null!, _help = null!, _colonistPanel = null!;
@@ -74,6 +77,16 @@ public partial class Hud : CanvasLayer
 
     public override void _Input(InputEvent @event)
     {
+        if (_foodDropdown.Visible && @event is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape })
+        {
+            CloseFoodDetails();
+            GetViewport().SetInputAsHandled();
+            return;
+        }
+        if (_foodDropdown.Visible && @event is InputEventMouseButton { Pressed: true } mouse
+            && !_foodDropdown.GetGlobalRect().HasPoint(mouse.Position)
+            && !_resourceCards[ResourceType.Food].GetGlobalRect().HasPoint(mouse.Position))
+            CloseFoodDetails();
         if (_nameEditor.IsVisibleInTree() && @event is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape })
         {
             CancelRename();
@@ -128,7 +141,7 @@ public partial class Hud : CanvasLayer
 
     private void BuildResources()
     {
-        var row = new GridContainer { Columns = 11, MouseFilter = Control.MouseFilterEnum.Ignore };
+        var row = new GridContainer { Columns = 8, MouseFilter = Control.MouseFilterEnum.Ignore };
         _resourceRow = row;
         _root.AddChild(row);
         Place(row, 0, 0, 1, 0, 16, 98, -16, 168);
@@ -136,6 +149,7 @@ public partial class Hud : CanvasLayer
         row.AddThemeConstantOverride("v_separation", 6);
         foreach (ResourceType type in Enum.GetValues<ResourceType>())
         {
+            if (type != ResourceType.Food && FoodResources.Contains(type)) continue;
             var card = Panel();
             card.Name = $"Resource{type}";
             card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -144,7 +158,7 @@ public partial class Hud : CanvasLayer
             _resourceCards[type] = card;
             card.TooltipText = type.ToString() switch
             {
-                "Food" => "Baies et poisson. Les habitants utilisent d'abord cette nourriture pour leurs repas.",
+                "Food" => "Réserve nutritive totale. 100 points de faim = 1 nourriture. Cliquez pour voir le détail.",
                 "Grain" => "Céréales récoltées dans les champs. Elles complètent la réserve de nourriture.",
                 "Wood" => "Bois disponible pour les constructions et le feu de camp.",
                 "Stone" => "Pierre extraite par les mineurs.",
@@ -170,14 +184,57 @@ public partial class Hud : CanvasLayer
             content.AddChild(icon);
             var text = Column(content, 0);
             text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-            var label = Text(text, type == ResourceType.IronOre ? "Minerai" : ResourceIcons.Name(type), 12, Muted);
+            var label = Text(text, type == ResourceType.Food ? "Nourriture ▾" : type == ResourceType.IronOre ? "Minerai" : ResourceIcons.Name(type), 12, Muted);
             label.ClipText = true;
             label.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
             _stocks[type] = Text(text, "0", 21, Ink);
             _stocks[type].ClipText = true;
             _stocks[type].TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+            if (type == ResourceType.Food)
+            {
+                _stocks[type].Name = "FoodTotal";
+                var toggle = new Button
+                {
+                    Name = "ToggleFoodDetails", Flat = true, FocusMode = Control.FocusModeEnum.All,
+                    MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = card.TooltipText,
+                };
+                card.AddChild(toggle);
+                toggle.Pressed += () =>
+                {
+                    _foodDropdown.Visible = !_foodDropdown.Visible;
+                    Layer = _foodDropdown.Visible ? 13 : 10;
+                    PositionFoodDetails();
+                };
+            }
         }
+        _foodDropdown = Panel();
+        _foodDropdown.AddThemeStyleboxOverride("panel", Style(new Color(0.065f, 0.115f, 0.105f, 1f), Border));
+        _foodDropdown.Name = "FoodDetails";
+        _foodDropdown.ZIndex = 20;
+        _foodDropdown.CustomMinimumSize = new Vector2(360, 0);
+        _root.AddChild(_foodDropdown);
+        var detail = Column(_foodDropdown, 10);
+        Text(detail, "Stock de nourriture", 16, Gold);
+        Text(detail, "100 points de faim = 1 nourriture", 12, Muted);
+        foreach (var type in FoodResources)
+        {
+            string name = type == ResourceType.Food ? "Baies" : ResourceIcons.Name(type);
+            var line = Row(detail, 12);
+            Text(line, name, 14, Ink).CustomMinimumSize = new Vector2(85, 0);
+            _foodDetails[type] = Text(line, "", 13, Ink);
+            _foodDetails[type].Name = $"FoodDetail{type}";
+        }
+        Text(detail, "Farine : à transformer en pain", 12, Muted);
+        _foodDropdown.Hide();
     }
+
+    private void PositionFoodDetails()
+    {
+        var card = _resourceCards[ResourceType.Food];
+        _foodDropdown.Position = card.GlobalPosition - _root.GlobalPosition + new Vector2(0, card.Size.Y + 6);
+    }
+
+    public void CloseFoodDetails() { _foodDropdown.Hide(); Layer = 10; }
 
     private void BuildJournal()
     {
@@ -335,7 +392,7 @@ public partial class Hud : CanvasLayer
     private void ResizePanels()
     {
         var layout = InterfaceLayout.For(_root.Size);
-        _resourceRow.Columns = layout.ResourceColumns;
+        _resourceRow.Columns = Math.Min(layout.ResourceColumns, _resourceCards.Count);
         _resourceRow.OffsetBottom = 98 + layout.ResourcesHeight;
         float inspectorWidth = Math.Clamp(_root.Size.X * 0.24f, 300, 336);
         _colonistPanel.OffsetLeft = -16 - inspectorWidth;
@@ -368,6 +425,7 @@ public partial class Hud : CanvasLayer
 
     public void SetOverlayState(bool map, bool economy)
     {
+        if (map || economy) CloseFoodDetails();
         _mapOverlay = map; _economyOverlay = economy;
         if (map || economy) _help.Hide();
         _tray.Visible = _resourceRow.Visible && !map && !economy && !HelpOpen;
@@ -398,12 +456,15 @@ public partial class Hud : CanvasLayer
         _colonyMeta.TooltipText = $"{population}\nRéserves de repas : {days:0.0} jours (nourriture, céréales et pain)\nHumeur : {colony.AverageMood * 100:0} % · Attrait : {Migration.Attractiveness(colony, clock) * 100:0} %";
         foreach (var (resource, value) in _stocks)
         {
-            int stock = colony.Stock.Get(resource);
-            value.Text = stock.ToString("N0");
+            decimal stock = resource == ResourceType.Food ? colony.Stock.FoodNutrition : colony.Stock.Get(resource);
+            value.Text = resource == ResourceType.Food ? stock.ToString("0.##") : stock.ToString("N0");
             value.AddThemeColorOverride("font_color", resource == ResourceType.Food && days < 2 ? MenuStyle.Error : stock == 0 ? Muted : Ink);
         }
         var foodStyle = (StyleBoxFlat)_resourceCards[ResourceType.Food].GetThemeStylebox("panel");
         foodStyle.BorderColor = days < 2 ? MenuStyle.Error : Border;
+        foreach (var (type, value) in _foodDetails)
+            value.Text = $"{colony.Stock.Get(type):N0} × {Stockpile.NutritionPerItem(type):0.##} = {colony.Stock.Nutrition(type):0.##}";
+        PositionFoodDetails();
     }
 
     public void ShowUnsettled(string name, string hint)
@@ -412,9 +473,10 @@ public partial class Hud : CanvasLayer
         _shownColonist = null;
         _colonyName.Text = name; _colonyMeta.Text = hint;
         _resourceRow.Hide(); _tray.Hide(); _colonistPanel.Hide();
+        CloseFoodDetails();
     }
 
-    public void ResetColony() => _thoughtStamp = "";
+    public void ResetColony() { _thoughtStamp = ""; CloseFoodDetails(); }
 
     public void SetSpeedControlsEnabled(bool enabled)
     {
