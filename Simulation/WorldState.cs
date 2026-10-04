@@ -51,6 +51,15 @@ public sealed class WorldState
     /// <summary>Les caravanes en route entre deux colonies.</summary>
     public List<Caravan> Caravans { get; } = [];
 
+    /// <summary>Les alliances, guerres et trêves entre colonies (voir <see cref="Diplomacy"/>).</summary>
+    public List<Pact> Pacts { get; } = [];
+
+    /// <summary>Les bandes de guerriers en marche vers une colonie ennemie, ou qui en reviennent.</summary>
+    public List<WarParty> WarParties { get; } = [];
+
+    /// <summary>Pièces qui ont quitté le monde par les événements (pillards, colporteurs) : la monnaie ne se perd pas autrement.</summary>
+    public int CoinsLostToEvents { get; internal set; }
+
     /// <summary>Nombre de voyages de caravane menés à leur terme depuis le début de la partie.</summary>
     public int CompletedCaravans { get; internal set; }
 
@@ -61,6 +70,15 @@ public sealed class WorldState
 
     /// <summary>Tout le hasard de la simulation passe par ici : une même graine rejoue la même histoire.</summary>
     public Random Random { get; }
+
+    /// <summary>
+    /// Le hasard des maladies, du climat et des événements, à part de <see cref="Random"/> : ajouter ou régler ces aléas
+    /// ne décale pas le reste de l'histoire d'une graine.
+    /// </summary>
+    public Random Chance { get; }
+
+    /// <summary>Le hasard de la politique (querelles, présents, batailles, schismes), à part lui aussi.</summary>
+    public Random Politics { get; }
 
     /// <param name="startingColonists">Nombre de colons fondateurs (par colonie) ; tiré au hasard entre 5 et 10 si l'on n'en précise pas.</param>
     /// <param name="migration">Faux pour couper les arrivées de voyageurs et les départs.</param>
@@ -78,6 +96,8 @@ public sealed class WorldState
         _migration = migration;
         _lifecycle = lifecycle;
         Random = new Random(seed);
+        Chance = new Random(unchecked(seed * 31 + 0x5EED));
+        Politics = new Random(unchecked(seed * 47 + 0x7EA7));
         Clock = new GameClock(StartTicks);
         WorldMap = new WorldMap(WorldGenerator.Generate(seed));
         if (colonyCount == 0)
@@ -136,14 +156,20 @@ public sealed class WorldState
         else
         {
             colony = ColonyFounder.FoundAt(map, Random, name, founders, NextColonistId, Clock, species, campX, campY);
-            WorldMap.PlaceAt(colony, tile);
-            Colonies.Add(colony);
-            UpdateRivers();
-            ColonyBrain.Think(colony, map, Clock);
+            AddColony(colony, tile);
             reason = $"{colony.Name} a été fondée avec {founders} habitants.";
             return true;
         }
         return false;
+    }
+
+    /// <summary>Installe une colonie déjà peuplée sur sa case du monde (une fondation, un schisme).</summary>
+    internal void AddColony(Colony colony, int tile)
+    {
+        WorldMap.PlaceAt(colony, tile);
+        Colonies.Add(colony);
+        UpdateRivers();
+        ColonyBrain.Think(colony, colony.Map, Clock);
     }
 
     /// <summary>Le joueur répond à une prière : accord ou refus.</summary>
@@ -161,8 +187,14 @@ public sealed class WorldState
             {
                 colony.Map.DailyUpdate(Clock.TotalDays, Clock.Season);
                 ColonyBrain.OnDayStart(colony, Clock);
+                Knowledge.Daily(this, colony);
                 if (_lifecycle)
+                {
                     Lifecycle.Daily(this, colony);
+                    Climate.Daily(this, colony);
+                    Health.Daily(this, colony);
+                    Events.Daily(this, colony);
+                }
             }
         }
 
@@ -174,7 +206,10 @@ public sealed class WorldState
                 if (Clock.Hour == FireLightingHour)
                     ColonyBrain.LightFire(colony, Clock);
                 if (_lifecycle)
+                {
                     Lifecycle.Hourly(this, colony);
+                    Health.Hourly(this, colony);
+                }
                 if (Clock.Hour == Trade.PlanningHour && _trade)
                     Trade.Daily(this, colony);
                 if (_migration)
@@ -184,6 +219,15 @@ public sealed class WorldState
                         Migration.Daily(this, colony);
                 }
             }
+            if (Clock.Hour == Diplomacy.PlanningHour)
+            {
+                Diplomacy.Daily(this);
+                if (_migration)
+                    foreach (Colony colony in Colonies.ToList())
+                        Schism.Daily(this, colony);
+            }
+            if (WarParties.Count > 0)
+                Warfare.Hourly(this);
         }
 
         // Les caravanes déjà en route continuent même si l'on coupe le commerce pour de nouveaux départs.

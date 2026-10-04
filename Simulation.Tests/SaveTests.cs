@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using GodColony.Simulation.Colonies;
 using GodColony.Simulation.Persistence;
 using GodColony.Simulation.Map;
+using GodColony.Simulation.Time;
 
 namespace GodColony.Simulation.Tests;
 
@@ -147,6 +148,17 @@ public sealed class SaveTests : IDisposable
         Assert.Equal(before, WorldSave.Load(SavePath + ".bak").World.Clock.Ticks);
         Assert.Equal(before + 1, WorldSave.Load(SavePath).World.Clock.Ticks);
         Assert.False(File.Exists(SavePath + ".tmp"));
+    }
+
+    [Theory]
+    [InlineData(GameSpeed.Fulgurante, GameSpeed.Fulgurante)]
+    [InlineData(GameSpeed.Pause, GameSpeed.Fulgurante)]
+    public void Une_partie_sauvegardee_en_vue_chiffree_se_recharge(GameSpeed speed, GameSpeed beforePause)
+    {
+        var world = new WorldState(12345, colonyCount: 0);
+        var view = new SavedView(Speed: speed, SpeedBeforePause: beforePause);
+        WorldSave.Save(SavePath, world, view);
+        Assert.Equal(view, WorldSave.Load(SavePath).Info.View);
     }
 
     [Fact]

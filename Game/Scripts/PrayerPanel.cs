@@ -28,6 +28,7 @@ public partial class PrayerPanel : CanvasLayer
     private Button _badge = null!;
     private string _stamp = "";
     private double _time;
+    private bool _stocksVisible = true;
 
     /// <summary>Le détail des prières est-il déplié ?</summary>
     public bool Open
@@ -83,8 +84,16 @@ public partial class PrayerPanel : CanvasLayer
 
     private void ResizePanels()
     {
-        _stack.OffsetTop = InterfaceLayout.For(_root.Size).NavigationTop;
+        _stack.OffsetTop = InterfaceLayout.For(_root.Size, _stocksVisible).NavigationTop;
         _stack.OffsetLeft = -16 - InterfaceLayout.SideWidth(_root.Size);
+    }
+
+    /// <summary>Sans la rangée des stocks (vue chiffrée, fondation), la pastille remonte avec la navigation.</summary>
+    public void SetStocksVisible(bool visible)
+    {
+        if (_stocksVisible == visible) return;
+        _stocksVisible = visible;
+        if (_root is not null) ResizePanels();
     }
 
     public void SetMapOverlay(bool open) => _stack.Visible = !open;

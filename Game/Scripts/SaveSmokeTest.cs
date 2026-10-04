@@ -84,7 +84,23 @@ public partial class Main
             ConfirmVisibleSaveDialog();
             await UiFrames(8);
             Require(!_menu.IsOpen && _world.Clock.Ticks == savedTicks, "F9 doit restaurer la sauvegarde rapide après confirmation.");
-            GD.Print("SAVE_SMOKE_OK : emplacements, écrasement confirmé, copie de secours, reprise complète, annulation, fichier invalide, F5 et F9.");
+
+            // Une partie enregistrée en pause dans la vue chiffrée s'y retrouve au chargement, sans repeindre la carte.
+            SetSpeed(GameSpeed.Fulgurante);
+            TogglePause();
+            await UiFrames(2);
+            _Input(new InputEventKey { Pressed = true, Keycode = Key.F5 });
+            long statsTicks = _world.Clock.Ticks;
+            SetSpeed(GameSpeed.Observation);
+            await UiFrames(4);
+            Require(!_statsShown && _mapView is not null, "Quitter la vue chiffrée doit rendre la carte.");
+            _Input(new InputEventKey { Pressed = true, Keycode = Key.F9 });
+            ConfirmVisibleSaveDialog();
+            await UiFrames(8);
+            Require(!_menu.IsOpen && _world.Clock.Ticks == statsTicks && _statsShown && _mapView is null
+                && _speed == GameSpeed.Pause && _speedBeforePause == GameSpeed.Fulgurante,
+                "Une partie enregistrée en vue chiffrée doit s'y retrouver au chargement, sans peindre la carte.");
+            GD.Print("SAVE_SMOKE_OK : emplacements, écrasement confirmé, copie de secours, reprise complète, annulation, fichier invalide, F5, F9 et vue chiffrée.");
             GetTree().Quit();
         }
         catch (Exception exception)

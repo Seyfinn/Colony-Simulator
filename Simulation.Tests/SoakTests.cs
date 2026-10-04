@@ -23,7 +23,7 @@ public class SoakTests(ITestOutputHelper output)
             if (i % TimeConstants.TicksPerDay != 0)
                 continue;
 
-            Assert.Equal(coins, Coins(world));
+            Assert.Equal(coins, Coins(world) + world.CoinsLostToEvents); // hors pillards et colporteurs
             foreach (Colony colony in world.Colonies)
             {
                 watches[colony].Observe(colony);

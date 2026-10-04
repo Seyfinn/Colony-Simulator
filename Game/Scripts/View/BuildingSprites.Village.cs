@@ -145,6 +145,24 @@ public static partial class BuildingSprites
         a.Box(6, 66, 6, 8, Wood); a.Box(7, 66, 4, 1, WoodLight); a.Line(6, 69, 11, 69, Ink);
     }
 
+    private static void Cask(PixelArt a, WoodlandBiome biome)
+    {
+        // Trois fûts de chêne cerclés de fer, posés sur un plancher, avec un robinet et une chope.
+        a.Box(4, 70, 56, 5, Wood); a.Box(4, 70, 56, 1, WoodLight);
+        foreach ((int cx, int cy, int rx, int ry) in new[] { (22, 56, 15, 17), (47, 62, 12, 13) })
+        {
+            a.Oval(cx, cy, rx, ry, Ink);
+            a.Oval(cx, cy, rx - 1, ry - 1, Wood.Lightened(0.08f));
+            a.Oval(cx - 3, cy - 3, rx - 6, ry - 7, WoodLight);
+            foreach (int hoop in new[] { -ry / 2, ry / 2 })
+                a.Line(cx - rx + 2, cy + hoop, cx + rx - 2, cy + hoop, Soot);
+            a.Oval(cx, cy - ry + 3, rx - 3, 3, Wood.Darkened(0.2f));
+            a.Dot(cx + 1, cy + 2, Soot);
+        }
+        a.Box(34, 62, 6, 2, Brass); a.Box(38, 63, 2, 4, Brass);
+        a.Box(52, 71, 6, 4, C(226, 168, 52)); a.Box(52, 70, 6, 2, C(252, 244, 222)); a.Box(58, 72, 2, 2, Soot);
+    }
+
     private static void School(PixelArt a, WoodlandBiome biome)
     {
         // Une chaumière coiffée d'un petit clocher, avec une ardoise devant la porte.

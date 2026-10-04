@@ -2,6 +2,9 @@ using GodColony.Simulation.Map;
 
 namespace GodColony.Simulation.Colonies;
 
+/// <summary>Ce que la colonie a cherché sans rien trouver : elle ne le recherche pas avant un an.</summary>
+internal enum SearchKind { Trees, Fish, Rocks, Ore, OreQuarry }
+
 /// <summary>Où travailler : quels arbres abattre, où ouvrir la carrière, quelle roche miner ensuite.</summary>
 public static class WorkSites
 {
@@ -51,40 +54,77 @@ public static class WorkSites
         return difference is >= -1 and <= 2;
     }
 
-    /// <summary>Arbres adultes non réservés, du plus proche au plus éloigné du camp.</summary>
+    /// <summary>
+    /// Les cases autour d'un centre, anneau après anneau (le centre, puis les cases à 1, à 2, à 3…). Le balayage est
+    /// paresseux : celui qui consomme s'arrête dès qu'il a trouvé, et la carte entière n'est jamais parcourue pour rien.
+    /// L'ordre est fixe, pour que les parties restent reproductibles.
+    /// </summary>
+    private static IEnumerable<(int X, int Y)> Rings(LocalMap map, int centerX, int centerY, int radius)
+    {
+        if (map.InBounds(centerX, centerY))
+            yield return (centerX, centerY);
+        for (int r = 1; r <= radius; r++)
+        {
+            for (int dx = -r; dx <= r; dx++)
+            {
+                if (map.InBounds(centerX + dx, centerY - r))
+                    yield return (centerX + dx, centerY - r);
+                if (map.InBounds(centerX + dx, centerY + r))
+                    yield return (centerX + dx, centerY + r);
+            }
+            for (int dy = -r + 1; dy <= r - 1; dy++)
+            {
+                if (map.InBounds(centerX - r, centerY + dy))
+                    yield return (centerX - r, centerY + dy);
+                if (map.InBounds(centerX + r, centerY + dy))
+                    yield return (centerX + r, centerY + dy);
+            }
+        }
+    }
+
+    /// <summary>Arbres adultes non réservés, du plus proche au plus éloigné du camp (balayage en anneaux).</summary>
     public static IEnumerable<(int X, int Y)> TreesToChop(LocalMap map, Colony colony)
     {
-        var trees = new List<(int X, int Y, int Distance)>();
-        for (int dy = -TreeSearchRadius; dy <= TreeSearchRadius; dy++)
-        for (int dx = -TreeSearchRadius; dx <= TreeSearchRadius; dx++)
+        if (colony.IsExhausted(SearchKind.Trees))
+            yield break;
+        bool anyTree = false;
+        foreach ((int x, int y) in Rings(map, colony.CampX, colony.CampY, TreeSearchRadius))
         {
-            int x = colony.CampX + dx, y = colony.CampY + dy;
-            if (map.CanChop(x, y) && !colony.Reserved.Contains((x, y)))
-                trees.Add((x, y, dx * dx + dy * dy));
+            if (!map.CanChop(x, y))
+                continue;
+            anyTree = true;
+            if (!colony.Reserved.Contains((x, y)))
+                yield return (x, y);
         }
-        return trees.OrderBy(t => t.Distance).Select(t => (t.X, t.Y));
+        // Le balayage est allé au bout sans voir un seul arbre : on n'y revient que dans un an.
+        if (!anyTree)
+            colony.MarkExhausted(SearchKind.Trees);
     }
 
     /// <summary>Cases d'eau poissonneuses près du camp, avec pour chacune une case de rive d'où pêcher.</summary>
     public static IEnumerable<(int WaterX, int WaterY, int StandX, int StandY)> FishingSpots(LocalMap map, Colony colony)
     {
-        var spots = new List<(int WaterX, int WaterY, int StandX, int StandY, int Distance)>();
-        for (int dy = -FishingSearchRadius; dy <= FishingSearchRadius; dy++)
-        for (int dx = -FishingSearchRadius; dx <= FishingSearchRadius; dx++)
+        if (colony.IsExhausted(SearchKind.Fish))
+            yield break;
+        bool anyFish = false;
+        foreach ((int x, int y) in Rings(map, colony.CampX, colony.CampY, FishingSearchRadius))
         {
-            int x = colony.CampX + dx, y = colony.CampY + dy;
-            if (!map.InBounds(x, y) || map.GetFish(x, y) == 0 || colony.Reserved.Contains((x, y)))
+            if (map.GetFish(x, y) == 0)
                 continue;
-            foreach ((int nx, int ny) in Neighbors.Select(n => (x + n.Dx, y + n.Dy)))
+            anyFish = true;
+            if (colony.Reserved.Contains((x, y)))
+                continue;
+            foreach ((int dx, int dy) in Neighbors)
             {
-                if (map.IsWalkable(nx, ny))
+                if (map.IsWalkable(x + dx, y + dy))
                 {
-                    spots.Add((x, y, nx, ny, Distance(nx, ny, colony.CampX, colony.CampY)));
+                    yield return (x, y, x + dx, y + dy);
                     break;
                 }
             }
         }
-        return spots.OrderBy(s => s.Distance).Select(s => (s.WaterX, s.WaterY, s.StandX, s.StandY));
+        if (!anyFish)
+            colony.MarkExhausted(SearchKind.Fish);
     }
 
     /// <summary>
@@ -99,33 +139,50 @@ public static class WorkSites
         // On ne creuse jamais sous les pieds de quelqu'un.
         var occupied = colony.Members.Select(m => (m.TileX, m.TileY)).ToHashSet();
 
-        var rocks = new List<(int X, int Y, int Distance)>();
-        int radius = preferOre ? OreSearchRadius : QuarryWorkRadius;
-        for (int dy = -radius; dy <= radius; dy++)
-        for (int dx = -radius; dx <= radius; dx++)
+        // Quand la colonie manque de minerai, elle creuse d'abord là où il est proche de la surface (une veine qui
+        // affleure, ou à quelques couches sous la roche), en partant de la carrière et en s'éloignant.
+        if (preferOre && !colony.IsExhausted(SearchKind.Ore))
         {
-            int x = quarry.X + dx, y = quarry.Y + dy;
-            if (map.CanMine(x, y) && !colony.Reserved.Contains((x, y)) && !occupied.Contains((x, y)))
-                rocks.Add((x, y, dx * dx + dy * dy));
+            bool anyOre = false;
+            foreach ((int x, int y) in Rings(map, quarry.X, quarry.Y, OreSearchRadius))
+            {
+                if (!map.CanMine(x, y) || map.DepthToOre(x, y, OreProspectDepth) == int.MaxValue)
+                    continue;
+                anyOre = true;
+                if (StandFor(map, colony, occupied, x, y) is { } stand)
+                    yield return (x, y, stand.X, stand.Y);
+            }
+            // Pas un filon à portée : inutile de le rechercher à chaque coup de pioche, on revérifiera dans un an.
+            if (!anyOre)
+                colony.MarkExhausted(SearchKind.Ore);
         }
 
-        // Quand la colonie manque de minerai, elle creuse là où il est le plus proche de la surface : une veine
-        // qui affleure d'abord, puis celles qui ne sont qu'à une, deux, trois couches sous la roche.
-        IEnumerable<(int X, int Y, int Distance)> ordered = preferOre
-            ? rocks.OrderBy(r => map.DepthToOre(r.X, r.Y, OreProspectDepth)).ThenBy(r => r.Distance)
-            : rocks.OrderBy(r => r.Distance);
-        foreach ((int x, int y, _) in ordered)
+        if (colony.IsExhausted(SearchKind.Rocks))
+            yield break;
+        bool anyRock = false;
+        foreach ((int x, int y) in Rings(map, quarry.X, quarry.Y, preferOre ? OreSearchRadius : QuarryWorkRadius))
         {
-            // On préfère se tenir du côté du camp, sur une case que personne d'autre n'a réservée.
-            foreach ((int dx, int dy) in Neighbors.OrderBy(n => Distance(x + n.Dx, y + n.Dy, colony.CampX, colony.CampY)))
-            {
-                if (!colony.Reserved.Contains((x + dx, y + dy)) && CanMineFrom(map, x + dx, y + dy, x, y))
-                {
-                    yield return (x, y, x + dx, y + dy);
-                    break;
-                }
-            }
+            if (!map.CanMine(x, y))
+                continue;
+            anyRock = true;
+            if (preferOre && map.DepthToOre(x, y, OreProspectDepth) != int.MaxValue)
+                continue; // déjà proposée plus haut
+            if (StandFor(map, colony, occupied, x, y) is { } stand)
+                yield return (x, y, stand.X, stand.Y);
         }
+        if (!anyRock)
+            colony.MarkExhausted(SearchKind.Rocks);
+    }
+
+    /// <summary>Une case d'où attaquer la roche, de préférence du côté du camp, que personne d'autre n'a réservée.</summary>
+    private static (int X, int Y)? StandFor(LocalMap map, Colony colony, HashSet<(int X, int Y)> occupied, int x, int y)
+    {
+        if (colony.Reserved.Contains((x, y)) || occupied.Contains((x, y)))
+            return null;
+        foreach ((int dx, int dy) in Neighbors.OrderBy(n => Distance(x + n.Dx, y + n.Dy, colony.CampX, colony.CampY)))
+            if (!colony.Reserved.Contains((x + dx, y + dy)) && CanMineFrom(map, x + dx, y + dy, x, y))
+                return (x + dx, y + dy);
+        return null;
     }
 
     /// <summary>Rayon (en cases) sur lequel on juge la richesse d'un gisement.</summary>
@@ -136,6 +193,52 @@ public static class WorkSites
 
     /// <summary>On n'envisage qu'un nombre limité d'emplacements, les plus proches du camp à pied.</summary>
     private const int QuarryCandidates = 160;
+
+    /// <summary>
+    /// Cherche un front de taille près d'un filon de fer visible. On avance à pied depuis le camp, case après case,
+    /// sans limite de distance, et on s'arrête au premier gisement qui laisse voir du fer : le plus proche à pied.
+    /// </summary>
+    public static (int X, int Y)? FindOreQuarry(LocalMap map, int campX, int campY)
+    {
+        var distance = new HashSet<(int, int)> { (campX, campY) };
+        var queue = new Queue<(int X, int Y)>();
+        queue.Enqueue((campX, campY));
+        var seen = new HashSet<(int, int)>();
+
+        while (queue.Count > 0)
+        {
+            (int x, int y) = queue.Dequeue();
+            foreach ((int dx, int dy) in Neighbors)
+            {
+                int nx = x + dx, ny = y + dy;
+                if (CanMineFrom(map, x, y, nx, ny) && seen.Add((nx, ny)) && VeinsNear(map, nx, ny))
+                    return (nx, ny);
+                if (map.CanStep(x, y, nx, ny) && distance.Add((nx, ny)))
+                    queue.Enqueue((nx, ny));
+            }
+        }
+        return null;
+    }
+
+    private static bool VeinsNear(LocalMap map, int rx, int ry)
+    {
+        foreach ((int x, int y) in Rings(map, rx, ry, QuarryJudgeRadius))
+            if (map.CanMine(x, y) && map.TopMaterial(x, y) == Material.IronOre)
+                return true;
+        return false;
+    }
+
+    /// <summary>Un filon (affleurant ou à faible profondeur) est-il à portée de pioche autour de la carrière ?</summary>
+    public static bool OreWithinReach(LocalMap map, Colony colony)
+    {
+        if (colony.Quarry is not { } quarry || colony.IsExhausted(SearchKind.Ore))
+            return false;
+        foreach ((int x, int y) in Rings(map, quarry.X, quarry.Y, OreSearchRadius))
+            if (map.CanMine(x, y) && map.DepthToOre(x, y, OreProspectDepth) != int.MaxValue)
+                return true;
+        colony.MarkExhausted(SearchKind.Ore);
+        return false;
+    }
 
     /// <summary>Une carrière qui offre moins de roches à portée que cela est épuisée : la colonie en cherche une autre.</summary>
     public const int ExhaustedQuarryRocks = 25;

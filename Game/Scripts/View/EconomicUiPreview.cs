@@ -47,10 +47,24 @@ public partial class EconomicUiPreview : Node2D
             _hud = new Hud(); AddChild(_hud);
             _panel = new WorldPanel(); _panel.Init(_world); AddChild(_panel);
             _hud.SetStatus(_world.Clock, GameSpeed.Pause); _hud.ShowColony(colony, _world.Clock);
-            bool economy = _mode is "economy" or "commerce";
+            bool economy = _mode is "economy" or "commerce" or "graphs";
             _panel.Open = economy; _hud.SetOverlayState(false, economy);
             if (!economy) Named<Button>(_hud, "Production").EmitSignal(BaseButton.SignalName.Pressed);
             if (_mode == "commerce") Named<EconomyDashboard>(_panel, "TableauEconomie").ShowCommerce(true);
+            if (_mode == "graphs")
+            {
+                var history = new ResourceHistory(); history.Observe(_world);
+                for (int day = 0; day < 60; day++)
+                {
+                    colony.Stock.Add(ResourceType.Food, 12 + day % 9);
+                    colony.Stock.TryTake(ResourceType.Food, 8 + day % 6);
+                    if (day % 11 == 0) colony.Stock.Add(ResourceType.Food, 20, ResourceFlow.Purchase);
+                    if (day % 9 == 0) colony.Stock.TryTake(ResourceType.Food, 14, ResourceFlow.Sale);
+                    for (int tick = 0; tick < TimeConstants.TicksPerDay; tick++) _world.Clock.Advance();
+                    history.Observe(_world);
+                }
+                _panel.ResourceHistory = history; _panel.ShowResourceGraphs();
+            }
             _scroll = Named<ScrollContainer>(economy ? _panel : _hud, economy ? "DefilementEconomie" : "DefilementProduction");
             _stock = Enum.GetValues<ResourceType>().ToDictionary(g => g, g => colony.Stock.Get(g));
             _shares = new Dictionary<WorkSector, float>(colony.WorkShares);
@@ -122,6 +136,23 @@ public partial class EconomicUiPreview : Node2D
                     Named<Button>(_panel, "CommerceEconomie").EmitSignal(BaseButton.SignalName.Pressed);
                     Named<Button>(_panel, "StocksEconomie").EmitSignal(BaseButton.SignalName.Pressed);
                     if (_mode == "commerce") Named<Button>(_panel, "CommerceEconomie").EmitSignal(BaseButton.SignalName.Pressed);
+                    if (_mode == "graphs")
+                    {
+                        _panel.ShowResourceGraphs();
+                        var graph = Named<ResourceChart>(_panel, "CourbeRessources");
+                        Require(graph.SampleCount == 60, "Le graphe ne reprend pas les relevés.");
+                        var resource = Named<OptionButton>(_panel, "RessourceGraphique");
+                        resource.Select(2); resource.EmitSignal(OptionButton.SignalName.ItemSelected, 2);
+                        Require(Named<ResourceGraphs>(_panel, "GraphiquesRessources").Good == ResourceType.Wood, "Le choix de ressource est ignoré.");
+                        resource.Select(0); resource.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+                        var period = Named<OptionButton>(_panel, "PeriodeGraphique");
+                        period.Select(0); period.EmitSignal(OptionButton.SignalName.ItemSelected, 0);
+                        Require(graph.SampleCount == 20, "Le choix de période est ignoré.");
+                        period.Select(1); period.EmitSignal(OptionButton.SignalName.ItemSelected, 1);
+                        graph._GuiInput(new InputEventMouseMotion { Position = graph.Size / 2 });
+                        Named<CheckButton>(_panel, "FluxSale").ButtonPressed = false;
+                        Named<CheckButton>(_panel, "FluxSale").ButtonPressed = true;
+                    }
                 }
                 else
                 {
@@ -151,6 +182,12 @@ public partial class EconomicUiPreview : Node2D
             }
             if (_frame == 50)
             {
+                if (_mode == "graphs")
+                {
+                    var graph = Named<ResourceChart>(_panel, "CourbeRessources");
+                    Require(graph.GetGlobalRect().End.Y <= _panel.GetViewport().GetVisibleRect().Size.Y - 60,
+                        "La courbe et ses axes doivent être visibles sans défilement.");
+                }
                 var panel = Named<Control>(_panel.Open ? _panel : _hud, _panel.Open ? "PanneauEconomie" : "Journal");
                 Require(panel.GetGlobalRect().End.X <= GetViewportRect().Size.X && panel.GetGlobalRect().Position.Y >= InterfaceLayout.For(GetViewportRect().Size).ContentTop - 1,
                     "Le panneau déborde sur les contrôles de navigation.");

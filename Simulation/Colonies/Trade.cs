@@ -100,6 +100,20 @@ public static class Trade
     /// <summary>Charge maximale d'une caravane, en unités (tous biens confondus).</summary>
     public const int CarryCapacity = 36;
 
+    /// <summary>Un marché, d'un côté ou de l'autre, permet d'échanger une moitié de plus par voyage.</summary>
+    public static int CapacityOf(Colony from, Colony to)
+    {
+        int capacity = Civic.Has(from, BuildingType.Market) || Civic.Has(to, BuildingType.Market) ? CarryCapacity * 3 / 2 : CarryCapacity;
+        // La monnaie frappée allège les comptes : on emporte un quart de plus.
+        return Knowledge.Has(from, Discovery.Coinage) ? (int)(capacity * Knowledge.CoinageCapacityFactor) : capacity;
+    }
+
+    /// <summary>Entre alliés, un échange n'a pas besoin de rapporter plus que le voyage ne coûte.</summary>
+    public const double AlliedGainOverCost = 1.0;
+
+    /// <summary>Chaque niveau de négoce des marchands rabat ce pourcentage du coût d'un voyage (au plus 40 %).</summary>
+    private const double TradingSkillDiscount = 0.02;
+
     /// <summary>Heures de travail utiles par jour et par colon : le coût d'un colon en voyage.</summary>
     public const double WorkHoursPerDay = 8;
 
@@ -131,18 +145,21 @@ public static class Trade
     public static TradePlan? Plan(WorldState world, Colony from, Colony to)
     {
         float tripDays = 2f * world.WorldMap.TravelDays(from, to) + 0.5f;
-        double cost = TradersPerCaravan * tripDays * WorkHoursPerDay;
+        double bargain = Math.Min(0.4, TradingSkillDiscount * Specialties.TraderLevel(PickTraders(from)));
+        double cost = TradersPerCaravan * tripDays * WorkHoursPerDay * (1 - bargain)
+            * (Knowledge.Has(from, Discovery.Coinage) ? Knowledge.CoinageCostFactor : 1.0);
+        int capacity = CapacityOf(from, to);
 
         var candidates = new List<(TradeLine Line, double GainPerUnit)>();
         foreach (ResourceType good in Economy.Tradable)
         {
             // Je vends : chaque unité part tant qu'ils lui accordent plus de valeur que moi.
-            Clearing sale = Economy.Clear(from, to, good, CarryCapacity);
+            Clearing sale = Economy.Clear(from, to, good, capacity);
             if (sale.Units > 0)
                 candidates.Add((new TradeLine(good, sale.Units, sale.UnitPrice, IsSale: true), sale.GainHours / sale.Units));
 
             // J'achète : chaque unité vient tant que je lui accorde plus de valeur qu'eux.
-            Clearing purchase = Economy.Clear(to, from, good, CarryCapacity);
+            Clearing purchase = Economy.Clear(to, from, good, capacity);
             if (purchase.Units > 0)
                 candidates.Add((new TradeLine(good, purchase.Units, purchase.UnitPrice, IsSale: false), purchase.GainHours / purchase.Units));
         }
@@ -151,7 +168,7 @@ public static class Trade
 
         // On remplit la caravane en commençant par ce qui rapporte le plus par unité transportée.
         var lines = new List<(TradeLine Line, double Gain)>();
-        int room = CarryCapacity;
+        int room = capacity;
         foreach ((TradeLine line, double gain) in candidates.OrderByDescending(c => c.GainPerUnit))
         {
             int units = Math.Min(line.Units, room);
@@ -168,7 +185,8 @@ public static class Trade
         // La rancune (d'un côté ou de l'autre) rend le voyage moins tentant : il faut qu'il rapporte bien plus.
         double grudge = Math.Max(from.GrudgeAgainst(to), to.GrudgeAgainst(from));
         double gainHours = lines.Sum(l => l.Line.Units * l.Gain);
-        if (lines.Count == 0 || gainHours < cost * RequiredGainOverCost * (1 + GrudgeCostFactor * grudge))
+        double required = Diplomacy.AreAllied(world, from, to) ? AlliedGainOverCost : RequiredGainOverCost;
+        if (lines.Count == 0 || gainHours < cost * required * (1 + GrudgeCostFactor * grudge))
             return null;
         return new TradePlan(from, to, lines.Select(l => l.Line).ToList(), gainHours, cost, tripDays);
     }
@@ -204,8 +222,9 @@ public static class Trade
     /// </summary>
     public static void Daily(WorldState world, Colony colony)
     {
-        // On ne commerce qu'avec les colonies qu'une caravane peut atteindre à pied (ni mer ni sommets entre elles).
-        List<Colony> partners = world.Colonies.Where(c => c != colony && world.WorldMap.Connected(colony, c))
+        // On ne commerce qu'avec les colonies qu'une caravane peut atteindre à pied (ni mer ni sommets entre elles), et jamais avec l'ennemi.
+        List<Colony> partners = world.Colonies.Where(c => c != colony && c.Members.Count > 0 && world.WorldMap.Connected(colony, c)
+                && !Diplomacy.AtWar(world, colony, c))
             .OrderBy(c => world.WorldMap.Distance(colony, c)).ToList();
         if (partners.Count == 0)
             return;
@@ -233,17 +252,21 @@ public static class Trade
     /// </summary>
     private static void UpdateExportInterest(Colony colony, List<Colony> partners)
     {
-        int tools = 0;
-        foreach (Colony partner in partners)
+        // Les outils, les vêtements et la denrée locale du marché : tout ce qu'une colonie sait faire pour ses voisines.
+        foreach (ResourceType good in new[] { ResourceType.Tools, ResourceType.Clothes, Specialties.NativeOf(colony) })
         {
-            if (colony.Labor.HoursPerUnit(ResourceType.Tools) is null && colony.Stock.Get(ResourceType.Tools) == 0)
-                continue;
-            // Combien d'outils le voisin paierait-il plus cher que ce qu'ils nous coûtent à fabriquer ?
-            double mine = Economy.Cost(colony, ResourceType.Tools) * (1 + MinValueGap);
-            int wanted = Economy.UnitsWillingToBuy(partner, ResourceType.Tools, mine, MaxExportInterest);
-            tools = Math.Max(tools, wanted);
+            int wantedByNeighbors = 0;
+            foreach (Colony partner in partners)
+            {
+                if (colony.Labor.HoursPerUnit(good) is null && colony.Stock.Get(good) == 0)
+                    continue;
+                // Combien d'unités le voisin paierait-il plus cher que ce qu'elles nous coûtent à fabriquer ?
+                double mine = Economy.Cost(colony, good) * (1 + MinValueGap);
+                int wanted = Economy.UnitsWillingToBuy(partner, good, mine, MaxExportInterest);
+                wantedByNeighbors = Math.Max(wantedByNeighbors, wanted);
+            }
+            colony.ExportInterest[good] = wantedByNeighbors;
         }
-        colony.ExportInterest[ResourceType.Tools] = tools;
     }
 
     // ---------- Départ ----------
@@ -274,14 +297,14 @@ public static class Trade
         {
             if (line.IsSale)
             {
-                if (plan.From.Stock.TryTake(line.Good, line.Units))
+                if (plan.From.Stock.TryTake(line.Good, line.Units, ResourceFlow.Transfer))
                     caravan.Cargo[line.Good] = caravan.Cargo.GetValueOrDefault(line.Good) + line.Units;
             }
             else
                 coins += (int)Math.Ceiling(line.Total);
         }
         coins = Math.Min(coins, plan.From.Stock.Get(ResourceType.Coins));
-        plan.From.Stock.TryTake(ResourceType.Coins, coins);
+        plan.From.Stock.TryTake(ResourceType.Coins, coins, ResourceFlow.Transfer);
         caravan.Coins = coins;
         caravan.CoinsAtDeparture = coins;
 
@@ -321,6 +344,21 @@ public static class Trade
         ResourceType.Iron => "fer",
         ResourceType.Tools => units > 1 ? "outils" : "outil",
         ResourceType.Coins => "pièces",
+        ResourceType.Wool => "laine",
+        ResourceType.Clothes => units > 1 ? "vêtements" : "vêtement",
+        ResourceType.Salt => "sel",
+        ResourceType.Spices => "épices",
+        ResourceType.Hardwood => "bois dur",
+        ResourceType.Chickens => units > 1 ? "poules" : "poule",
+        ResourceType.Sheep => units > 1 ? "moutons" : "mouton",
+        ResourceType.Cows => units > 1 ? "vaches" : "vache",
+        ResourceType.Milk => "lait",
+        ResourceType.Eggs => "œufs",
+        ResourceType.Meat => "viande",
+        ResourceType.SaltedMeat => "viande salée",
+        ResourceType.Cake => units > 1 ? "gâteaux" : "gâteau",
+        ResourceType.Stew => "ragoût",
+        ResourceType.Beer => "bière",
         _ => "vivres",
     };
 
@@ -359,8 +397,9 @@ public static class Trade
                     continue;
                 int pay = (int)Math.Round(units * line.UnitPrice);
                 pay = Math.Min(pay, host.Stock.Get(ResourceType.Coins));
-                host.Stock.TryTake(ResourceType.Coins, pay);
-                host.Stock.Add(line.Good, units);
+                host.Stock.TryTake(ResourceType.Coins, pay, ResourceFlow.Transfer);
+                host.Stock.Add(line.Good, units, ResourceFlow.Purchase);
+                ResourceAccounting.Record(seller.Stock, line.Good, ResourceFlow.Sale, units);
                 caravan.Cargo[line.Good] = carried - units;
                 caravan.Coins += pay;
                 caravan.Settled.Add(line with { Units = units });
@@ -371,15 +410,24 @@ public static class Trade
                 int available = Economy.UnitsWillingToSell(host, line.Good, line.UnitPrice, line.Units);
                 int affordable = line.UnitPrice <= 0 ? available : (int)Math.Min(available, caravan.Coins / line.UnitPrice);
                 int units = Math.Min(available, affordable);
-                if (units <= 0 || !host.Stock.TryTake(line.Good, units))
+                if (units <= 0 || !host.Stock.TryTake(line.Good, units, ResourceFlow.Sale))
                     continue;
                 int pay = Math.Min((int)Math.Round(units * line.UnitPrice), caravan.Coins);
                 caravan.Coins -= pay;
-                host.Stock.Add(ResourceType.Coins, pay);
+                host.Stock.Add(ResourceType.Coins, pay, ResourceFlow.Transfer);
+                ResourceAccounting.Record(seller.Stock, line.Good, ResourceFlow.Purchase, units);
                 caravan.Cargo[line.Good] = caravan.Cargo.GetValueOrDefault(line.Good) + units;
                 caravan.Settled.Add(line with { Units = units });
             }
         }
+        // Les marchands parlent de ce qu'ils savent faire : un peu du savoir de chacun passe chez l'autre.
+        Knowledge.Share(world, seller, host);
+        if (caravan.Settled.Count > 0)
+            Diplomacy.OnTrade(seller, host);
+
+        // Négocier fait progresser : chaque marchand de la caravane s'exerce au négoce.
+        foreach (Colonist trader in caravan.Traders)
+            trader.Skills.Practice(SkillType.Trading, 40f);
         caravan.State = CaravanState.Returning;
 
         if (caravan.Settled.Count > 0)
@@ -401,7 +449,7 @@ public static class Trade
         Colony colony = caravan.From;
         foreach ((ResourceType good, int amount) in caravan.Cargo)
             if (amount > 0)
-                colony.Stock.Add(good, amount);
+                colony.Stock.Add(good, amount, ResourceFlow.Transfer);
 
         // Les colons reviennent, fatigués du voyage : on les voit arriver du bord de la carte et marcher jusqu'au camp.
         // (S'ils étaient encore en train de sortir, ils s'arrêtent là et rentrent aussitôt.)

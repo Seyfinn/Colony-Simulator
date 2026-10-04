@@ -84,9 +84,10 @@ public partial class Main
             if (child == _menu) continue;
             RemoveChild(child); child.QueueFree();
         }
-        _colonistsView = null; _selected = null; _foundingMap = null; _foundingSite = null;
+        _colonistsView = null; _mapView = null; _selected = null; _foundingMap = null; _foundingSite = null;
         _notification = null; _notificationCard = null; _notificationTime = 0;
         _pendingTicks = 0; _hudCooldown = 0;
+        ResetStatsMode();
         BuildWorld(options, development, restored, observed);
         _menu.HasWorld = true; _menu.Close();
         _camera.ControlsEnabled = true;
@@ -95,13 +96,13 @@ public partial class Main
     private void ApplySettings()
     {
         if (_camera is not null) _camera.Sensitivity = _settings.CameraSensitivity;
-        if (_ambience is not null) _ambience.Visible = _settings.AmbientEffects;
+        if (_ambience is not null) _ambience.Visible = _settings.AmbientEffects && !_statsShown;
     }
 
     private void HideWorldInterface()
     {
         if (_world is null) return;
-        _hud.Hide(); _worldPanel.Hide(); _prayerPanel.Hide(); _foundingPanel.Hide();
+        _hud.Hide(); _worldPanel.Hide(); _prayerPanel.Hide(); _foundingPanel.Hide(); _statsPanel?.Hide();
         _camera.ControlsEnabled = false;
     }
 
@@ -110,6 +111,7 @@ public partial class Main
         if (_world is null) return;
         _menu.Close();
         _hud.Show(); _worldPanel.Show(); _prayerPanel.Show(); _foundingPanel.Show();
+        if (_statsShown) _statsPanel?.Show();
         _camera.ControlsEnabled = !_worldPanel.MapOpen;
         _pendingTicks = 0; _hudCooldown = 0;
     }
@@ -143,6 +145,7 @@ public partial class Main
         else if (_prayerPanel.Open) _prayerPanel.Open = false;
         else if (_worldPanel.MapOpen) _worldPanel.MapOpen = false;
         else if (_worldPanel.Open) _worldPanel.Open = false;
+        else if (_worldPanel.CivilizationOpen) _worldPanel.CivilizationOpen = false;
         else if (_selected is not null) Select(null);
         else OpenPauseMenu();
         GetViewport().SetInputAsHandled();
@@ -152,9 +155,11 @@ public partial class Main
     {
         if (_menu.IsOpen || _foundingPanel.IsOpen) return;
         if (_world.Colonies.Count >= WorldState.MaxPlayerColonies) { Notify("Le monde accueille déjà 16 colonies."); return; }
+        // On choisit le camp sur le terrain : la vue chiffrée laisse d'abord la place à la carte.
+        ReturnToMap();
         Select(null);
         _mapBeforeFounding = _worldPanel.MapOpen;
-        _worldPanel.Open = false; _pendingTicks = 0;
+        _worldPanel.Open = false; _worldPanel.CivilizationOpen = false; _pendingTicks = 0;
         _hud.SetSpeedControlsEnabled(false);
         _foundingPanel.Open(_world.Colonies.Count + 1);
         _worldPanel.SetNavigationEnabled(false);
@@ -279,7 +284,7 @@ public partial class Main
     private void DisplayMap(LocalMap map, Colony? colony)
     {
         _camera.WorldBounds = new Rect2(Vector2.Zero, new Vector2(map.Width, map.Height) * TerrainPainter.TileSize);
-        RemoveChild(_mapView); _mapView.QueueFree();
+        if (_mapView is not null) { RemoveChild(_mapView); _mapView.QueueFree(); }
         if (_colonistsView is not null) { RemoveChild(_colonistsView); _colonistsView.QueueFree(); _colonistsView = null; }
         _mapView = new MapView(); AddChild(_mapView); MoveChild(_mapView, 0); _mapView.Init(map);
         if (colony is not null)
@@ -291,7 +296,7 @@ public partial class Main
 
     private void UpdateFoundingPreview()
     {
-        _camera.ControlsEnabled = !_menu.IsOpen && !_worldPanel.MapOpen;
+        _camera.ControlsEnabled = !_menu.IsOpen && !_worldPanel.MapOpen && !_statsShown;
         if (_foundingMap is not null && !_menu.IsOpen)
         {
             (int x, int y) = TileUnderMouse();

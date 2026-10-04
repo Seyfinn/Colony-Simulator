@@ -41,10 +41,11 @@ public partial class Main
                 SavedView view = loaded.Info.View;
                 var options = new WorldCreationOptions(loaded.World.Seed, loaded.World.Map.Width, loaded.World.Colonies.Count,
                     8, true, true, true, view.Speed);
-                StartWorld(options, restored: loaded.World, observed: view.Observed);
-                _camera.Position = new Vector2(view.CameraX, view.CameraY);
-                _camera.Zoom = Vector2.One * view.Zoom;
+                // Connue avant la construction des vues : une partie en pause dans la vue chiffrée s'y recharge directement.
                 _speedBeforePause = view.SpeedBeforePause;
+                StartWorld(options, restored: loaded.World, observed: view.Observed);
+                _camera.Position = _cameraBeforeStats = new Vector2(view.CameraX, view.CameraY);
+                _camera.Zoom = Vector2.One * view.Zoom;
                 if (view.SelectedColonist is { } id && _world!.Colonies.Count > 0)
                     Select(Observed.Members.Find(c => c.Id == id) ?? Observed.Transients.Find(c => c.Id == id));
                 _hudCooldown = 0;

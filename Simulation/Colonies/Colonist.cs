@@ -97,7 +97,7 @@ public sealed class Colonist
     public int Id { get; }
     public string Name { get; private set; }
     public Sex Sex { get; }
-    public Colony Colony { get; }
+    public Colony Colony { get; internal set; }
 
     public const int MaxNameLength = 40;
 
@@ -135,6 +135,20 @@ public sealed class Colonist
     internal int UnhappyHours { get; set; }
 
     public Needs Needs { get; } = new();
+
+    /// <summary>Le mal dont souffre le colon (maladie ou blessure) ; il se repose jusqu'à la guérison.</summary>
+    public Ailment Ailment { get; internal set; }
+
+    /// <summary>Heures de convalescence restantes.</summary>
+    internal int AilmentHours { get; set; }
+
+    /// <summary>Un guérisseur est passé le soigner : il ne risque plus d'en mourir.</summary>
+    internal bool Treated { get; set; }
+
+    /// <summary>Jusqu'à quand un ragoût le rend plus vif au travail (voir <see cref="Cuisine.StewBoost"/>).</summary>
+    internal long BoostUntilTicks { get; set; }
+
+    public bool IsBoosted => Colony.Clock.Ticks < BoostUntilTicks;
     public Activity? Activity { get; internal set; }
     public bool IsSleeping => Activity is { Kind: ActivityKind.Sleep, Started: true };
 

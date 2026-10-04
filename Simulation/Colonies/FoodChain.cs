@@ -35,8 +35,8 @@ public static class FoodChain
     /// <summary>Le moulin doit être à moins de cette distance (en cases) du camp.</summary>
     public const int MillSearchRadius = 20;
 
-    private static readonly Recipe Milling = new(BuildingType.Mill, [(ResourceType.Grain, GrainPerBatch)], ResourceType.Flour, FlourPerBatch, 6f);
-    private static readonly Recipe Baking = new(BuildingType.Oven, [(ResourceType.Flour, FlourPerBatch), (ResourceType.Wood, 1)], ResourceType.Bread, BreadPerBatch, 8f);
+    private static readonly Recipe Milling = new(BuildingType.Mill, [(ResourceType.Grain, GrainPerBatch)], ResourceType.Flour, FlourPerBatch, 10f);
+    private static readonly Recipe Baking = new(BuildingType.Oven, [(ResourceType.Flour, FlourPerBatch), (ResourceType.Wood, 1)], ResourceType.Bread, BreadPerBatch, 14f);
 
     public static bool IsFoodWorkshop(BuildingType type) => type is BuildingType.Mill or BuildingType.Oven;
 

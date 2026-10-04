@@ -27,6 +27,15 @@ public sealed class Needs
 
     public const float NeutralFaith = 0.6f;
 
+    /// <summary>La gravité du mal dont souffre le colon, de 0 (en bonne santé) à 1 : maladie et blessure pèsent sur l'humeur.</summary>
+    public float Illness { get; set; }
+
+    /// <summary>La gaieté que laisse un bon repas (gâteau, ragoût), de 0 à 1 ; elle s'estompe en deux jours et remonte l'humeur.</summary>
+    public float Cheer { get; set; }
+
+    /// <summary>L'entrain que donne une bière à la taverne, de 0 à 1 ; il dure longtemps (cinq jours, voir <see cref="Cuisine.BeerDays"/>).</summary>
+    public float BeerCheer { get; set; }
+
     /// <summary>Humeur de 0 à 1, calculée à partir des besoins. Un besoin au plus bas pèse lourd.</summary>
     public float Mood
     {
@@ -34,6 +43,9 @@ public sealed class Needs
         {
             float mood = Food * 0.3f + Rest * 0.25f + Leisure * 0.15f + Social * 0.15f + Comfort * 0.15f;
             mood -= 0.25f * Grief;
+            mood -= 0.2f * Illness;
+            mood += 0.2f * Cheer;
+            mood += 0.15f * BeerCheer;
             mood += (Faith - NeutralFaith) * 0.15f;
             if (Food < 0.15f) mood -= 0.2f;
             if (Rest < 0.15f) mood -= 0.15f;
@@ -50,5 +62,8 @@ public sealed class Needs
         Comfort = Math.Clamp(Comfort, 0f, 1f);
         Grief = Math.Clamp(Grief, 0f, 1f);
         Faith = Math.Clamp(Faith, 0f, 1f);
+        Illness = Math.Clamp(Illness, 0f, 1f);
+        Cheer = Math.Clamp(Cheer, 0f, 1f);
+        BeerCheer = Math.Clamp(BeerCheer, 0f, 1f);
     }
 }

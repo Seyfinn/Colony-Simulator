@@ -119,6 +119,28 @@ public sealed class Colony
     /// </summary>
     internal HashSet<(int X, int Y)> UnreachableStands { get; } = [];
 
+    /// <summary>Recherches qui n'ont rien donné, avec le nombre de jours avant de les retenter (une année).</summary>
+    private readonly Dictionary<SearchKind, int> _exhaustedDaysLeft = [];
+
+    internal bool IsExhausted(SearchKind kind) => _exhaustedDaysLeft.ContainsKey(kind);
+
+    internal void MarkExhausted(SearchKind kind) => _exhaustedDaysLeft[kind] = Time.TimeConstants.DaysPerYear;
+
+    /// <summary>Oublie les échecs liés à la carrière (elle vient de changer de place).</summary>
+    internal void ForgetQuarrySearches()
+    {
+        _exhaustedDaysLeft.Remove(SearchKind.Rocks);
+        _exhaustedDaysLeft.Remove(SearchKind.Ore);
+    }
+
+    /// <summary>Un jour de plus : les recherches infructueuses vieillissent et sont retentées au bout d'un an.</summary>
+    internal void AgeExhaustedSearches()
+    {
+        foreach (SearchKind kind in _exhaustedDaysLeft.Keys.ToList())
+            if (--_exhaustedDaysLeft[kind] <= 0)
+                _exhaustedDaysLeft.Remove(kind);
+    }
+
     /// <summary>Dernière fois que la carrière a été déplacée (ou jugée épuisée).</summary>
     internal long LastQuarryMoveTicks { get; set; } = long.MinValue / 2;
 
@@ -133,6 +155,81 @@ public sealed class Colony
 
     /// <summary>Les champs de la colonie.</summary>
     public List<Field> Fields { get; } = [];
+
+    // --- Élevage et textile ---
+
+    public int Chickens { get; internal set; }
+    public int Sheep { get; internal set; }
+    public int Cows { get; internal set; }
+
+    /// <summary>Œufs, laine et lait qui attendent à l'enclos qu'on vienne les ramasser.</summary>
+    public float EggsReady { get; internal set; }
+    public float WoolReady { get; internal set; }
+    public float MilkReady { get; internal set; }
+
+    internal float ChickenGrowth { get; set; }
+    internal float SheepGrowth { get; set; }
+    internal float CowGrowth { get; set; }
+
+    /// <summary>Les bêtes que la colonie a décidé d'abattre aujourd'hui (espèce → nombre), voir <see cref="Husbandry.PlanSlaughter"/>.</summary>
+    public Dictionary<ResourceType, int> SlaughterOrders { get; } = [];
+
+    internal long LastMeatThoughtDay { get; set; } = -100;
+
+    /// <summary>Usure des vêtements : à chaque fois qu'elle atteint 1, un vêtement est perdu.</summary>
+    internal float ClothesWear { get; set; }
+
+    // --- Denrées de négoce ---
+
+    internal float SaltUse { get; set; }
+    internal float SpiceUse { get; set; }
+
+    // --- Santé, saisons, événements ---
+
+    /// <summary>Nombre de fièvres depuis la fondation : l'infirmerie devient une urgence.</summary>
+    public int IllnessCases { get; internal set; }
+
+    /// <summary>Jours restants d'une vague de froid (hiver) ou d'une sécheresse (été), 0 s'il n'y en a pas.</summary>
+    public int ColdSnapDaysLeft { get; internal set; }
+    public int DroughtDaysLeft { get; internal set; }
+
+    internal long LastHealthThoughtDay { get; set; } = -100;
+    internal long LastSpoilageThoughtDay { get; set; } = -100;
+
+    /// <summary>Les jalons atteints (identifiant → moment), voir <see cref="Milestones"/>.</summary>
+    public Dictionary<string, long> Achievements { get; } = [];
+
+    // --- Savoirs (voir Knowledge) ---
+
+    /// <summary>Les savoirs connus, avec le moment de leur découverte.</summary>
+    public Dictionary<Discovery, long> Known { get; } = [];
+
+    /// <summary>Points de savoir déjà accumulés sur les savoirs entamés.</summary>
+    public Dictionary<Discovery, float> ResearchProgress { get; } = [];
+
+    /// <summary>Le savoir que la colonie étudie en ce moment (null si elle sait tout ce qu'elle peut aborder).</summary>
+    public Discovery? Researching { get; internal set; }
+
+    // --- Relations avec les autres colonies (voir Diplomacy) ---
+
+    /// <summary>Ce que la colonie pense de chacune des autres, de -100 (haine) à +100 (amitié).</summary>
+    public Dictionary<Colony, float> Opinions { get; } = [];
+
+    public float OpinionOf(Colony other) => Opinions.GetValueOrDefault(other);
+
+    /// <summary>La colonie dont celle-ci est issue par un schisme (null pour une fondation).</summary>
+    public Colony? Parent { get; internal set; }
+
+    /// <summary>Lassitude de la guerre : elle monte avec les jours de guerre et les morts, et retombe en paix.</summary>
+    public float WarWeariness { get; internal set; }
+
+    /// <summary>Batailles gagnées et perdues dans la guerre en cours (remises à zéro à la paix).</summary>
+    public int BattlesWon { get; internal set; }
+    public int BattlesLost { get; internal set; }
+
+    /// <summary>Dernier départ d'une bande de guerriers, dernier cadeau envoyé à chaque voisine.</summary>
+    internal long LastWarPartyTicks { get; set; } = long.MinValue / 2;
+    internal Dictionary<Colony, long> LastGiftTicks { get; } = [];
 
     /// <summary>Temps passé à semer, pour que le coût des céréales inclue les semailles.</summary>
     private long _sowTicks;

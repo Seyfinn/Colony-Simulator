@@ -45,6 +45,7 @@ public static partial class BuildingSprites
             case "Well": Well(art, biome); break;
             case "Tavern": Tavern(art, biome); break;
             case "School": School(art, biome); break;
+            case "Cask": Cask(art, biome); break;
             case "Dam": Dam(art); break;
             case "DamSide": SideDam(art); break;
             default: Cottage(art, biome); break;

@@ -8,7 +8,7 @@ public sealed record Grave(string FullName, Sex Sex, float AgeYears, string Caus
 /// <summary>
 /// Le cycle de la vie : on s'attache et on forme un couple (un homme et une femme, pour qu'il puisse avoir des enfants),
 /// on met des enfants au monde quand la colonie en a les moyens, on vieillit, et on meurt de vieillesse ou de faim.
-/// Pas d'accident ni de maladie : seule la vie suit son cours.
+/// Les maladies et les blessures relèvent de <see cref="Health"/>.
 /// </summary>
 public static class Lifecycle
 {
@@ -273,8 +273,13 @@ public static class Lifecycle
         colony.Graves.Add(new Grave(colonist.FullName, colonist.Sex, age, cause, world.Clock.Ticks, x, y));
 
         bool female = colonist.Sex == Sex.Female;
-        ColonyBrain.Say(colony, world.Clock, cause == "faim"
-            ? $"{colonist.Name} {colonist.Surname} est mort{(female ? "e" : "")} de faim, à {age:0} ans."
-            : $"{colonist.Name} {colonist.Surname} s'éteint de vieillesse, à {age:0} ans.");
+        ColonyBrain.Say(colony, world.Clock, cause switch
+        {
+            "faim" => $"{colonist.Name} {colonist.Surname} est mort{(female ? "e" : "")} de faim, à {age:0} ans.",
+            "maladie" => $"{colonist.Name} {colonist.Surname} succombe à la fièvre, à {age:0} ans.",
+            "blessure" => $"{colonist.Name} {colonist.Surname} succombe à ses blessures, à {age:0} ans.",
+            "guerre" => $"{colonist.Name} {colonist.Surname} tombe au combat, à {age:0} ans.",
+            _ => $"{colonist.Name} {colonist.Surname} s'éteint de vieillesse, à {age:0} ans.",
+        });
     }
 }

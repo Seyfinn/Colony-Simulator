@@ -46,23 +46,10 @@ public static class ColonyFounder
     private static Colony Create(LocalMap map, Random random, string name, int colonistCount,
         Func<int> nextId, GameClock clock, Species species, int campX, int campY)
     {
-
-        // On dégage la place autour du feu.
-        for (int dy = -1; dy <= 1; dy++)
-        for (int dx = -1; dx <= 1; dx++)
-            if (map.InBounds(campX + dx, campY + dy))
-                map.ClearFlora(campX + dx, campY + dy);
-
-        var colony = new Colony(name, campX, campY, FindGatherSpots(map, campX, campY))
-        {
-            Quarry = WorkSites.FindQuarry(map, campX, campY),
-        };
-        colony.Clock = clock;
-        colony.Species = species;
-        colony.Map = map;
-        colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map);
-        colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount);
-        colony.Stock.Add(ResourceType.Coins, StartingCoins);
+        Colony colony = CreateCamp(map, name, clock, species, campX, campY);
+        colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount, ResourceFlow.Transfer);
+        colony.Stock.Add(ResourceType.Coins, StartingCoins, ResourceFlow.Transfer);
+        Knowledge.Grant(colony, Knowledge.StartingKnowledge(species), clock.Ticks);
 
         for (int i = 0; i < colonistCount; i++)
         {
@@ -85,6 +72,26 @@ public static class ColonyFounder
             colony.Members.Add(colonist);
         }
         colony.AssignSectors();
+        return colony;
+    }
+
+    /// <summary>Un camp vide : le feu, sa clairière, la carrière ; ni habitants, ni provisions, ni savoirs.</summary>
+    internal static Colony CreateCamp(LocalMap map, string name, GameClock clock, Species species, int campX, int campY)
+    {
+        // On dégage la place autour du feu.
+        for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++)
+            if (map.InBounds(campX + dx, campY + dy))
+                map.ClearFlora(campX + dx, campY + dy);
+
+        var colony = new Colony(name, campX, campY, FindGatherSpots(map, campX, campY))
+        {
+            Quarry = WorkSites.FindQuarry(map, campX, campY),
+        };
+        colony.Clock = clock;
+        colony.Species = species;
+        colony.Map = map;
+        colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map);
         return colony;
     }
 

@@ -38,7 +38,9 @@ public partial class Main : Node2D
     private const float SelectRadius = 0.8f;
 
     private WorldState _world = null!;
-    private MapView _mapView = null!;
+
+    /// <summary>Le terrain affiché ; absent en vue chiffrée, où il n'est pas dessiné.</summary>
+    private MapView? _mapView;
     private ColonistsView? _colonistsView;
     private CameraController _camera = null!;
     private WorldPanel _worldPanel = null!;
@@ -74,6 +76,8 @@ public partial class Main : Node2D
     //   --select-first         sélectionne le premier colon
     //   --focus-fields         centre la caméra sur le premier champ
     //   --perf=N               mesure N images (durée, part de la simulation), affiche le résumé puis quitte
+    //   --demo-war             la colonie 1 déclare la guerre à la colonie observée et envoie ses guerriers ; la 2 s'allie à l'observée
+    //   --open-knowledge / --open-relations   ouvre le panneau des savoirs ou des relations entre colonies
     private string? _capturePath;
     private int _framesBeforeCapture = 20;
     private PerfProbe? _perf;
@@ -91,12 +95,18 @@ public partial class Main : Node2D
         _observed = Math.Clamp(observed, 0, Math.Max(0, _world.Colonies.Count - 1));
         Colony? colony = _world.Colonies.Count > 0 ? Observed : null;
         LocalMap map = colony?.Map ?? _world.Map;
+        _history.Observe(_world);
 
-        _mapView = new MapView();
-        AddChild(_mapView);
-        _mapView.Init(map);
+        // Une partie qui démarre en vue chiffrée (ou s'y recharge, même en pause) ne peint pas une carte qu'elle n'affichera pas.
+        bool statsAtStart = (options.Speed == GameSpeed.Pause ? _speedBeforePause : options.Speed) == GameSpeed.Fulgurante;
+        if (!statsAtStart)
+        {
+            _mapView = new MapView();
+            AddChild(_mapView);
+            _mapView.Init(map);
+        }
 
-        if (colony is not null)
+        if (colony is not null && !statsAtStart)
         {
             _colonistsView = new ColonistsView();
             AddChild(_colonistsView);
@@ -131,6 +141,7 @@ public partial class Main : Node2D
         _worldPanel = new WorldPanel();
         AddChild(_worldPanel);
         _worldPanel.Init(_world);
+        _worldPanel.ResourceHistory = _history.Resources;
         _worldPanel.Observed = _observed;
         _worldPanel.ColonyRequested += ObserveColony;
         _worldPanel.FoundingRequested += BeginFounding;
@@ -171,10 +182,16 @@ public partial class Main : Node2D
             return;
         _observed = index;
         _worldPanel.Observed = index;
+        if (_statsShown)
+        {
+            // Depuis la vue chiffrée, observer une colonie, c'est retrouver sa carte.
+            ReturnToMap();
+            return;
+        }
         Select(null);
         Colony colony = Observed;
 
-        _mapView.QueueFree();
+        _mapView?.QueueFree();
         _colonistsView?.QueueFree();
         _mapView = new MapView();
         AddChild(_mapView);
@@ -202,13 +219,16 @@ public partial class Main : Node2D
             else if (arg.StartsWith("--perf=") && int.TryParse(arg["--perf=".Length..], out int frames) && frames > 0)
                 _perf = new PerfProbe(frames);
             else if (arg.StartsWith("--speed=") && int.TryParse(arg["--speed=".Length..], out int speed)
-                && speed is 1 or 4 or 30)
+                && speed is 1 or 4 or 30 or 200)
                 SetSpeed((GameSpeed)speed);
             else if (arg.StartsWith("--advance-hours="))
             {
                 int ticks = (int)(float.Parse(arg["--advance-hours=".Length..], CultureInfo.InvariantCulture) * TimeConstants.TicksPerHour);
                 for (int i = 0; i < ticks; i++)
+                {
                     _world.Step();
+                    _history.Observe(_world);
+                }
             }
             else if (arg == "--demo-prayer")
             {
@@ -218,7 +238,8 @@ public partial class Main : Node2D
             }
             else if (arg == "--demo-workshops")
             {
-                foreach (BuildingType type in new[] { BuildingType.Hut, BuildingType.Kiln, BuildingType.Bloomery, BuildingType.Forge, BuildingType.Mill, BuildingType.Oven })
+                foreach (BuildingType type in new[] { BuildingType.Hut, BuildingType.Kiln, BuildingType.Bloomery, BuildingType.Forge, BuildingType.Mill, BuildingType.Oven,
+                    BuildingType.Pen, BuildingType.Loom, BuildingType.Market, BuildingType.Infirmary, BuildingType.Storehouse, BuildingType.Well, BuildingType.Tavern, BuildingType.Cask, BuildingType.School })
                     Urbanism.BuildInstantly(Observed.Map, Observed, type);
             }
             else if (arg == "--demo-dam")
@@ -227,6 +248,25 @@ public partial class Main : Node2D
                 ObserveColony(colonyIndex);
             else if (arg == "--open-world")
                 _worldPanel.Open = true;
+            else if (arg == "--open-knowledge")
+                _worldPanel.CivilizationOpen = true;
+            else if (arg == "--open-relations")
+                _worldPanel.ShowRelations();
+            else if (arg == "--demo-war" && _world.Colonies.Count >= 2)
+            {
+                Colony enemy = _world.Colonies.First(c => c != Observed);
+                if (_world.Colonies.FirstOrDefault(c => c != Observed && c != enemy) is { } ally)
+                {
+                    Observed.Opinions[ally] = ally.Opinions[Observed] = 70f;
+                    Diplomacy.SealAlliance(_world, Observed, ally);
+                }
+                enemy.Opinions[Observed] = -70f;
+                enemy.Grudges[Observed] = 2f;
+                Diplomacy.DeclareWar(_world, enemy, Observed);
+                Warfare.Depart(_world, enemy, Observed);
+            }
+            else if (arg == "--open-graphs")
+                _worldPanel.ShowResourceGraphs();
             else if (arg == "--open-map")
                 _worldPanel.MapOpen = true;
             else if (arg == "--auto-dam")
@@ -276,24 +316,33 @@ public partial class Main : Node2D
     public override void _Process(double delta)
     {
         if (_world is null) { CaptureFrame(); return; }
+        SyncStatsMode();
         bool frozen = _menu.IsOpen || _foundingPanel.IsOpen;
         double ticksPerSecond = frozen ? 0 : (int)_speed * TimeConstants.TicksPerSecond;
         _pendingTicks = Math.Min(_pendingTicks + delta * ticksPerSecond, ticksPerSecond * MaxBacklogSeconds + 1);
         long simulationStart = Stopwatch.GetTimestamp();
-        long budget = (long)(SimulationBudgetMs / 1000 * Stopwatch.Frequency);
+        long budget = (long)((_statsShown ? StatsSimulationBudgetMs : SimulationBudgetMs) / 1000 * Stopwatch.Frequency);
+        int ticks = 0;
         while (_pendingTicks >= 1)
         {
             _world.Step();
+            _history.Observe(_world);
             _pendingTicks--;
+            ticks++;
             if (Stopwatch.GetTimestamp() - simulationStart > budget)
                 break;
         }
         double simulationMs = Stopwatch.GetElapsedTime(simulationStart).TotalMilliseconds;
+        MeasurePace(ticks, delta, frozen || _speed == GameSpeed.Pause);
         if (_colonistsView is not null) _colonistsView.Alpha = (float)Math.Clamp(_pendingTicks, 0, 1);
 
-        GameSpeed atmosphereSpeed = _speed == GameSpeed.Pause ? _speedBeforePause : _speed;
-        _ambience.Update(_world.Clock, atmosphereSpeed, frozen || _speed == GameSpeed.Pause, delta);
-        _daylight.Color = _ambience.Tint;
+        // En vue chiffrée, aucune ambiance à calculer : rien du terrain n'est dessiné.
+        if (!_statsShown)
+        {
+            GameSpeed atmosphereSpeed = _speed == GameSpeed.Pause ? _speedBeforePause : _speed;
+            _ambience.Update(_world.Clock, atmosphereSpeed, frozen || _speed == GameSpeed.Pause, delta);
+            _daylight.Color = _ambience.Tint;
+        }
         if (_colonistsView is not null)
         {
             _colonistsView.AmbientEffectsEnabled = _settings.AmbientEffects && _ambience.DetailedEffects;
@@ -312,6 +361,7 @@ public partial class Main : Node2D
         if (_perf?.Frame(simulationMs) == true)
         {
             GD.Print(_perf.Summary());
+            if (_statsShown) GD.Print($"vue chiffrée : vitesse réelle ×{_paceMultiplier:0} pour ×{(int)GameSpeed.Fulgurante} visés");
             _perf = null;
             GetTree().Quit();
         }
@@ -393,19 +443,27 @@ public partial class Main : Node2D
             case Key.Key1: SetSpeed(GameSpeed.Observation); break;
             case Key.Key2: SetSpeed(GameSpeed.Rapide); break;
             case Key.Key3: SetSpeed(GameSpeed.TresRapide); break;
+            case Key.Key4: SetSpeed(GameSpeed.Fulgurante); break;
             case Key.M: _worldPanel.MapOpen = !_worldPanel.MapOpen; break;
             case Key.E: _worldPanel.Open = !_worldPanel.Open; break;
+            case Key.R: _worldPanel.CivilizationOpen = !_worldPanel.CivilizationOpen; break;
             case Key.P:
                 _worldPanel.MapOpen = false;
                 if (_world.Colonies.Any(c => c.Prayers.Pending.Any())) _prayerPanel.Open = !_prayerPanel.Open;
                 else Notify("Aucune prière en attente pour le moment.");
                 break;
             case Key.J:
-                _worldPanel.MapOpen = false; _worldPanel.Open = false;
+                _worldPanel.MapOpen = false; _worldPanel.Open = false; _worldPanel.CivilizationOpen = false;
                 _hud.CloseHelp(); _hud.ToggleJournal();
                 break;
             case Key.H: ToggleHelp(); break;
             case Key.C: RecenterCamera(); break;
+            case Key.Tab when _statsShown && _world.Colonies.Count > 0:
+                // En vue chiffrée, Tab désigne seulement la colonie à retrouver (et celle de l'écran Économie).
+                _observed = (_observed + 1) % _world.Colonies.Count;
+                _worldPanel.Observed = _observed;
+                _hudCooldown = 0;
+                break;
             case Key.Tab when _world.Colonies.Count > 0:
                 _worldPanel.MapOpen = false;
                 ObserveColony((_observed + 1) % _world.Colonies.Count);
@@ -415,12 +473,13 @@ public partial class Main : Node2D
 
     private void ToggleHelp()
     {
-        _worldPanel.MapOpen = false; _worldPanel.Open = false; _prayerPanel.Open = false;
+        _worldPanel.MapOpen = false; _worldPanel.Open = false; _worldPanel.CivilizationOpen = false; _prayerPanel.Open = false;
         _hud.SetOverlayState(false, false); _hud.ToggleHelp();
     }
 
     private void RecenterCamera()
     {
+        if (_statsShown) return;
         if (_foundingPanel.IsOpen)
         {
             if (_foundingSite is { } site) _camera.Position = new Vector2(site.X + 0.5f, site.Y + 0.5f) * TerrainPainter.TileSize;
@@ -441,6 +500,7 @@ public partial class Main : Node2D
         if (speed != GameSpeed.Pause)
             _speedBeforePause = speed;
         _hudCooldown = 0;
+        SyncStatsMode();
     }
 
     private void TogglePause()
@@ -453,6 +513,7 @@ public partial class Main : Node2D
             _speed = GameSpeed.Pause;
         }
         _hudCooldown = 0;
+        SyncStatsMode();
     }
 
     private (int X, int Y) TileUnderMouse()
@@ -464,12 +525,18 @@ public partial class Main : Node2D
     private void UpdateHud()
     {
         bool mapOverlay = _worldPanel.MapOpen || _foundingPanel.IsOpen;
-        bool stocksVisible = _world.Colonies.Count > 0 && !_foundingPanel.IsOpen && _foundingMap is null;
+        bool stocksVisible = _world.Colonies.Count > 0 && !_foundingPanel.IsOpen && _foundingMap is null && !_statsShown;
         _worldPanel.SetStocksVisible(stocksVisible);
+        _prayerPanel.SetStocksVisible(stocksVisible);
         _hud.SetOverlayState(mapOverlay, _worldPanel.Open);
         _prayerPanel.SetMapOverlay(mapOverlay);
         GameClock clock = _world.Clock;
         _hud.SetStatus(clock, _menu.IsOpen || _foundingPanel.IsOpen ? GameSpeed.Pause : _speed);
+        if (_statsShown)
+        {
+            ShowStats();
+            return;
+        }
 
         LocalMap map = ActiveMap;
         if (!stocksVisible)

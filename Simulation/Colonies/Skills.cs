@@ -1,6 +1,6 @@
 namespace GodColony.Simulation.Colonies;
 
-public enum SkillType { Foraging, Fishing, Woodcutting, Mining, Construction, Farming, Smithing, Cooking }
+public enum SkillType { Foraging, Fishing, Woodcutting, Mining, Construction, Farming, Smithing, Cooking, Husbandry, Weaving, Trading, Medicine }
 
 /// <summary>
 /// Les compétences d'un colon, de 0 à 20. Elles progressent par la pratique, plus ou moins vite
@@ -11,6 +11,31 @@ public sealed class Skills
     public const float MaxLevel = 20f;
     public static readonly SkillType[] All = Enum.GetValues<SkillType>();
 
+    /// <summary>
+    /// Les premiers métiers sont tirés au sort par le hasard de la partie ; les suivants (élevage, tissage, négoce, soins)
+    /// en sont dérivés sans consommer de hasard : ajouter un métier ne décale donc pas les graines existantes.
+    /// </summary>
+    private const int DrawnSkills = 8;
+
+    private static float Unit(float seed, int salt)
+    {
+        uint h = unchecked((uint)(int)(seed * 100003f) * 2654435761u + (uint)salt * 40503u);
+        h ^= h >> 15;
+        h = unchecked(h * 2246822519u);
+        h ^= h >> 13;
+        return (h & 0xFFFFFF) / 16777216f;
+    }
+
+    /// <summary>Le métier où le colon est le plus doué (ce que les enfants apprennent à l'école).</summary>
+    public SkillType Favorite()
+    {
+        SkillType best = All[0];
+        foreach (SkillType skill in All)
+            if (_talent[(int)skill] > _talent[(int)best])
+                best = skill;
+        return best;
+    }
+
     private readonly float[] _level = new float[All.Length];
     private readonly float[] _talent = new float[All.Length];
 
@@ -18,12 +43,16 @@ public sealed class Skills
     public static Skills Random(Random random, Species? species = null)
     {
         var skills = new Skills();
+        float mix = 0f;
         foreach (SkillType skill in All)
         {
             // Les talents de l'espèce déplacent le tirage : un nain est plus souvent doué pour la mine.
             float bias = species?.Talent(skill) ?? 1f;
-            skills._talent[(int)skill] = Math.Clamp((0.5f + random.NextSingle()) * bias, 0.5f, 1.5f);
-            skills._level[(int)skill] = random.NextSingle() * 6f;
+            float draw = (int)skill < DrawnSkills ? random.NextSingle() : Unit(mix, (int)skill);
+            float level = (int)skill < DrawnSkills ? random.NextSingle() : Unit(mix, 100 + (int)skill);
+            skills._talent[(int)skill] = Math.Clamp((0.5f + draw) * bias, 0.5f, 1.5f);
+            skills._level[(int)skill] = level * 6f;
+            mix += draw + level;
         }
         return skills;
     }
@@ -34,10 +63,13 @@ public sealed class Skills
     public static Skills Inherit(Random random, Skills mother, Skills father)
     {
         var skills = new Skills();
+        float mix = 0f;
         foreach (SkillType skill in All)
         {
             float average = (mother._talent[(int)skill] + father._talent[(int)skill]) / 2f;
-            skills._talent[(int)skill] = Math.Clamp(average + (random.NextSingle() - 0.5f) * 0.4f, 0.5f, 1.5f);
+            float draw = (int)skill < DrawnSkills ? random.NextSingle() : Unit(mix, (int)skill);
+            mix += draw;
+            skills._talent[(int)skill] = Math.Clamp(average + (draw - 0.5f) * 0.4f, 0.5f, 1.5f);
             skills._level[(int)skill] = 0f;
         }
         return skills;
@@ -65,6 +97,10 @@ public sealed class Skills
             SkillType.Farming => f ? "agricultrice" : "agriculteur",
             SkillType.Smithing => f ? "forgeronne" : "forgeron",
             SkillType.Cooking => f ? "boulangère" : "boulanger",
+            SkillType.Husbandry => f ? "éleveuse" : "éleveur",
+            SkillType.Weaving => f ? "tisserande" : "tisserand",
+            SkillType.Trading => f ? "marchande" : "marchand",
+            SkillType.Medicine => f ? "guérisseuse" : "guérisseur",
             _ => f ? "bâtisseuse" : "bâtisseur",
         };
     }

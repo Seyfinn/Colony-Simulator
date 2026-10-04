@@ -19,6 +19,10 @@ public static class Farming
     public static int YieldAt(LocalMap map, int x, int y) =>
         (int)MathF.Round(PlotYield * map.SoilRichness) + (map.IsFertileBank(x, y) ? BankBonus : 0) + (map.IsIrrigated(x, y) ? IrrigationBonus : 0);
 
+    /// <summary>Ce que rapporte la parcelle à cette colonie : l'assolement ajoute une céréale.</summary>
+    public static int YieldAt(Colony colony, LocalMap map, int x, int y) =>
+        YieldAt(map, x, y) + (Knowledge.Has(colony, Discovery.CropRotation) ? Knowledge.CropRotationBonus : 0);
+
     /// <summary>Céréales de plus pour une parcelle qu'un canal irrigue.</summary>
     public const int IrrigationBonus = 2;
 
@@ -168,6 +172,10 @@ public static class Farming
     public static int DailyUpdate(Colony colony, GameClock clock)
     {
         int lost = 0;
+        // Sécheresse : les parcelles non irriguées ne poussent plus (à moitié seulement si la colonie a un puits).
+        float drought = colony.DroughtDaysLeft > 0 ? (Civic.Has(colony, BuildingType.Well) ? 0.5f : 0f) : 1f;
+        // Les régions froides ont une saison de culture plus courte : la pousse y est plus lente.
+        float cold = 1f - 0.3f * Math.Clamp(Climate.ColdSeverity(colony.Map.Biome) - 0.3f, 0f, 0.7f) / 0.7f;
         bool winterStarts = clock.Season == Season.Hiver && clock.DayOfSeason == 1;
         foreach (FieldPlot plot in Plots(colony))
         {
@@ -181,7 +189,8 @@ public static class Farming
             }
             else if (plot.Stage == CropStage.Growing && clock.Season != Season.Hiver)
             {
-                plot.Growth = MathF.Min(1f, plot.Growth + 1f / GrowthDays);
+                float dryFactor = colony.Map.IsIrrigated(plot.X, plot.Y) ? 1f : drought;
+                plot.Growth = MathF.Min(1f, plot.Growth + dryFactor * cold / GrowthDays);
                 if (plot.Growth >= 1f)
                     plot.Stage = CropStage.Ripe;
             }
