@@ -17,8 +17,8 @@ public static class Migration
     /// Chance maximale, par jour, qu'un voyageur (ou un petit groupe) se présente : celle d'une colonie
     /// au sommet de son attrait. Une colonie ordinaire en reçoit bien moins, une colonie pauvre presque aucun.
     /// </summary>
-    public const float MaxTravelerChancePerDay = 0.13f;
-    private const float PairChance = 0.25f;
+    public const float MaxTravelerChancePerDay = 0.16f;
+    private const float PairChance = 0.30f;
 
     /// <summary>On voyage peu en hiver.</summary>
     private const float WinterTravelFactor = 0.5f;

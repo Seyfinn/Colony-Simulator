@@ -23,6 +23,7 @@ public static class ResourceIcons
         Color dark = Color.Color8(48, 52, 45);
         switch (resource)
         {
+            case "Fish":
             case "Food":
                 Box(image, 3, 8, 11, 6, dark);
                 Box(image, 4, 9, 9, 4, Color.Color8(178, 127, 67));
@@ -132,7 +133,7 @@ public static class ResourceIcons
 
     public static string Name(ResourceType resource) => resource.ToString() switch
     {
-        "Food" => "Nourriture", "Grain" => "Céréales", "Wood" => "Bois", "Stone" => "Pierre",
+        "Food" => "Nourriture", "Fish" => "Poisson", "Grain" => "Céréales", "Wood" => "Bois", "Stone" => "Pierre",
         "IronOre" => "Minerai de fer", "Charcoal" => "Charbon", "Iron" => "Fer", "Tools" => "Outils",
         "Flour" => "Farine", "Bread" => "Pain", "Coins" => "Pièces",
         _ => resource.ToString(),

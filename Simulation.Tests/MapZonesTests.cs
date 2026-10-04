@@ -214,7 +214,9 @@ public class MapZonesTests(ITestOutputHelper output)
             output.WriteLine($"graine {seed}, {colony.Species.Name} : camp ({colony.CampX}, {colony.CampY}), carrière {colony.Quarry}, {trees} arbres à portée, {fishing} cases de pêche");
             Assert.NotNull(colony.Quarry);
             Assert.True(trees >= 60, $"{colony.Species.Name} : seulement {trees} arbres à portée de hache.");
-            Assert.True(fishing > 0, $"{colony.Species.Name} : pas d'eau poissonneuse à portée.");
+            // L'eau est rare : seule une région où passe une rivière du monde a du poisson à portée de marche.
+            if (world.WorldMap.Grid[world.WorldMap.TileOf(colony)].River > 0)
+                Assert.True(fishing > 0, $"{colony.Species.Name} : pas d'eau poissonneuse à portée.");
             Assert.True(world.Map.InBounds(colony.CampX, colony.CampY));
         }
     }

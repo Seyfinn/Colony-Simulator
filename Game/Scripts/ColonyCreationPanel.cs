@@ -36,6 +36,13 @@ public partial class ColonyCreationPanel : CanvasLayer
         _panel.AnchorLeft = _panel.AnchorRight = 1;
         _panel.AnchorBottom = 1;
         _panel.OffsetLeft = -388; _panel.OffsetRight = -16; _panel.OffsetTop = 182; _panel.OffsetBottom = -60;
+        root.Resized += () =>
+        {
+            _panel.OffsetLeft = -16 - InterfaceLayout.SideWidth(root.Size);
+            _panel.OffsetTop = 98;
+        };
+        _panel.OffsetLeft = -16 - InterfaceLayout.SideWidth(root.Size);
+        _panel.OffsetTop = 98;
         var frame = MenuStyle.Column(_panel, 8);
         MenuStyle.Text(frame, "Fonder une colonie", 24, ArtDirection.Brass);
         var scroll = new ScrollContainer
@@ -74,6 +81,7 @@ public partial class ColonyCreationPanel : CanvasLayer
         _confirm = MenuStyle.Button(confirmRow, "Fonder la colonie", () => ConfirmRequested?.Invoke());
         _confirm.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _confirm.Name = "ConfirmerFondation";
+        MenuStyle.Primary(_confirm);
         MenuStyle.Button(confirmRow, "Annuler", () => CancelRequested?.Invoke());
         UpdateSpecies(); UpdateProvisions();
     }
@@ -85,6 +93,8 @@ public partial class ColonyCreationPanel : CanvasLayer
         UpdateSpecies(); UpdateProvisions();
         _panel.Show();
         ShowRegionStage();
+        _name.GrabFocus();
+        _name.SelectAll();
     }
 
     public void Close() => _panel.Hide();

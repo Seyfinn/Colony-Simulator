@@ -12,8 +12,16 @@ public static class WorldGenerator
     /// <summary>Températures moyennes à l'extrême nord et à l'extrême sud de la carte, au niveau de la mer.</summary>
     private const float NorthTemperature = -12f, SouthTemperature = 34f;
 
-    /// <summary>Pluies accumulées (somme des pluies de l'amont) à partir desquelles on voit une rivière, puis un grand fleuve.</summary>
-    private const float RiverThreshold = 5f, GreatRiverThreshold = 14f;
+    /// <summary>
+    /// Les fleuves sont rares : un fleuve par tranche de <see cref="LandPerGreatRiver"/> cases de terre (au moins deux), qui traverse
+    /// le continent de la montagne à la mer sur au moins <see cref="MinGreatRiverLength"/> cases, et quelques affluents ou petites
+    /// rivières (<see cref="MinTributaryLength"/> cases au moins), qui ne partent jamais d'une source voisine d'une autre.
+    /// </summary>
+    private const int LandPerGreatRiver = 500, MinGreatRiverLength = 30, MinTributaryLength = 12;
+    private const int GreatRiverSourceSpacing = 8, TributarySourceSpacing = 5;
+
+    /// <summary>Nombre de cases de rivière en amont (la sienne comprise) à partir duquel une rivière devient un grand fleuve.</summary>
+    private const int GreatRiverVolume = 12;
 
     public static WorldGrid Generate(int seed, int width = WorldGrid.DefaultWidth, int height = WorldGrid.DefaultHeight)
     {
@@ -114,7 +122,8 @@ public static class WorldGenerator
     /// <summary>
     /// L'eau de pluie descend de case en case jusqu'à la mer. On « remplit » d'abord les cuvettes depuis l'océan
     /// (inondation par priorité) : chaque case de terre sait ainsi vers quelle voisine elle s'écoule, sans jamais rester bloquée.
-    /// Là où l'eau de nombreuses cases se rejoint, une rivière apparaît, puis un grand fleuve.
+    /// Puis on trace quelques fleuves : chacun part d'un sommet éloigné de la mer et suit l'écoulement jusqu'à l'océan, d'un bout
+    /// du continent à l'autre ; de petites rivières les rejoignent. Plus une rivière a d'amont, plus elle est large.
     /// </summary>
     private static void TraceRivers(WorldGrid grid)
     {
@@ -147,17 +156,80 @@ public static class WorldGenerator
         foreach (WorldTile tile in grid.Tiles.Where(t => t.IsOceanByElevation(grid)))
             tile.FlowsTo = -1;
 
-        // Des sommets vers la mer : chaque case ajoute ses pluies à celles de l'amont et les passe à l'aval.
-        var water = new float[n];
+        // Distance à la mer en suivant l'écoulement : l'ordre de l'inondation garantit que l'aval est déjà connu.
+        var toSea = new int[n];
+        foreach (int index in order)
+            toSea[index] = grid[index].IsOceanByElevation(grid) ? 0 : toSea[grid[index].FlowsTo] + 1;
+
+        var isRiver = new bool[n];
+        var sources = new List<int>();
+        int land = order.Count(i => !grid[i].IsOceanByElevation(grid));
+        int greatRivers = Math.Max(2, land / LandPerGreatRiver);
+
+        // Les sources possibles : les cases les plus éloignées de la mer, de préférence en montagne, du plus loin au plus proche.
+        List<int> candidates = order
+            .Where(i => !grid[i].IsOceanByElevation(grid))
+            .OrderByDescending(i => grid[i].Relief >= Relief.Hills ? 1 : 0)
+            .ThenByDescending(i => toSea[i])
+            .ThenBy(i => i)
+            .ToList();
+
+        // Si le continent est étroit, un fleuve ne peut pas être aussi long : on exige les trois quarts du plus long parcours possible.
+        int longest = candidates.Count == 0 ? 0 : candidates.Max(i => toSea[i]);
+        int minGreat = Math.Clamp(longest * 3 / 4, MinTributaryLength, MinGreatRiverLength);
+        PlaceRivers(grid, candidates, isRiver, sources, greatRivers, minGreat, GreatRiverSourceSpacing, requireWholeCourse: true);
+        PlaceRivers(grid, candidates, isRiver, sources, Math.Max(2, greatRivers - 1), MinTributaryLength, TributarySourceSpacing, requireWholeCourse: false);
+
+        // Des sources vers la mer : chaque case de rivière compte celles de l'amont et les passe à l'aval.
+        var volume = new int[n];
         for (int i = order.Count - 1; i >= 0; i--)
         {
             WorldTile tile = grid[order[i]];
-            if (tile.IsOceanByElevation(grid))
+            if (!isRiver[tile.Index])
                 continue;
-            water[tile.Index] += tile.Rainfall * tile.Rainfall;
-            if (tile.FlowsTo >= 0)
-                water[tile.FlowsTo] += water[tile.Index];
-            tile.River = water[tile.Index] >= GreatRiverThreshold ? 2 : water[tile.Index] >= RiverThreshold ? 1 : 0;
+            volume[tile.Index]++;
+            if (tile.FlowsTo >= 0 && isRiver[tile.FlowsTo])
+                volume[tile.FlowsTo] += volume[tile.Index];
+            tile.River = volume[tile.Index] >= GreatRiverVolume ? 2 : 1;
+        }
+    }
+
+    /// <summary>
+    /// Trace jusqu'à <paramref name="count"/> rivières de plus, chacune de la source la plus lointaine encore libre jusqu'à la mer
+    /// ou jusqu'à une rivière déjà tracée. Un grand fleuve doit couler sur <paramref name="minLength"/> cases (<paramref name="requireWholeCourse"/> :
+    /// jusqu'à la mer) ; un affluent, apporter au moins autant de cases nouvelles.
+    /// </summary>
+    private static void PlaceRivers(WorldGrid grid, List<int> candidates, bool[] isRiver, List<int> sources,
+        int count, int minLength, int spacing, bool requireWholeCourse)
+    {
+        int placed = 0;
+        foreach (int source in candidates)
+        {
+            if (placed >= count)
+                return;
+            if (isRiver[source] || sources.Any(s => grid.Distance(s, source) < spacing))
+                continue;
+
+            var course = new List<int>();
+            bool reachesSea = false;
+            for (int at = source; at >= 0; at = grid[at].FlowsTo)
+            {
+                if (grid[at].IsOceanByElevation(grid))
+                {
+                    reachesSea = true;
+                    break;
+                }
+                if (isRiver[at])
+                    break;
+                course.Add(at);
+            }
+            if (course.Count < minLength || (requireWholeCourse && !reachesSea))
+                continue;
+
+            foreach (int tile in course)
+                isRiver[tile] = true;
+            sources.Add(source);
+            placed++;
         }
     }
 

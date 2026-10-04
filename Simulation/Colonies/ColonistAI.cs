@@ -718,7 +718,7 @@ public static class ColonistAI
                     // Un produit fabriqué porte aussi le travail de ses matières premières.
                     hours += colonist.WorkCycleExtraHours;
                     colonist.WorkCycleExtraHours = 0;
-                    colonist.Colony.Labor.Record(load.Type, hours, load.Amount);
+                    colonist.Colony.Labor.Record(load.Type == ResourceType.Fish ? ResourceType.Food : load.Type, hours, load.Amount);
                     colonist.WorkCycleStartTicks = -1;
                 }
             }
@@ -868,7 +868,7 @@ public static class ColonistAI
                 break;
             }
             case ActivityKind.Fish when map.CatchFish(activity.TargetX, activity.TargetY):
-                colonist.Carrying = (ResourceType.Food, FoodPerFish);
+                colonist.Carrying = (ResourceType.Fish, FoodPerFish);
                 break;
             case ActivityKind.Chop when map.CanChop(activity.TargetX, activity.TargetY):
                 colonist.Carrying = (ResourceType.Wood, map.ChopTree(activity.TargetX, activity.TargetY));

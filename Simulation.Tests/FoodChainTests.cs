@@ -6,6 +6,37 @@ namespace GodColony.Simulation.Tests;
 
 public class FoodChainTests(ITestOutputHelper output)
 {
+    [Fact]
+    public void Le_stock_nutritif_additionne_les_valeurs_et_exclut_la_farine()
+    {
+        var stock = new Stockpile();
+        stock.Add(ResourceType.Food, 10);
+        Assert.Equal(6m, stock.FoodNutrition);
+        stock.Add(ResourceType.Fish, 3);
+        stock.Add(ResourceType.Grain, 2);
+        stock.Add(ResourceType.Bread, 1);
+        stock.Add(ResourceType.Flour, 100);
+        Assert.Equal(9.85m, stock.FoodNutrition);
+        Assert.Equal(16, stock.FoodUnits);
+        Assert.True(stock.TryTakeMeal());
+        Assert.Equal(9.25m, stock.FoodNutrition);
+    }
+
+    [Fact]
+    public void Le_poisson_se_mange_avant_le_pain_et_reste_distinct_des_baies()
+    {
+        var stock = new Stockpile();
+        stock.Add(ResourceType.Fish, 1);
+        stock.Add(ResourceType.Bread, 1);
+        Assert.Equal(0, stock.Get(ResourceType.Food));
+        Assert.True(stock.TryTakeMeal(out float value));
+        Assert.Equal(Stockpile.WildMealValue, value);
+        Assert.Equal(0, stock.Get(ResourceType.Fish));
+        Assert.Equal(0.85m, stock.FoodNutrition);
+        Assert.True(stock.TryTakeMeal());
+        Assert.Equal(0m, stock.FoodNutrition);
+    }
+
     private static (WorldState World, Colony Colony) Closed(int colonists = 10)
     {
         var world = new WorldState(12345, startingColonists: colonists, migration: false, lifecycle: false);

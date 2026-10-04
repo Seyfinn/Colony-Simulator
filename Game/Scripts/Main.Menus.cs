@@ -19,6 +19,7 @@ public partial class Main
     private int _foundingTile = -1;
     private bool _mapBeforeFounding;
     private Label? _notification;
+    private PanelContainer? _notificationCard;
     private double _notificationTime;
     private LocalMap ActiveMap => _foundingMap ?? (_world.Colonies.Count == 0 ? _world.Map : Observed.Map);
 
@@ -75,7 +76,7 @@ public partial class Main
             RemoveChild(child); child.QueueFree();
         }
         _colonistsView = null; _selected = null; _foundingMap = null; _foundingSite = null;
-        _notification = null; _notificationTime = 0;
+        _notification = null; _notificationCard = null; _notificationTime = 0;
         _pendingTicks = 0; _hudCooldown = 0;
         BuildWorld(options, development, restored, observed);
         _menu.HasWorld = true; _menu.Close();
@@ -128,6 +129,9 @@ public partial class Main
         if (@event is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) return;
         if (_menu.IsOpen) _menu.Back();
         else if (_foundingPanel.IsOpen) CancelFounding();
+        else if (_hud.IsRenaming) _hud.CancelRename();
+        else if (_hud.HelpOpen) _hud.CloseHelp();
+        else if (_prayerPanel.Open) _prayerPanel.Open = false;
         else if (_worldPanel.MapOpen) _worldPanel.MapOpen = false;
         else if (_worldPanel.Open) _worldPanel.Open = false;
         else if (_selected is not null) Select(null);
@@ -231,6 +235,7 @@ public partial class Main
 
     private void DisplayMap(LocalMap map, Colony? colony)
     {
+        _camera.WorldBounds = new Rect2(Vector2.Zero, new Vector2(map.Width, map.Height) * TerrainPainter.TileSize);
         RemoveChild(_mapView); _mapView.QueueFree();
         if (_colonistsView is not null) { RemoveChild(_colonistsView); _colonistsView.QueueFree(); _colonistsView = null; }
         _mapView = new MapView(); AddChild(_mapView); MoveChild(_mapView, 0); _mapView.Init(map);
@@ -254,7 +259,7 @@ public partial class Main
         if (_notification is not null && _notificationTime > 0)
         {
             _notificationTime -= GetProcessDeltaTime();
-            if (_notificationTime <= 0) _notification.Hide();
+            if (_notificationTime <= 0) _notificationCard?.Hide();
         }
     }
 
@@ -266,12 +271,26 @@ public partial class Main
             AddChild(layer);
             var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
             layer.AddChild(root); root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect);
-            _notification = MenuStyle.Text(root, "", 16, ArtDirection.Brass);
-            _notification.AnchorLeft = 0.5f; _notification.AnchorRight = 0.5f;
-            _notification.OffsetLeft = -350; _notification.OffsetRight = 350; _notification.OffsetTop = 270;
+            _notificationCard = new PanelContainer { Name = "Notification", MouseFilter = Control.MouseFilterEnum.Ignore };
+            root.AddChild(_notificationCard);
+            _notificationCard.AddThemeStyleboxOverride("panel", MenuStyle.Surface(12));
+            _notificationCard.AnchorTop = _notificationCard.AnchorBottom = 1;
+            _notificationCard.OffsetTop = -130; _notificationCard.OffsetBottom = -70;
+            _notificationCard.GrowVertical = Control.GrowDirection.Begin;
+            void ResizeNotification()
+            {
+                float left = 452;
+                float right = root.Size.X - InterfaceLayout.SideWidth(root.Size) - 32;
+                float width = System.Math.Clamp(right - left, 240, 560);
+                _notificationCard.OffsetLeft = (left + right - width) / 2;
+                _notificationCard.OffsetRight = _notificationCard.OffsetLeft + width;
+            }
+            root.Resized += ResizeNotification;
+            ResizeNotification();
+            _notification = MenuStyle.Text(_notificationCard, "", 14, ArtDirection.Brass, true);
             _notification.HorizontalAlignment = HorizontalAlignment.Center;
         }
-        _notification.Text = message; _notification.Show(); _notificationTime = 5;
+        _notification.Text = message; _notificationCard!.Show(); _notificationTime = 5;
     }
 
     private void CaptureFrame()

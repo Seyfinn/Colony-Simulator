@@ -5,7 +5,7 @@ namespace GodColony.Simulation.Colonies;
 /// les produits de la chaîne du fer (charbon de bois, fer, outils), ceux de la chaîne du blé (farine, pain)
 /// et la monnaie commune à toutes les colonies.
 /// </summary>
-public enum ResourceType { Food, Grain, Wood, Stone, IronOre, Charcoal, Iron, Tools, Flour, Bread, Coins }
+public enum ResourceType { Food, Grain, Wood, Stone, IronOre, Charcoal, Iron, Tools, Flour, Bread, Coins, Fish }
 
 /// <summary>Le stock commun de la colonie : tout appartient à la colonie, rien aux colons.</summary>
 public sealed class Stockpile
@@ -18,7 +18,21 @@ public sealed class Stockpile
     public const float WildMealValue = 0.6f, GrainMealValue = 0.6f, BreadMealValue = 0.85f;
 
     /// <summary>Tout ce qui se mange : nourriture sauvage, céréales et pain (un repas chacun). La farine ne se mange pas crue.</summary>
-    public int FoodUnits => Get(ResourceType.Food) + Get(ResourceType.Grain) + Get(ResourceType.Bread);
+    public int FoodUnits => Get(ResourceType.Food) + Get(ResourceType.Fish) + Get(ResourceType.Grain) + Get(ResourceType.Bread);
+
+    /// <summary>Valeur du stock comestible : 100 points de faim correspondent à une unité de nourriture.</summary>
+    public decimal FoodNutrition => Nutrition(ResourceType.Food) + Nutrition(ResourceType.Fish)
+        + Nutrition(ResourceType.Grain) + Nutrition(ResourceType.Bread);
+
+    public static decimal NutritionPerItem(ResourceType type) => type switch
+    {
+        ResourceType.Food or ResourceType.Fish => (decimal)WildMealValue,
+        ResourceType.Grain => (decimal)GrainMealValue,
+        ResourceType.Bread => (decimal)BreadMealValue,
+        _ => 0m,
+    };
+
+    public decimal Nutrition(ResourceType type) => Get(type) * NutritionPerItem(type);
 
     /// <summary>
     /// Prend un repas : la nourriture sauvage d'abord (elle se garde mal), puis le pain, puis les céréales.
@@ -28,6 +42,7 @@ public sealed class Stockpile
     {
         value = 0f;
         if (TryTake(ResourceType.Food, 1)) value = WildMealValue;
+        else if (TryTake(ResourceType.Fish, 1)) value = WildMealValue;
         else if (TryTake(ResourceType.Bread, 1)) value = BreadMealValue;
         else if (TryTake(ResourceType.Grain, 1)) value = GrainMealValue;
         return value > 0f;

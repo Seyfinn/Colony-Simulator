@@ -1,4 +1,6 @@
 using GodColony.Simulation.Colonies;
+using GodColony.Simulation.Map;
+using GodColony.Simulation.Time;
 using GodColony.Simulation.World;
 using Xunit.Abstractions;
 
@@ -30,6 +32,68 @@ public class WorldMapTests(ITestOutputHelper output)
                 at = grid[at].FlowsTo;
             Assert.True(grid[at].IsOcean);
         }
+    }
+
+    [Theory]
+    [InlineData(12345)]
+    [InlineData(7)]
+    [InlineData(2026)]
+    [InlineData(1)]
+    [InlineData(99)]
+    public void Quelques_grands_fleuves_traversent_le_continent_et_les_rivieres_sont_rares(int seed)
+    {
+        WorldGrid grid = WorldGenerator.Generate(seed);
+        var land = grid.Tiles.Where(t => !t.IsOcean).ToList();
+        var rivers = land.Where(t => t.River > 0).ToList();
+        int mouths = rivers.Count(t => grid[t.FlowsTo].IsOcean);
+        int longest = rivers.Max(t => CourseLength(grid, t));
+        output.WriteLine($"graine {seed} : {rivers.Count} cases de rivière sur {land.Count} ({rivers.Count / (float)land.Count:P1}), " +
+                         $"{rivers.Count(t => t.River == 2)} de grand fleuve, {mouths} embouchures, plus long cours {longest} cases");
+
+        // Rares : quelques pour cent des terres, et seulement une poignée de fleuves qui se jettent à la mer.
+        Assert.InRange(rivers.Count / (float)land.Count, 0.02f, 0.09f);
+        Assert.InRange(mouths, 1, 6);
+        Assert.Contains(rivers, t => t.River == 2);
+        // Longues : un fleuve va de la montagne à la mer en traversant bien des cases, au lieu de naître et de mourir sur place.
+        Assert.True(longest >= 18, $"Le plus long fleuve ne compte que {longest} cases.");
+        // Pas de ruisseau isolé : toute case de rivière a une rivière en amont ou en aval, jusqu'à la mer.
+        Assert.All(rivers, t => Assert.True(grid[t.FlowsTo].River > 0 || grid[t.FlowsTo].IsOcean));
+    }
+
+    private static int CourseLength(WorldGrid grid, WorldTile start)
+    {
+        int length = 0;
+        for (int at = start.Index; !grid[at].IsOcean && length <= grid.Tiles.Length; at = grid[at].FlowsTo)
+            length++;
+        return length;
+    }
+
+    [Fact]
+    public void Une_region_sans_fleuve_n_a_ni_riviere_ni_ruisseau_et_une_colonie_y_vit_sans_eau()
+    {
+        var world = new WorldState(12345, colonyCount: 0, migration: false, lifecycle: false);
+        WorldGrid grid = world.WorldMap.Grid;
+        // Même dans une région humide : la pluie ne fait plus naître de ruisseau à elle seule.
+        WorldTile dry = grid.Tiles.First(t => t.Habitable && t.River == 0 && t.Rainfall > 0.5f && !t.Coastal
+            && t.Biome is Biome.Grassland or Biome.TemperateForest);
+        Assert.Equal(0, MapStyle.For(dry).RiverCount);
+        LocalMap map = world.GenerateColonyMap(dry.Index);
+        Assert.DoesNotContain(Enumerable.Range(0, map.Width * map.Height), i => map.IsRiver(i % map.Width, i / map.Width));
+
+        // Sans eau, sans pêche ni moulin, la colonie cueille, sème et vit : personne ne meurt de faim en un an.
+        (int x, int y) = ColonyFounder.FindCampSite(map);
+        Assert.True(world.TryFoundColony(map, x, y, "Terre sèche", Species.Human, 8, dry.Index, out Colony? colony, out string reason), reason);
+        Assert.Empty(WorkSites.FishingSpots(map, colony!));
+        var watch = new StarvationWatch();
+        for (long i = 0; i < TimeConstants.TicksPerYear; i++)
+        {
+            world.Step();
+            if (i % TimeConstants.TicksPerDay == 0)
+                watch.Observe(colony!);
+        }
+        output.WriteLine($"Colonie sans eau : {colony!.Members.Count} colons, {colony.Stock.FoodUnits} unités de nourriture, {colony.Graves.Count} tombes");
+        Assert.Null(watch.Victim);
+        Assert.DoesNotContain(colony.Graves, g => g.Cause == "faim");
     }
 
     [Fact]
