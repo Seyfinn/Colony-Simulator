@@ -5,6 +5,9 @@ namespace GodColony.Simulation.Colonies;
 /// </summary>
 public sealed record MapStyle(float MountainShare, float WaterShare, float ForestBias = 0f, float SoilRichness = 1f)
 {
+    /// <summary>Part de la carte couverte par les zones de forêt : un tiers en terrain tempéré, la moitié en pays de forêts.</summary>
+    public float ForestShare => Math.Clamp(0.32f + 1.6f * ForestBias, 0.05f, 0.7f);
+
     public static readonly MapStyle Temperate = new(0.22f, 0.08f);
 
     /// <summary>Hautes terres : beaucoup de roche, peu de forêt, un sol maigre (3 céréales par parcelle au lieu de 4).</summary>

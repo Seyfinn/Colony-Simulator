@@ -18,7 +18,7 @@ Règle d'or : **la simulation ne connaît pas l'affichage**. Godot lit `WorldSta
 
 - `WorldState` : l'horloge, les colonies, les caravanes. `Step()` avance d'un tick.
 - `Map/LocalMap` : la carte locale d'une colonie (relief en couches, eau, rivières, canaux, retenues d'eau).
-- `Generation/` : génération des cartes (relief, rivières).
+- `Generation/` : génération des cartes. Chaque carte locale fait 200 × 200 cases (`MapGenerator.DefaultSize`) et se compose de grandes zones (un massif de montagne, de vastes forêts et plaines, un grand lac) ; les rivières naissent en ruisseau puis s'élargissent en fleuve de 3 à 8 cases (`Rivers`).
 - `Colonies/` — une colonie, c'est :
   - `ColonyBrain` : le cerveau (capteurs → pyramide des priorités → répartition de la main-d'œuvre → pensées) ;
   - `ColonistAI` : le comportement individuel (besoins, déplacements, travail) ;
@@ -39,12 +39,45 @@ dotnet build Game/GodColony.csproj    # à faire avant de lancer Godot : il char
 
 Le jeu se lance depuis Godot 4.7 (version .NET) en ouvrant `Game/project.godot`.
 
+### Menus et fondation des colonies
+
+Au lancement, l'accueil propose **Créer un monde**, **Paramètres**, **Comment jouer** et **Quitter**.
+Le formulaire de monde permet de choisir la graine, la taille des régions (128, 200 ou 256 cases de côté),
+0 à 4 colonies initiales, leurs fondateurs, les migrations, le cycle de vie, le commerce et la vitesse.
+Un monde vierge attend la fondation de sa première colonie.
+
+En partie, **Menu** ou **Échap** ouvre le menu de pause ; il permet aussi de retourner à l'accueil et de reprendre
+le monde courant. La création d'un autre monde demande confirmation avant de remplacer la partie.
+Les préférences de plein écran, de synchronisation verticale, d'ambiance et de caméra sont enregistrées
+dans `user://settings.cfg`. Les parties elles-mêmes ne sont pas encore sauvegardées sur disque.
+
+**Fonder une colonie** ouvre le choix du nom, du peuple et de 5 à 20 fondateurs. Cliquez d'abord sur une région libre
+de la carte du monde, puis sur une zone plate de 5 × 5 cases sur le terrain. Le contour vert indique un site valide,
+le rouge un obstacle ; **Emplacement conseillé** choisit un camp proche des ressources. **Fonder la colonie** installe
+les habitants à la case choisie, avec leurs provisions et 400 pièces. Le monde peut accueillir jusqu'à 16 colonies.
+Chaque colonie possède sa propre carte locale ; les anciennes colonies restent à leur emplacement lors d'une fondation.
+La simulation est suspendue pendant les menus et la fondation ; annuler conserve la vitesse et la partie précédentes.
+
+Pour vérifier le parcours des contrôles Godot après compilation :
+
+```bash
+godot --path Game --fixed-fps 60 -- --smoke-menu
+```
+
+Le scénario vérifie l'accueil, une graine invalide, un monde vierge, la fondation, les paramètres persistants,
+la pause, l'annulation, la reprise et le remplacement du monde. Il fonctionne aussi avec `--headless`.
+`--smoke-captures=chemin` enregistre les étapes dans un dossier existant lorsque le rendu est activé.
+
 ### Options de développement (en ligne de commande, après `--`)
 
 `--capture=chemin.png` (capture puis quitte), `--advance-hours=N`, `--speed=1|4|30`, `--zoom=N`,
 `--colony=N` (colonie observée), `--open-world` (panneau économie), `--open-prayers`, `--demo-prayer`,
 `--demo-dam`, `--auto-dam`, `--focus-dam`, `--demo-workshops`, `--demo-quarry`, `--select-first`,
 `--focus-fields`, `--focus-quarry`. Les options sont lues dans l'ordre : `--auto-dam --advance-hours=1000 --focus-dam`.
+
+Sans option, le jeu ouvre l'accueil. Les outils habituels démarrent directement la partie de démonstration à quatre colonies.
+`--menu`, `--menu-world` et `--menu-settings` affichent les écrans de menu pour une capture ;
+`--empty-world` démarre un monde vierge et `--demo-foundation` affiche un aperçu de camp prêt à confirmer.
 
 `--perf=N` mesure N images puis affiche le temps par image (moyenne, centiles, pire image) et la part de la simulation,
 avant de quitter. Pour comparer deux versions sur la même machine :

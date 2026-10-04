@@ -14,7 +14,15 @@ public sealed record Reservoir((int X, int Y) Dam, int Level, List<(int X, int Y
 public static class Hydrology
 {
     public const int MinReservoirTiles = 8;
+
+    /// <summary>
+    /// Taille maximale de la retenue. Dans une vaste plaine plate, l'eau pourrait s'étendre à l'infini : la retenue
+    /// ne gagne que les cases les plus proches de la rivière, jusqu'à ce plafond.
+    /// </summary>
     public const int MaxReservoirTiles = 40;
+
+    /// <summary>Un barrage ne ferme qu'un ruisseau : sur un fleuve large (plus de cette largeur, en cases), il faudrait un ouvrage bien plus grand.</summary>
+    public const int MaxDamRiverWidth = 1;
 
     /// <summary>Distance maximale (en cases) entre le camp et le barrage.</summary>
     public const int SearchRadius = 30;
@@ -36,8 +44,9 @@ public static class Hydrology
 
     /// <summary>
     /// Que noierait un barrage sur cette case de rivière ? On part des cases de rivière juste en amont et on étend l'eau
-    /// sur les terres plates voisines, côté amont seulement. Renvoie null si le barrage ne retiendrait rien d'utile
-    /// (trop peu de cases), noierait trop de terres, ou engloutirait un champ, un bâtiment, une tombe ou le camp.
+    /// sur les terres plates voisines, côté amont seulement, case après case en s'éloignant de la rivière, sans dépasser
+    /// <see cref="MaxReservoirTiles"/>. Renvoie null si le barrage ne retiendrait rien d'utile (trop peu de cases),
+    /// si la rivière est trop large pour être barrée, ou si la retenue engloutirait un champ, un bâtiment, une tombe ou le camp.
     /// </summary>
     public static Reservoir? FindReservoir(LocalMap map, Colony colony, int damX, int damY)
     {
@@ -48,7 +57,7 @@ public static class Hydrology
     /// <summary>Comme <see cref="FindReservoir"/>, une fois marqué ce qu'il faut protéger (voir <see cref="MarkWhatToProtect"/>).</summary>
     private static Reservoir? FindReservoirAround(LocalMap map, int damX, int damY)
     {
-        if (!map.InBounds(damX, damY) || !map.IsRiver(damX, damY) || map.IsFlooded(damX, damY))
+        if (!map.InBounds(damX, damY) || !map.IsRiver(damX, damY) || map.IsFlooded(damX, damY) || map.RiverWidth(damX, damY) > MaxDamRiverWidth)
             return null;
         int baseLevel = map.GetElevation(damX, damY);
         int level = baseLevel + 1;
@@ -74,14 +83,12 @@ public static class Hydrology
         // Le sens du courant à la hauteur du barrage : l'eau ne gagne que le côté amont.
         int dirX = queue[0] % width - damX, dirY = queue[0] / width - damY;
 
-        for (int head = 0; head < queue.Count; head++)
+        for (int head = 0; head < queue.Count && tiles.Count < MaxReservoirTiles; head++)
         {
             int x = queue[head] % width, y = queue[head] / width;
             if (scratch.IsBlocked(queue[head]))
                 return null;
             tiles.Add(queue[head]);
-            if (tiles.Count > MaxReservoirTiles)
-                return null;
 
             foreach ((int dx, int dy) in Steps)
             {

@@ -13,21 +13,20 @@ public class WorkTests(ITestOutputHelper output)
         var world = new WorldState(12345, startingColonists: 20, migration: false, lifecycle: false);
         Colony colony = world.Colonies[0];
         Assert.NotNull(colony.Quarry);
-        (int qx, int qy) = colony.Quarry.Value;
 
-        int ElevationAroundQuarry()
+        // Les mineurs creusent aussi au-delà de la carrière quand ils cherchent du fer : on mesure toute la carte.
+        int ElevationOfTheMap()
         {
             int sum = 0;
-            for (int dy = -10; dy <= 10; dy++)
-            for (int dx = -10; dx <= 10; dx++)
-                if (world.Map.InBounds(qx + dx, qy + dy))
-                    sum += world.Map.GetElevation(qx + dx, qy + dy);
+            for (int y = 0; y < world.Map.Height; y++)
+            for (int x = 0; x < world.Map.Width; x++)
+                sum += world.Map.GetElevation(x, y);
             return sum;
         }
 
         // La carrière n'est exploitée qu'une fois la survie et le logement assurés : on laisse 12 jours.
         // On suit le plus long jeûne : on se réveille parfois affamé, mais personne ne doit rester un jour sans manger.
-        int elevationBefore = ElevationAroundQuarry();
+        int elevationBefore = ElevationOfTheMap();
         var watch = new StarvationWatch();
         for (long i = 0; i < 12L * TimeConstants.TicksPerDay; i++)
         {
@@ -36,7 +35,7 @@ public class WorkTests(ITestOutputHelper output)
                 watch.Observe(colony);
         }
 
-        int layersMined = elevationBefore - ElevationAroundQuarry();
+        int layersMined = elevationBefore - ElevationOfTheMap();
         int stumps = 0;
         for (int y = 0; y < world.Map.Height; y++)
         for (int x = 0; x < world.Map.Width; x++)

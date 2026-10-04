@@ -54,15 +54,19 @@ public static class Noise
         return Lerp(Plane(zi), Plane(zi + 1), w);
     }
 
-    /// <summary>Superpose plusieurs échelles de bruit pour un rendu plus naturel. Résultat entre 0 et 1.</summary>
-    public static float Fractal2D(float x, float y, int seed, int octaves)
+    /// <summary>
+    /// Superpose plusieurs échelles de bruit pour un rendu plus naturel. Résultat entre 0 et 1.
+    /// <paramref name="persistence"/> est la part de chaque échelle plus fine par rapport à la précédente :
+    /// proche de 0, seules les grandes formes comptent (des zones larges et lisses) ; 0,5 donne un terrain très découpé.
+    /// </summary>
+    public static float Fractal2D(float x, float y, int seed, int octaves, float persistence = 0.5f)
     {
         float sum = 0, amplitude = 1, frequency = 1, norm = 0;
         for (int i = 0; i < octaves; i++)
         {
             sum += amplitude * Value2D(x * frequency, y * frequency, seed + i * 101);
             norm += amplitude;
-            amplitude *= 0.5f;
+            amplitude *= persistence;
             frequency *= 2f;
         }
         return sum / norm;

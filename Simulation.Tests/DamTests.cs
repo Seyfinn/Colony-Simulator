@@ -76,11 +76,20 @@ public class DamTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Pas_de_barrage_si_la_retenue_est_trop_petite_trop_grande_ou_noierait_un_champ()
+    public void Pas_de_barrage_si_la_retenue_est_trop_petite_trop_large_ou_noierait_un_champ()
     {
-        // Trop grande : la vallée n'est fermée que très loin.
+        // Une vaste plaine plate : la vallée n'est fermée que très loin, mais la retenue est plafonnée aux cases les plus proches.
         (LocalMap bigMap, Colony bigColony) = Valley(closedAt: 0);
-        Assert.Null(Hydrology.FindReservoir(bigMap, bigColony, 20, 30));
+        Reservoir? capped = Hydrology.FindReservoir(bigMap, bigColony, 20, 30);
+        Assert.NotNull(capped);
+        Assert.Equal(Hydrology.MaxReservoirTiles, capped!.Tiles.Count);
+        Assert.All(capped.Tiles, t => Assert.True(t.Y < 30));
+
+        // Un fleuve large ne se barre pas : seul un ruisseau d'une case de large le permet.
+        (LocalMap wideMap, Colony wideColony) = Valley();
+        for (int y = 14; y < 80; y++)
+            wideMap.SetRiver(20, y, 20, y + 1, width: 3);
+        Assert.Null(Hydrology.FindReservoir(wideMap, wideColony, 20, 20));
 
         // Trop petite : le barrage est collé à la paroi.
         (LocalMap smallMap, Colony smallColony) = Valley();

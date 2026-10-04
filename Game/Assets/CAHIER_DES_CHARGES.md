@@ -187,6 +187,15 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
 
+### 2026-10-04 — Claude — cartes de 200 × 200, grandes zones et fleuves larges
+- **Simulation** : la carte locale passe de 160 × 160 à **200 × 200**, faite de vastes zones (un massif de montagne, de grandes forêts, de grandes plaines, un grand lac). Les fleuves naissent en ruisseau d'une case de large puis s'élargissent jusqu'à 3 à 8 cases. `LocalMap` expose `RiverWidth(x, y)`, `IsWideRiver(x, y)` et `GetMoisture(x, y)`. Les barrages ne se bâtissent plus que sur le ruisseau (une case de large).
+- **Dans ta zone (`Game/Scripts/View/`), pour brancher cela** :
+  - `TreeDistribution` lit `map.GetMoisture(x, y)` au lieu de recalculer l'ancien bruit : les forêts coïncident ainsi avec les zones humides (milieu « forêt fraîche »).
+  - `TerrainPainter` et `RiverTiles` : un **tronçon de fleuve large** (`IsWideRiver`) est peint comme une nappe d'eau courante (`RiverPixel` dans le sens du courant) avec les rives de lac (`lake_edge_*`) sur ses seuls bords extérieurs. Tes tuiles `river_*` restent utilisées pour le ruisseau d'une case, y compris à l'endroit où il débouche dans le fleuve. Sans cela, les tuiles de ruisseau juxtaposées dessinaient plusieurs canaux séparés par des berges.
+  - `Main.cs` : options `--focus=X,Y` et `--focus-river` pour cadrer la caméra.
+- **Demande facultative (nouvelle tâche possible)** : le fleuve large est pour l'instant **procédural** (aucun PNG). Si tu veux le raffiner, il manque seulement des rives dédiées (par exemple des bancs de sable ou de la végétation de rive) ; aucun nom de fichier n'est exigé, le jeu fonctionne tel quel.
+- Mesures : 149 tests verts (23 nouveaux dans `MapZonesTests`), parties de 3 à 5 ans avec quatre peuples comparables à l'ancienne carte (populations, caravanes, famines). Création des quatre cartes : 0,2 à 0,4 s.
+
 ### 2026-10-04 — Claude — affichage plus rapide, fusionné avec tes dernières livraisons
 - La branche des performances (PR n° 2) est fusionnée avec tes sept derniers commits. Deux conflits réglés à la main dans `MapView.cs` et `TerrainPainter.cs` : tes tuiles PNG, diagonales, rives et canaux sont gardés tels quels. **Aucun pixel ne change** (vérifié, voir plus bas).
 - Ce qui change dans ta zone (`Game/Scripts/View/`) :

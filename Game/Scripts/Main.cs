@@ -39,7 +39,7 @@ public partial class Main : Node2D
 
     private WorldState _world = null!;
     private MapView _mapView = null!;
-    private ColonistsView _colonistsView = null!;
+    private ColonistsView? _colonistsView;
     private CameraController _camera = null!;
     private WorldPanel _worldPanel = null!;
     private int _observed;
@@ -69,6 +69,8 @@ public partial class Main : Node2D
     //   --demo-prayer          soumet une prière factice ; --open-prayers ouvre le détail
     //   --auto-dam / --focus-dam   accorde d'office les barrages / centre la caméra sur le barrage
     //   --zoom=N               règle le zoom de la caméra (0.2 montre presque toute la carte)
+    //   --focus=X,Y            centre la caméra sur la case (X, Y)
+    //   --focus-river          centre la caméra sur le tronçon le plus large du fleuve
     //   --select-first         sélectionne le premier colon
     //   --focus-fields         centre la caméra sur le premier champ
     //   --perf=N               mesure N images (durée, part de la simulation), affiche le résumé puis quitte
@@ -78,23 +80,35 @@ public partial class Main : Node2D
 
     public override void _Ready()
     {
-        _world = new WorldState(Seed, colonyCount: ColonyCount);
-        Colony colony = Observed;
+        InitMenus();
+    }
+
+    private void BuildWorld(WorldCreationOptions options, bool development = false)
+    {
+        _world = new WorldState(options.Seed, options.Size, options.Size,
+            startingColonists: development ? null : options.Founders, migration: options.Migration,
+            lifecycle: options.Lifecycle, colonyCount: options.Colonies, trade: options.Trade);
+        _observed = 0;
+        Colony? colony = _world.Colonies.Count > 0 ? Observed : null;
+        LocalMap map = colony?.Map ?? _world.Map;
 
         _mapView = new MapView();
         AddChild(_mapView);
-        _mapView.Init(colony.Map);
+        _mapView.Init(map);
 
-        _colonistsView = new ColonistsView();
-        AddChild(_colonistsView);
-        _colonistsView.Init(_world, colony);
+        if (colony is not null)
+        {
+            _colonistsView = new ColonistsView();
+            AddChild(_colonistsView);
+            _colonistsView.Init(_world, colony);
+        }
 
         _daylight = new CanvasModulate();
         AddChild(_daylight);
 
         var camera = new CameraController
         {
-            Position = new Vector2(colony.CampX + 0.5f, colony.CampY + 0.5f) * TerrainPainter.TileSize,
+            Position = new Vector2((colony?.CampX ?? map.Width / 2) + 0.5f, (colony?.CampY ?? map.Height / 2) + 0.5f) * TerrainPainter.TileSize,
             Zoom = new Vector2(1.25f, 1.25f),
         };
         AddChild(camera);
@@ -106,7 +120,7 @@ public partial class Main : Node2D
         AddChild(atmosphereLayer);
         _ambience = new DayNightAmbience();
         atmosphereLayer.AddChild(_ambience);
-        _ambience.Init(colony.Map);
+        _ambience.Init(map);
 
         _prayerPanel = new PrayerPanel();
         AddChild(_prayerPanel);
@@ -116,20 +130,39 @@ public partial class Main : Node2D
         AddChild(_worldPanel);
         _worldPanel.Init(_world);
         _worldPanel.ColonyRequested += ObserveColony;
+        _worldPanel.FoundingRequested += BeginFounding;
+        _worldPanel.SiteRequested += PreviewRegion;
 
         _hud = new Hud();
         AddChild(_hud);
         _hud.SpeedRequested += SetSpeed;
         _hud.PauseRequested += TogglePause;
         _hud.SelectionClosed += () => Select(null);
+        _hud.MenuRequested += () => { _hud.CancelRename(); OpenPauseMenu(); };
+        _hud.ColonistRenameRequested += (colonist, name, surname) =>
+        {
+            if (colonist.TryRename(name, surname)) _hudCooldown = 0;
+        };
 
-        ApplyDevArguments(camera);
+        _foundingPanel = new ColonyCreationPanel();
+        AddChild(_foundingPanel);
+        _foundingPanel.RegionRequested += ChooseRegion;
+        _foundingPanel.CancelRequested += CancelFounding;
+        _foundingPanel.ConfirmRequested += ConfirmFounding;
+        _foundingPanel.SuggestedSiteRequested += SelectSuggestedSite;
+        _foundingPreview = new FoundingPreview { Visible = false, ZIndex = 100 };
+        AddChild(_foundingPreview);
+        ApplySettings();
+        SetSpeed(options.Speed);
+        _worldPanel.MapOpen = colony is null;
+        UpdateHud();
+        if (development) ApplyDevArguments(camera);
     }
 
     /// <summary>Passe à l'observation d'une autre colonie : on reconstruit sa carte et sa vue, et la caméra la rejoint.</summary>
     private void ObserveColony(int index)
     {
-        if (index == _observed || index < 0 || index >= _world.Colonies.Count)
+        if (_foundingPanel.IsOpen || index < 0 || index >= _world.Colonies.Count || index == _observed && _colonistsView is not null)
             return;
         _observed = index;
         _worldPanel.Observed = index;
@@ -137,7 +170,7 @@ public partial class Main : Node2D
         Colony colony = Observed;
 
         _mapView.QueueFree();
-        _colonistsView.QueueFree();
+        _colonistsView?.QueueFree();
         _mapView = new MapView();
         AddChild(_mapView);
         MoveChild(_mapView, 0);
@@ -146,6 +179,8 @@ public partial class Main : Node2D
         AddChild(_colonistsView);
         MoveChild(_colonistsView, 1);
         _colonistsView.Init(_world, colony);
+
+        _hud.ResetColony();
 
         _ambience.Init(colony.Map);
         _camera.Position = new Vector2(colony.CampX + 0.5f, colony.CampY + 0.5f) * TerrainPainter.TileSize;
@@ -196,6 +231,19 @@ public partial class Main : Node2D
                 _prayerPanel.Open = true;
             else if (arg.StartsWith("--zoom="))
                 camera.Zoom = Vector2.One * float.Parse(arg["--zoom=".Length..], System.Globalization.CultureInfo.InvariantCulture);
+            else if (arg.StartsWith("--focus=") && arg["--focus=".Length..].Split(',') is [var fx, var fy]
+                && float.TryParse(fx, CultureInfo.InvariantCulture, out float focusX) && float.TryParse(fy, CultureInfo.InvariantCulture, out float focusY))
+                camera.Position = new Vector2(focusX + 0.5f, focusY + 0.5f) * TerrainPainter.TileSize;
+            else if (arg == "--focus-river")
+            {
+                LocalMap map = Observed.Map;
+                (int X, int Y, int Width) widest = (0, 0, 0);
+                for (int y = 0; y < map.Height; y++)
+                for (int x = 0; x < map.Width; x++)
+                    if (map.IsRiver(x, y) && map.RiverWidth(x, y) > widest.Width)
+                        widest = (x, y, map.RiverWidth(x, y));
+                camera.Position = new Vector2(widest.X + 0.5f, widest.Y + 0.5f) * TerrainPainter.TileSize;
+            }
             else if (arg == "--select-first")
                 Select(Observed.Members[0]);
             else if (arg == "--focus-quarry" && Observed.Quarry is { } quarry)
@@ -221,7 +269,9 @@ public partial class Main : Node2D
 
     public override void _Process(double delta)
     {
-        double ticksPerSecond = (int)_speed * TimeConstants.TicksPerSecond;
+        if (_world is null) { CaptureFrame(); return; }
+        bool frozen = _menu.IsOpen || _foundingPanel.IsOpen;
+        double ticksPerSecond = frozen ? 0 : (int)_speed * TimeConstants.TicksPerSecond;
         _pendingTicks = Math.Min(_pendingTicks + delta * ticksPerSecond, ticksPerSecond * MaxBacklogSeconds + 1);
         long simulationStart = Stopwatch.GetTimestamp();
         long budget = (long)(SimulationBudgetMs / 1000 * Stopwatch.Frequency);
@@ -233,13 +283,17 @@ public partial class Main : Node2D
                 break;
         }
         double simulationMs = Stopwatch.GetElapsedTime(simulationStart).TotalMilliseconds;
-        _colonistsView.Alpha = (float)Math.Clamp(_pendingTicks, 0, 1);
+        if (_colonistsView is not null) _colonistsView.Alpha = (float)Math.Clamp(_pendingTicks, 0, 1);
 
         GameSpeed atmosphereSpeed = _speed == GameSpeed.Pause ? _speedBeforePause : _speed;
-        _ambience.Update(_world.Clock, atmosphereSpeed, _speed == GameSpeed.Pause, delta);
+        _ambience.Update(_world.Clock, atmosphereSpeed, frozen || _speed == GameSpeed.Pause, delta);
         _daylight.Color = _ambience.Tint;
-        _colonistsView.AmbientEffectsEnabled = _ambience.DetailedEffects;
-        _colonistsView.WaterAnimationTime = _ambience.AnimationTime;
+        if (_colonistsView is not null)
+        {
+            _colonistsView.AmbientEffectsEnabled = _settings.AmbientEffects && _ambience.DetailedEffects;
+            _colonistsView.WaterAnimationTime = _ambience.AnimationTime;
+        }
+        UpdateFoundingPreview();
 
         _hudCooldown -= delta;
         if (_hudCooldown <= 0)
@@ -248,11 +302,7 @@ public partial class Main : Node2D
             UpdateHud();
         }
 
-        if (_capturePath is not null && --_framesBeforeCapture == 0)
-        {
-            GetViewport().GetTexture().GetImage().SavePng(_capturePath);
-            GetTree().Quit();
-        }
+        CaptureFrame();
         if (_perf?.Frame(simulationMs) == true)
         {
             GD.Print(_perf.Summary());
@@ -263,6 +313,7 @@ public partial class Main : Node2D
 
     public override void _UnhandledInput(InputEvent @event)
     {
+        if (_world is null || _menu.IsOpen) return;
         switch (@event)
         {
             case InputEventKey { Pressed: true, Echo: false } key:
@@ -277,6 +328,16 @@ public partial class Main : Node2D
     /// <summary>Un clic sélectionne le colon le plus proche ; sinon, sur la roche, il mine (outil de test).</summary>
     private void OnLeftClick()
     {
+        if (_foundingPanel.IsOpen)
+        {
+            if (_foundingMap is not null)
+            {
+                (int fx, int fy) = TileUnderMouse();
+                SelectFoundingSite(fx, fy);
+            }
+            return;
+        }
+        if (_colonistsView is null || _worldPanel.MapOpen) return;
         Vector2 mouse = GetGlobalMousePosition();
         Colonist? nearest = null;
         float bestDistance = SelectRadius * TerrainPainter.TileSize;
@@ -307,13 +368,15 @@ public partial class Main : Node2D
 
     private void Select(Colonist? colonist)
     {
+        _hud.CancelRename();
         _selected = colonist;
-        _colonistsView.Selected = colonist;
+        if (_colonistsView is not null) _colonistsView.Selected = colonist;
         _hudCooldown = 0;
     }
 
     private void HandleKey(Key key)
     {
+        if (_foundingPanel.IsOpen) return;
         switch (key)
         {
             case Key.Space:
@@ -322,7 +385,6 @@ public partial class Main : Node2D
             case Key.Key1: SetSpeed(GameSpeed.Observation); break;
             case Key.Key2: SetSpeed(GameSpeed.Rapide); break;
             case Key.Key3: SetSpeed(GameSpeed.TresRapide); break;
-            case Key.Escape: Select(null); break;
         }
     }
 
@@ -355,13 +417,22 @@ public partial class Main : Node2D
     private void UpdateHud()
     {
         GameClock clock = _world.Clock;
-        _hud.SetStatus(clock, _speed);
+        _hud.SetStatus(clock, _menu.IsOpen || _foundingPanel.IsOpen ? GameSpeed.Pause : _speed);
+
+        LocalMap map = ActiveMap;
+        if (_world.Colonies.Count == 0 || _foundingMap is not null)
+        {
+            _hud.ShowUnsettled(_foundingMap is not null ? "Nouvelle région" : "Monde vierge",
+                _foundingMap is not null ? "Choisissez l'emplacement du camp, puis confirmez la fondation." : "Cliquez sur « Fonder une colonie » pour peupler votre monde.");
+            (int tx, int ty) = TileUnderMouse();
+            _hud.SetTileInfo(map.InBounds(tx, ty) ? $"Case ({tx}, {ty}) · {SurfaceName(map.GetSurface(tx, ty))}" : " ");
+            return;
+        }
 
         Colony colony = Observed;
         _hud.ShowColony(colony, clock);
 
         (int x, int y) = TileUnderMouse();
-        LocalMap map = Observed.Map;
         _hud.SetTileInfo(map.InBounds(x, y)
             ? $"Case ({x}, {y})  ·  altitude {map.GetElevation(x, y)}  ·  {SurfaceName(map.GetSurface(x, y))}{(map.CanMine(x, y) ? "  ·  minable" : "")}"
             : " ");

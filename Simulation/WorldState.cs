@@ -15,6 +15,11 @@ public sealed class WorldState
     private const long StartTicks = TimeConstants.TicksPerDay * 8 / 24;
 
     private int _nextColonistId = 1;
+    private readonly int _mapWidth, _mapHeight;
+    private readonly LocalMap? _emptyMap;
+
+    public int Seed { get; }
+    public const int MaxPlayerColonies = 16;
 
     /// <summary>Les voyageurs et les départs sont-ils actifs ? (On peut les couper pour étudier une colonie fermée.)</summary>
     private readonly bool _migration;
@@ -46,7 +51,7 @@ public sealed class WorldState
     public int CompletedCaravans { get; internal set; }
 
     /// <summary>La carte de la première colonie (la seule, dans une partie à une colonie). Chaque colonie a la sienne.</summary>
-    public LocalMap Map => Colonies[0].Map;
+    public LocalMap Map => Colonies.Count > 0 ? Colonies[0].Map : _emptyMap!;
 
     public Pathfinder Pathfinder => Colonies[0].Pathfinder;
 
@@ -60,13 +65,18 @@ public sealed class WorldState
     /// Nombre de colonies. Chacune a son espèce (humains, puis nains, elfes, orcs) et sa propre carte locale,
     /// dont le relief convient à son peuple.
     /// </param>
-    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true, bool lifecycle = true, int colonyCount = 1, bool trade = true)
+    public WorldState(int seed, int mapWidth = MapGenerator.DefaultSize, int mapHeight = MapGenerator.DefaultSize, int? startingColonists = null, bool migration = true, bool lifecycle = true, int colonyCount = 1, bool trade = true)
     {
+        Seed = seed;
+        _mapWidth = mapWidth;
+        _mapHeight = mapHeight;
         _trade = trade;
         _migration = migration;
         _lifecycle = lifecycle;
         Random = new Random(seed);
         Clock = new GameClock(StartTicks);
+        if (colonyCount == 0)
+            _emptyMap = GenerateColonyMap(Species.Human);
         for (int i = 0; i < colonyCount; i++)
         {
             Species species = Species.All[i % Species.All.Count];
@@ -84,6 +94,44 @@ public sealed class WorldState
         }
         foreach (Colony colony in Colonies)
             ColonyBrain.Think(colony, colony.Map, Clock);
+    }
+
+    /// <summary>Prépare une région sans ajouter de colonie ni consommer le hasard de la vie des habitants.</summary>
+    public LocalMap GenerateColonyMap(Species species) => MapGenerator.Generate(_mapWidth, _mapHeight,
+        unchecked(Seed + Colonies.Count * MapSeedStep), species.Biome);
+
+    /// <summary>Fonde une colonie en cours de partie ; une erreur ne modifie aucun état.</summary>
+    public bool TryFoundColony(LocalMap map, int campX, int campY, string name, Species species,
+        int founders, float worldX, float worldY, out Colony? colony, out string reason)
+    {
+        colony = null;
+        name = name.Trim();
+        if (Colonies.Count >= MaxPlayerColonies)
+            reason = $"Le monde accueille au maximum {MaxPlayerColonies} colonies.";
+        else if (name.Length is < 1 or > 40 || name.Any(char.IsControl))
+            reason = "Donnez un nom de 1 à 40 caractères à la colonie.";
+        else if (Colonies.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
+            reason = "Une colonie porte déjà ce nom.";
+        else if (!Species.All.Contains(species))
+            reason = "Choisissez un peuple disponible.";
+        else if (founders < ColonyFounder.MinStartingColonists || founders > ColonyFounder.MaxPlayerFounders)
+            reason = $"Choisissez de {ColonyFounder.MinStartingColonists} à {ColonyFounder.MaxPlayerFounders} fondateurs.";
+        else if (map.Width != _mapWidth || map.Height != _mapHeight || Colonies.Any(c => ReferenceEquals(c.Map, map)))
+            reason = "Cette région est déjà occupée ou ne correspond pas à la taille du monde.";
+        else if (!WorldMap.CanPlace(worldX, worldY, out reason) || !ColonyFounder.CanFoundAt(map, campX, campY, out reason))
+            return false;
+        else
+        {
+            colony = ColonyFounder.FoundAt(map, Random, name, founders, NextColonistId, Clock, species, campX, campY);
+            WorldMap.PlaceAt(colony, worldX, worldY);
+            if (Colonies.Count > 0)
+                Colonies[^1].Downstream = colony;
+            Colonies.Add(colony);
+            ColonyBrain.Think(colony, map, Clock);
+            reason = $"{colony.Name} a été fondée avec {founders} habitants.";
+            return true;
+        }
+        return false;
     }
 
     /// <summary>Le joueur répond à une prière : accord ou refus.</summary>

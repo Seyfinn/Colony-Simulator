@@ -23,6 +23,9 @@ public partial class WorldMapView : Control
     private const float Margin = 80f;
 
     public event Action<int>? ColonyClicked;
+    public event Action<float, float>? SiteClicked;
+    public bool PickingSite { get; set; }
+    private string _placementMessage = "";
 
     private WorldState _world = null!;
 
@@ -46,12 +49,17 @@ public partial class WorldMapView : Control
     /// <summary>Position à l'écran (dans ce contrôle) de chaque colonie, la carte du monde étant mise à l'échelle pour tenir.</summary>
     private List<Vector2> Layout()
     {
-        var raw = _world.Colonies.Select(c => _world.WorldMap.PositionOf(c)).ToList();
-        float minX = raw.Min(p => p.X), maxX = raw.Max(p => p.X), minY = raw.Min(p => p.Y), maxY = raw.Max(p => p.Y);
-        float spanX = Math.Max(1f, maxX - minX), spanY = Math.Max(1f, maxY - minY);
-        float scale = Math.Min((Size.X - 2 * Margin) / spanX, (Size.Y - 2 * Margin - 30) / spanY);
-        Vector2 origin = new(Size.X / 2f - (minX + maxX) / 2f * scale, Size.Y / 2f + 14 - (minY + maxY) / 2f * scale);
-        return raw.Select(p => origin + new Vector2(p.X, p.Y) * scale).ToList();
+        return _world.Colonies.Select(c => ToScreen(_world.WorldMap.PositionOf(c))).ToList();
+    }
+
+    private Rect2 Land => new(Margin, 76, Math.Max(1, Size.X - 2 * Margin), Math.Max(1, Size.Y - 120));
+    private Vector2 ToScreen((float X, float Y) point) => Land.Position +
+        new Vector2((point.X + WorldMap.Extent) / (2 * WorldMap.Extent) * Land.Size.X,
+            (point.Y + WorldMap.Extent) / (2 * WorldMap.Extent) * Land.Size.Y);
+    private (float X, float Y) ToWorld(Vector2 point)
+    {
+        Vector2 uv = (point - Land.Position) / Land.Size;
+        return ((uv.X * 2 - 1) * WorldMap.Extent, (uv.Y * 2 - 1) * WorldMap.Extent);
     }
 
     public override void _Draw()
@@ -65,7 +73,21 @@ public partial class WorldMapView : Control
         TextureFilter = TextureFilterEnum.Nearest;
         DrawRect(new Rect2(Vector2.Zero, Size), Edge, false, 2);
         DrawString(ArtDirection.HeadingFont, new Vector2(20, 30), "Carte du monde", HorizontalAlignment.Left, -1, 18, ArtDirection.Brass);
-        DrawString(font, new Vector2(20, 50), "Caravanes en marche · cliquez sur une colonie pour l'observer", HorizontalAlignment.Left, -1, 12, Muted);
+        DrawString(font, new Vector2(20, 50), PickingSite
+            ? "Cliquez dans le cadre pour choisir une région libre."
+            : "Cliquez sur une colonie pour l'observer · fondez de nouveaux peuples", HorizontalAlignment.Left, -1, 12, Muted);
+
+        DrawRect(Land, new Color(0, 0, 0, 0.12f));
+        DrawRect(Land, Edge, false, 1);
+        if (PickingSite && Land.HasPoint(GetLocalMousePosition()))
+        {
+            Vector2 mouse = GetLocalMousePosition();
+            var point = ToWorld(mouse);
+            bool valid = _world.WorldMap.CanPlace(point.X, point.Y, out _);
+            Color color = valid ? ArtDirection.Sage : MenuStyle.Error;
+            DrawCircle(mouse, 13, new Color(color, 0.35f));
+            DrawArc(mouse, 18, 0, Mathf.Tau, 32, color, 2);
+        }
 
         List<Vector2> points = Layout();
 
@@ -130,14 +152,26 @@ public partial class WorldMapView : Control
             string state = caravan.State == CaravanState.Outbound ? "→" : "←";
             DrawString(font, position + new Vector2(18, -6), $"{state} {caravan.Traders.Count} colons", HorizontalAlignment.Left, -1, 10, Ink);
         }
-        if (_world.Caravans.Count == 0)
-            DrawString(font, new Vector2(20, Size.Y - 16), "Aucune caravane en route.", HorizontalAlignment.Left, -1, 12, Muted);
+        DrawString(font, new Vector2(20, Size.Y - 16), PickingSite ? _placementMessage
+            : _world.Colonies.Count == 0 ? "Monde vierge · fondez votre première colonie."
+            : _world.Caravans.Count == 0 ? "Aucune caravane en route." : "", HorizontalAlignment.Left, Size.X - 40, 12, Muted);
     }
 
     public override void _GuiInput(InputEvent @event)
     {
         if (@event is not InputEventMouseButton { ButtonIndex: MouseButton.Left, Pressed: true } click || _world is null)
             return;
+        if (PickingSite)
+        {
+            if (Land.HasPoint(click.Position))
+            {
+                GetViewport().GuiGetFocusOwner()?.ReleaseFocus();
+                var point = ToWorld(click.Position);
+                if (_world.WorldMap.CanPlace(point.X, point.Y, out _placementMessage)) SiteClicked?.Invoke(point.X, point.Y);
+            }
+            AcceptEvent();
+            return;
+        }
         List<Vector2> points = Layout();
         for (int i = 0; i < points.Count; i++)
             if (points[i].DistanceTo(click.Position) <= DotRadius + 8)

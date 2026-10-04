@@ -75,6 +75,12 @@ public sealed class LocalMap
     /// <summary>Pour chaque case de rivière, l'index de la case vers laquelle elle coule (-1 sinon).</summary>
     private readonly int[] _downstream;
 
+    /// <summary>Largeur de la rivière au droit de chaque case de rivière, en cases (0 si ce n'est pas une rivière).</summary>
+    private readonly byte[] _riverWidth;
+
+    /// <summary>Humidité du sol, de 0 (sec) à 255 (détrempé) : les forêts poussent là où c'est humide, la terre nue là où c'est sec.</summary>
+    private readonly byte[] _moisture;
+
     /// <summary>Débit relatif de la rivière sur chaque case : 1 au naturel, moins en aval d'un barrage.</summary>
     private readonly float[] _flow;
 
@@ -125,6 +131,8 @@ public sealed class LocalMap
         _floodLevel = new byte[n];
         _downstream = new int[n];
         Array.Fill(_downstream, -1);
+        _riverWidth = new byte[n];
+        _moisture = new byte[n];
         _flow = new float[n];
         Array.Fill(_flow, 1f);
         _veins = new uint[n];
@@ -209,6 +217,18 @@ public sealed class LocalMap
 
     /// <summary>Une rivière : de l'eau peu profonde, qui se traverse à pied.</summary>
     public bool IsRiver(int x, int y) => _river[Index(x, y)];
+
+    /// <summary>
+    /// Largeur du fleuve au droit de cette case, en cases : 1 pour un ruisseau, 3 ou plus pour un fleuve large,
+    /// 0 si la case n'est pas une rivière.
+    /// </summary>
+    public int RiverWidth(int x, int y) => _riverWidth[Index(x, y)];
+
+    /// <summary>Un tronçon de fleuve large (deux cases ou plus), à l'opposé d'un ruisseau d'une case de large.</summary>
+    public bool IsWideRiver(int x, int y) => _river[Index(x, y)] && _riverWidth[Index(x, y)] > 1;
+
+    /// <summary>Humidité du sol de 0 (sec) à 1 (détrempé), fixée une fois pour toutes à la génération.</summary>
+    public float GetMoisture(int x, int y) => _moisture[Index(x, y)] / 255f;
 
     /// <summary>Un canal creusé sur cette case, à sec ou en eau.</summary>
     public bool IsCanal(int x, int y) => _canal[Index(x, y)] != 0;
@@ -485,10 +505,11 @@ public sealed class LocalMap
         Noise.Fractal3D(x * 0.11f, y * 0.11f, level * 0.45f, Seed + 500, 3) > 0.64f;
 
     /// <summary>Utilisé par le générateur : trace une rivière sur la case (sans plante, poissonneuse).</summary>
-    internal void SetRiver(int x, int y, int downX, int downY)
+    internal void SetRiver(int x, int y, int downX, int downY, int width = 1)
     {
         int i = Index(x, y);
         _river[i] = true;
+        _riverWidth[i] = (byte)width;
         _downstream[i] = InBounds(downX, downY) ? Index(downX, downY) : -1;
         _flora[i] = FloraType.None;
         _floraGrowth[i] = 0f;
@@ -511,9 +532,10 @@ public sealed class LocalMap
     }
 
     // Utilisé uniquement par le générateur de carte.
-    internal void SetGenerated(int x, int y, int elevation, SoilType soil, FloraType flora, float growth)
+    internal void SetGenerated(int x, int y, int elevation, SoilType soil, FloraType flora, float growth, float moisture = 0.5f)
     {
         int i = Index(x, y);
+        _moisture[i] = (byte)Math.Clamp((int)MathF.Round(moisture * 255f), 0, 255);
         _elevation[i] = (byte)elevation;
         _originalElevation[i] = (byte)elevation;
         _soil[i] = soil;
