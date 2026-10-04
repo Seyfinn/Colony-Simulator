@@ -11,8 +11,7 @@ namespace GodColony;
 
 /// <summary>
 /// La carte du monde : une grille d'hexagones colorés par biome, avec le relief, les fleuves, les colonies et les caravanes
-/// qui suivent leur route de case en case. Visuel volontairement rudimentaire (aplats de couleur), à remplacer par les
-/// illustrations (voir le cahier des charges, tâche T-012).
+/// qui suivent leur route de case en case. Les PNG par biome et les reliefs illustrent le terrain (T-012).
 /// Un clic sur une colonie la fait observer ; pendant une fondation, un clic sur une case libre la choisit.
 /// La molette zoome, le clic droit (ou du milieu) maintenu fait glisser la carte.
 /// </summary>
@@ -79,22 +78,8 @@ public partial class WorldMapView : Control
         : species == Species.Orc ? Color.Color8(205, 98, 86)
         : Color.Color8(226, 190, 119);
 
-    /// <summary>La couleur d'aplat de chaque biome (provisoire, en attendant les tuiles dessinées).</summary>
-    public static Color BiomeColor(Biome biome) => biome switch
-    {
-        Biome.Ocean => Color.Color8(38, 72, 112),
-        Biome.IceSheet => Color.Color8(228, 236, 242),
-        Biome.Tundra => Color.Color8(160, 168, 150),
-        Biome.BorealForest => Color.Color8(58, 96, 78),
-        Biome.TemperateForest => Color.Color8(68, 128, 62),
-        Biome.Grassland => Color.Color8(146, 182, 92),
-        Biome.Steppe => Color.Color8(188, 178, 112),
-        Biome.Desert => Color.Color8(224, 198, 132),
-        Biome.Savanna => Color.Color8(198, 170, 86),
-        Biome.TropicalForest => Color.Color8(34, 116, 56),
-        Biome.Swamp => Color.Color8(86, 108, 78),
-        _ => Colors.Magenta,
-    };
+    /// <summary>Palette commune aux images, à la légende et au secours procédural.</summary>
+    public static Color BiomeColor(Biome biome) => WorldBiomeArt.Ground(biome);
 
     // ---------- Géométrie des hexagones ----------
 
@@ -239,7 +224,12 @@ public partial class WorldMapView : Control
             float jitter = (((tile.Col * 73856093) ^ (tile.Row * 19349663)) & 15) / 15f - 0.5f;
             color = color.Lightened(0.04f * jitter);
             if (AssetLibrary.Get($"world/hex_{BiomeKey(tile.Biome)}.png") is { } texture)
+            {
+                // Le masque pixel art peut laisser un interstice d'un pixel aux zooms fractionnaires.
+                // Un aplat de même couleur sous le PNG raccorde les cases ; il reste dans le calque fixe.
+                g.DrawColoredPolygon(Hexagon(center, 1.02f), color);
                 g.DrawTextureRect(texture, HexBox(center), false);
+            }
             else
                 g.DrawColoredPolygon(Hexagon(center, 1.02f), color);
             DrawRelief(g, tile, center, w);

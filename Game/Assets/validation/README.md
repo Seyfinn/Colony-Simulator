@@ -1,5 +1,19 @@
 # Validation graphique — GodColony
 
+## T-012 / T-013 — biomes du monde et paysages locaux — 2026-10-04
+
+- `t012_biomes.png` : onze hexagones et trois reliefs, agrandis ×4, puis à taille native ; chaque biome est aussi montré à 13 pixels de large. Les PNG de production font exactement **32 × 37, RGBA 8 bits**, avec sol opaque dans l'hexagone et coins transparents.
+- `t012_carte_monde.png` : vrai `WorldMapView`, quatre colonies, zoom initial ×2,2 ; palette et légende assorties, reliefs et fleuves superposés. Un aplat sous les PNG élimine les interstices de découpe aux zooms fractionnaires ; il reste dans le calque de terrain fixe.
+- `t012_vue_globale.png` : même contrôle, ramené au zoom minimal par son entrée de molette ; contrôle de la lecture à distance et des raccords.
+- `t013_paysages.png` : neuf régions habitables générées par `MapStyle.For` à partir de vraies cases du monde (graine 42), avec leurs proportions de terrain et de forêt. Les cadrages choisissent des zones de la carte sans y ajouter de végétation. Chaque panneau utilise `TerrainPainter.Paint`, `EnvironmentDetails.Draw` et `FloraPainter.Draw`, comme le jeu.
+- `t013_en_jeu.png` : scène principale habituelle, `--zoom=1.5 --capture=chemin.png`, avec les vrais habitants, cultures, eau et interface.
+
+Scène isolée : `biomes.tscn`. Après compilation, lancer Godot avec `--path Game res://Assets/validation/biomes.tscn -- --capture=chemin.png` pour la planche, ajouter `--preview=world` pour la carte (et `--overview` pour la vue entière), ou `--preview=local` pour les paysages. **Seule l'option explicite `--export-biomes` écrit les 14 PNG de production**, depuis `WorldBiomeArt`. Aucun changement de scène principale.
+
+À chaque lancement de cette scène, contrôle du chargement et des dimensions des images, de l'opacité du sol et de la transparence des coins. Onze régions de géométrie identique vérifient le déterminisme du terrain et des essences ; empreintes avant/après du relief, sol, flore, croissance, humidité, eau et baies inchangées. La taïga doit compter plus de 90 % de conifères ; les régions sèches plus de 85 % d'acacias. La galerie vérifie aussi l'empreinte après le dessin de la flore. `--smoke-menu` : **INTERFACE_SMOKE_OK**, fondation, panneaux et commandes existantes conservés.
+
+**Contexte de compilation** : Claude a inclus les premières adaptations locales dans `d1958c8`, puis commencé d'autres modifications de simulation (type `Ailment` temporairement manquant). Les captures ont donc été vérifiées sur une copie de `d1958c8` avec l'intégralité des fichiers graphiques de cette livraison : build **0 avertissement / 0 erreur**, captures et smoke réussis. **Dernière vérification du projet principal : build 0 avertissement / 0 erreur et INTERFACE_SMOKE_OK**, après disponibilité des nouveaux types de simulation. Le dossier de copie est supprimé après contrôle ; aucune modification de simulation ni de ses tests par Codex. Les restrictions locales de cache shader/certificats de Godot n'empêchent pas les captures.
+
 ## T-002 / T-004 / T-005 / T-007 / T-008 / T-009 / T-010 — 2026-10-04
 
 33 nouveaux PNG contrôlés par `python Game/Assets/tools/verifier_livraison.py` : dimensions exactes, noms du catalogue, RGBA 8 bits, étapes et roue distinctes. Build : 0 avertissement / 0 erreur. Les captures suivantes ont été inspectées :

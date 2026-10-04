@@ -22,7 +22,7 @@ public static class TreeDistribution
 
         public int Choose(float roll)
         {
-            float choice = roll * (Oak + Birch + Pine + Willow + Acacia + Tropical);
+            float choice = Math.Min(roll, 0.99999994f) * (Oak + Birch + Pine + Willow + Acacia + Tropical);
             if (choice < Oak) return 0;
             if (choice < Oak + Birch) return 1;
             if (choice < Oak + Birch + Pine) return 2;

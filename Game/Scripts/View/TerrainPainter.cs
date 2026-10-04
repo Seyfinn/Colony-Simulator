@@ -38,6 +38,7 @@ public static class TerrainPainter
             Biome.Tundra => new(new(113, 132, 119), new(144, 157, 137), new(170, 180, 155)),
             Biome.IceSheet => new(new(182, 203, 204), new(217, 229, 223), new(235, 242, 231)),
             Biome.BorealForest => new(new(62, 102, 86), new(83, 122, 99), new(113, 145, 117)),
+            Biome.Grassland => new(new(110, 139, 82), new(140, 159, 97), new(166, 178, 117)),
             Biome.Steppe => new(new(139, 138, 81), new(174, 164, 97), new(200, 186, 120)),
             Biome.Desert => new(new(185, 162, 104), new(211, 186, 129), new(230, 208, 153)),
             Biome.Savanna => new(new(151, 130, 65), new(186, 159, 82), new(212, 188, 111)),
