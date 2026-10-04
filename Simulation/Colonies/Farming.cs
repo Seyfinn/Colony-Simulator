@@ -19,6 +19,10 @@ public static class Farming
     public static int YieldAt(LocalMap map, int x, int y) =>
         (int)MathF.Round(PlotYield * map.SoilRichness) + (map.IsFertileBank(x, y) ? BankBonus : 0) + (map.IsIrrigated(x, y) ? IrrigationBonus : 0);
 
+    /// <summary>Ce que rapporte la parcelle à cette colonie : l'assolement ajoute une céréale.</summary>
+    public static int YieldAt(Colony colony, LocalMap map, int x, int y) =>
+        YieldAt(map, x, y) + (Knowledge.Has(colony, Discovery.CropRotation) ? Knowledge.CropRotationBonus : 0);
+
     /// <summary>Céréales de plus pour une parcelle qu'un canal irrigue.</summary>
     public const int IrrigationBonus = 2;
 

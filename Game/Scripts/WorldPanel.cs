@@ -20,12 +20,14 @@ public partial class WorldPanel : CanvasLayer
     private ScrollContainer _coloniesScroll = null!;
     private readonly List<Button> _colonyButtons = [];
     private EconomyDashboard _economyDashboard = null!;
-    private Button _economyButton = null!, _mapButton = null!, _foundingButton = null!;
-    private PanelContainer _economyCard = null!;
+    private Button _economyButton = null!, _mapButton = null!, _foundingButton = null!, _civilizationButton = null!;
+    private PanelContainer _economyCard = null!, _civilizationCard = null!;
+    private CivilizationPanel _civilization = null!;
+    private Label _civilizationTitle = null!;
     private Label _title = null!;
     private WorldMapView _map = null!;
     private double _sinceRefresh = 1;
-    private bool _open, _navigationEnabled = true;
+    private bool _open, _civilizationOpen, _navigationEnabled = true;
     private bool _stocksVisible = true;
     private int _observed;
     public bool PickingSite
@@ -47,6 +49,7 @@ public partial class WorldPanel : CanvasLayer
         _coloniesScroll.Visible = enabled;
         _mapButton.Disabled = !enabled;
         _economyButton.Disabled = !enabled || _world.Colonies.Count == 0;
+        _civilizationButton.Disabled = !enabled || _world.Colonies.Count == 0;
         _foundingButton.Disabled = !enabled;
     }
 
@@ -56,11 +59,27 @@ public partial class WorldPanel : CanvasLayer
         set
         {
             _open = value && _world is not null && _world.Colonies.Count > 0;
-            if (_open) MapOpen = false;
+            if (_open) { MapOpen = false; _civilizationOpen = false; }
             _sinceRefresh = 1;
             UpdateVisibility();
         }
     }
+
+    /// <summary>Le panneau des savoirs et des relations entre colonies (touche R).</summary>
+    public bool CivilizationOpen
+    {
+        get => _civilizationOpen;
+        set
+        {
+            _civilizationOpen = value && _world is not null && _world.Colonies.Count > 0;
+            if (_civilizationOpen) { MapOpen = false; _open = false; }
+            _sinceRefresh = 1;
+            UpdateVisibility();
+        }
+    }
+
+    public bool ShowingRelations => _civilization.ShowingRelations;
+    public void ShowRelations() { CivilizationOpen = true; _civilization.ShowRelations(); }
 
     public bool MapOpen
     {
@@ -69,13 +88,17 @@ public partial class WorldPanel : CanvasLayer
         {
             if (_map is null) return;
             _map.Visible = value;
-            if (value) _open = false;
+            if (value) { _open = false; _civilizationOpen = false; }
             _sinceRefresh = 1;
             UpdateVisibility();
         }
     }
 
     public void Init(WorldState world) { _world = world; _map?.Init(world); }
+
+    public ResourceHistory? ResourceHistory { get; set; }
+
+    public void ShowResourceGraphs() { Open = true; _economyDashboard.ShowGraphs(); }
 
     public override void _Ready()
     {
@@ -100,6 +123,10 @@ public partial class WorldPanel : CanvasLayer
         _economyButton.Name = "Economie"; _economyButton.ToggleMode = true;
         _economyButton.Pressed += () => Open = !Open;
         navigation.AddChild(_economyButton);
+        _civilizationButton = Chip("Savoirs et relations", "Âge, savoirs, alliances et guerres de la colonie · R");
+        _civilizationButton.Name = "Civilisation"; _civilizationButton.ToggleMode = true;
+        _civilizationButton.Pressed += () => CivilizationOpen = !CivilizationOpen;
+        navigation.AddChild(_civilizationButton);
         _foundingButton = Chip("+ Fonder une colonie", "Choisir un peuple, une région et un emplacement de camp");
         _foundingButton.Name = "FonderColonie";
         _foundingButton.Pressed += () => FoundingRequested?.Invoke();
@@ -124,6 +151,7 @@ public partial class WorldPanel : CanvasLayer
         _map.ColonyClicked += index => { MapOpen = false; ColonyRequested?.Invoke(index); };
         _map.SiteClicked += tile => SiteRequested?.Invoke(tile);
         BuildEconomy();
+        BuildCivilization();
         _root.Resized += ResizePanels;
         ResizePanels();
     }
@@ -132,9 +160,9 @@ public partial class WorldPanel : CanvasLayer
     {
         var layout = InterfaceLayout.For(_root.Size, _stocksVisible);
         _stack.OffsetTop = layout.NavigationTop;
-        _map.OffsetTop = _economyCard.OffsetTop = layout.ContentTop;
+        _map.OffsetTop = _economyCard.OffsetTop = _civilizationCard.OffsetTop = layout.ContentTop;
         _map.OffsetRight = PickingSite ? -InterfaceLayout.SideWidth(_root.Size) - 40 : -16;
-        _economyCard.OffsetRight = 16 + Math.Clamp(_root.Size.X * 0.49f, 600, 740);
+        _economyCard.OffsetRight = _civilizationCard.OffsetRight = 16 + Math.Clamp(_root.Size.X * 0.49f, 600, 740);
     }
 
     public void SetStocksVisible(bool visible)
@@ -148,6 +176,8 @@ public partial class WorldPanel : CanvasLayer
         if (_economyCard is null) return;
         _economyCard.Visible = _open;
         _economyButton.SetPressedNoSignal(_open);
+        _civilizationCard.Visible = _civilizationOpen;
+        _civilizationButton.SetPressedNoSignal(_civilizationOpen);
         _mapButton.SetPressedNoSignal(MapOpen);
     }
 
@@ -183,10 +213,43 @@ public partial class WorldPanel : CanvasLayer
         }
         _map.Observed = _observed;
         _economyButton.Disabled = _world.Colonies.Count == 0 || !_navigationEnabled;
+        _civilizationButton.Disabled = _economyButton.Disabled;
         _foundingButton.Disabled = !_navigationEnabled || _world.Colonies.Count >= WorldState.MaxPlayerColonies;
-        if (_world.Colonies.Count == 0) _open = false;
+        if (_world.Colonies.Count == 0) _open = _civilizationOpen = false;
         UpdateVisibility();
         if (_open) RefreshEconomy(_world.Colonies[_observed]);
+        if (_civilizationOpen)
+        {
+            Colony colony = _world.Colonies[_observed];
+            _civilizationTitle.Text = $"Savoirs et relations · {colony.Name}";
+            _civilization.Refresh(_world, colony);
+        }
+    }
+
+    private void BuildCivilization()
+    {
+        _civilizationCard = new PanelContainer { Name = "PanneauCivilisation", Visible = false, MouseForcePassScrollEvents = false };
+        _civilizationCard.AddThemeStyleboxOverride("panel", MenuStyle.Surface(16));
+        _root.AddChild(_civilizationCard);
+        _civilizationCard.AnchorBottom = 1;
+        _civilizationCard.OffsetLeft = 16; _civilizationCard.OffsetBottom = -60;
+        var frame = MenuStyle.Column(_civilizationCard, 10);
+        var heading = new HBoxContainer();
+        frame.AddChild(heading);
+        _civilizationTitle = MenuStyle.Text(heading, "Savoirs et relations", 20, ArtDirection.Brass);
+        _civilizationTitle.ClipText = true; _civilizationTitle.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        _civilizationTitle.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        var close = Chip("×", "Fermer · R / Échap");
+        close.Name = "FermerCivilisation"; close.Pressed += () => CivilizationOpen = false;
+        heading.AddChild(close);
+        var scroll = new ScrollContainer
+        {
+            Name = "DefilementCivilisation", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsVertical = Control.SizeFlags.ExpandFill, MouseForcePassScrollEvents = false,
+        };
+        frame.AddChild(scroll);
+        _civilization = new CivilizationPanel();
+        scroll.AddChild(_civilization);
     }
 
     private void BuildEconomy()
@@ -219,8 +282,9 @@ public partial class WorldPanel : CanvasLayer
     {
         _title.Text = $"Économie · {colony.Name}";
         _economyDashboard.Refresh(_world, colony);
+        _economyDashboard.RefreshGraphs(colony, ResourceHistory);
     }
-    private static Button Chip(string text, string hint)
+    internal static Button Chip(string text, string hint)
     {
         var button = new Button
         {

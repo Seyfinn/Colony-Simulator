@@ -313,8 +313,12 @@ public partial class ColonistsView : Node2D
         if (building.IsComplete)
         {
             DrawGroundShadow(basePoint + new Vector2(34, -1), 29, 5, 0.22f);
-            Texture2D sprite = SpriteFactory.BuildingSprite(building.Type.ToString(), BiomeVisuals.At(_colony.Map, building.X, building.Y));
+            Texture2D sprite = building.Type == BuildingType.Cask ? WorkshopArt.Cask(building, _world.Clock.Ticks)
+                : SpriteFactory.BuildingSprite(building.Type.ToString(), BiomeVisuals.At(_colony.Map, building.X, building.Y));
             DrawTexture(sprite, basePoint - new Vector2(0, sprite.GetHeight()));
+            if (building.Type == BuildingType.Cask && WorkshopArt.CaskState(building, _world.Clock.Ticks) == "brewing")
+                foreach (Vector2 bubble in WorkshopArt.Bubbles(_world.Clock.Ticks))
+                    DrawRect(new Rect2(basePoint - new Vector2(0, 80) + bubble, new Vector2(2, 2)), ArtDirection.Cream);
             if (building.Type == BuildingType.Mill)
             {
                 float flow = Hydrology.MillFlow(_colony.Map, building);
@@ -410,7 +414,8 @@ public partial class ColonistsView : Node2D
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
         Vector2 feet = DisplayPosition(colonist).Round();
         var appearance = PeoplesSprites.Describe(colonist, BiomeVisuals.At(_colony.Map, colonist.TileX, colonist.TileY));
-        bool traveler = _colony.Transients.Contains(colonist) || _world.Caravans.Exists(c => c.Traders.Contains(colonist));
+        bool warrior = CivilizationArt.IsWarrior(_world, colonist);
+        bool traveler = !warrior && (_colony.Transients.Contains(colonist) || _world.Caravans.Exists(c => c.Traders.Contains(colonist)));
         ImageTexture[] frames = traveler ? RemainingArt.TraderFrames(appearance.People) : PeoplesSprites.Get(appearance);
         Vector2 spriteOffset = new(-frames[0].GetWidth() / 2f, -frames[0].GetHeight());
         float scale = colonist.Stage == LifeStage.Child ? 0.7f : 1f;
@@ -439,6 +444,7 @@ public partial class ColonistsView : Node2D
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
 
         DrawVillageGesture(colonist, feet);
+        if (warrior) CivilizationArt.DrawEquipment(this, feet, appearance, colonist.X < colonist.PrevX, frame);
         if (colonist.Ailment == Ailment.Injured) DrawRect(new Rect2(feet + new Vector2(-3, -22), new Vector2(5, 2)), ArtDirection.Cream);
 
         // Ce qu'il rapporte au camp, en petit sous le bras.

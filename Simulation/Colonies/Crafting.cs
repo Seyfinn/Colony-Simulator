@@ -34,9 +34,14 @@ public static class Crafting
 
     /// <summary>
     /// Le prochain atelier à bâtir. Le pain passe avant le fer : manger mieux libère des bras pour tout le reste.
+    /// Un atelier dont la colonie ignore le savoir attend qu'elle l'ait découvert (voir <see cref="Knowledge"/>).
     /// </summary>
-    public static BuildingType? NextWorkshopToBuild(Colony colony, LocalMap map) =>
-        FoodChain.NextWorkshopToBuild(colony, map) ?? ToolChain.NextWorkshopToBuild(colony);
+    public static BuildingType? NextWorkshopToBuild(Colony colony, LocalMap map)
+    {
+        if (FoodChain.NextWorkshopToBuild(colony, map) is { } food && Knowledge.Allows(colony, food))
+            return food;
+        return ToolChain.NextWorkshopToBuild(colony) is { } iron && Knowledge.Allows(colony, iron) ? iron : null;
+    }
 
     /// <summary>Où travailler maintenant, s'il y a quelque chose d'utile à fabriquer.</summary>
     public static Building? PickJob(Colony colony, int heatingReserve) =>

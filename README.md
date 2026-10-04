@@ -32,14 +32,56 @@ Règle d'or : **la simulation ne connaît pas l'affichage**. Godot lit `WorldSta
   - la cuisine : `Cuisine` (gâteau et ragoût) ;
   - la vie du village : `Civic` (enclos, puits, entrepôt, infirmerie, marché, taverne, école : ce que la colonie bâtit ensuite, et ce que chacun apporte) ;
   - les événements et les objectifs : `Events` (incendie, pillards, colporteur) et `Milestones` (jalons que chaque colonie atteint) ;
-  - les grandes décisions : `Prayers` (la colonie demande l'accord du joueur).
+  - le progrès : `Knowledge` (savoirs, âges, étude, savoirs qui circulent avec les caravanes) ;
+  - les relations entre colonies : `Diplomacy` (opinions, querelles, présents, alliances, guerre et paix), `Warfare` (bandes de guerriers, batailles, butin),
+    `Schism` (un groupe part fonder une colonie sœur) ;
+  - les grandes décisions : `Prayers` (la colonie demande l'accord du joueur : barrage, alliance, guerre, paix, schisme).
 
 ### Ce que la colonie bâtit
 
 Après les huttes et les ateliers du fer et du blé, une colonie dont la survie est assurée bâtit, dans cet ordre et un chantier à la fois
 (`Civic.NextToBuild`) : un **enclos** (dès 6 habitants et des champs), un **puits** (8 habitants), un **métier à tisser** (quand la laine s'accumule),
 un **entrepôt**, une **infirmerie** (après deux fièvres ou 12 habitants), un **marché** (après une caravane ou 14 habitants), une **taverne** (12) et
-une **école** (3 enfants ou 16 habitants).
+une **école** (3 enfants ou 16 habitants). Elle passe ceux dont elle ignore encore le savoir et les étudie en attendant.
+
+### Savoirs et âges
+
+Rien ne se bâtit sans le savoir qui va avec (`Knowledge.Required`) : l'**élevage** (enclos), la **métallurgie** (charbonnière, bas fourneau, forge),
+la **meunerie** (moulin, four), la **maçonnerie** (puits, entrepôt), l'**irrigation** (canaux), puis le **tissage**, la **médecine**, la **brasserie**
+(taverne, fûts), le **commerce** (marché), l'**hydraulique** (barrage), l'**écriture** (école) et la **diplomatie** (alliances). Les savoirs du bourg
+apportent des avantages : **assolement** (+1 céréale par parcelle), **fortifications** (défense ×1,5), **art de la guerre** (attaque ×1,4),
+**pharmacopée** (fièvres −40 %), **monnaie frappée** (caravanes +25 %, voyages −15 %), **philosophie** (savoir +30 %).
+
+- Chaque peuple part avec ses savoirs : humains (agriculture, élevage, maçonnerie), nains (agriculture, métallurgie, maçonnerie),
+  elfes (agriculture, médecine, irrigation), orques (agriculture, élevage, métallurgie). Une colonie sœur hérite de ceux de sa mère.
+- Chaque jour, la colonie accumule des points de savoir : 0,1 par adulte (plus s'il est curieux), 0,25 par ancien, 0,04 par adolescent ;
+  ×1,6 avec une école. Un savoir coûte 6, 20 ou 50 points selon son rang, et 12 % de plus pour chaque savoir connu au-delà des quatre premiers.
+- La colonie étudie d'abord ce qui lui manque pour bâtir ce qu'elle veut (`Knowledge.Wish`), en remontant ce qu'il demande ; sinon le savoir le plus proche.
+- Une caravane rapporte 15 % du coût de chaque savoir de son hôte (30 % entre alliés), et l'hôte apprend de même.
+- Les âges : **bois**, **fer** (métallurgie), **village** (trois savoirs du village), **bourg** (trois savoirs du bourg). Mesuré sur quatre peuples :
+  âge du fer en 1 à 3 ans, du village vers 5 ou 6 ans, du bourg vers 10 ans.
+
+### Relations entre colonies
+
+Chaque colonie a une opinion des autres, de −100 à +100, qui rejoint chaque jour de 3 points la somme de ses raisons (`Diplomacy.OpinionFactors`) :
+affinité des peuples (même peuple +15, elfes et orques −25…), tempérament (les belliqueux aiment moins), caravanes échangées (+5 chacune, +25 au plus),
+rancunes (−25 par point : barrage en amont, querelle de frontière, attaque), terres voisines (jusqu'à −25), envie d'un voisin riche, tentation d'un voisin
+faible pour un peuple belliqueux, alliance (+25), guerre (−40), trêve (−10), diplomatie (+8), racines communes après un schisme (+25).
+
+- **Querelles de frontière** entre colonies à moins de 5 cases : une rancune naît, surtout entre belliqueux. Les colonies pacifiques ou diplomates
+  envoient des **présents** (jusqu'à 60 pièces) à une voisine qui les boude.
+- **Alliance** : deux colonies qui s'estiment (50 et plus), dont l'une connaît la diplomatie, peuvent s'allier par une prière. Entre alliés, une caravane
+  n'a pas besoin de rapporter plus que le voyage ne coûte, les savoirs circulent deux fois plus vite, et chacun envoie des renforts (0,15 par adulte valide)
+  à l'autre attaqué. L'alliance se rompt quand l'opinion tombe sous 15.
+- **Guerre** : une colonie hostile (−50 et moins), d'au moins 10 habitants, sans autre guerre et qui se croit au moins aussi forte, prie pour déclarer la guerre.
+  Tous les quatre jours au plus, l'agresseur (et le défenseur s'il s'en sent la force) envoie une **bande** d'un adulte valide sur trois (2 à 8), armés de ses outils :
+  elle marche sur la carte du monde, livre bataille (guerriers 1, armés 1,6 ; défenseurs 0,6 plus leurs outils ; fortifications, art de la guerre, renforts),
+  pille un quart des pièces et des vivres si elle l'emporte, tue ou blesse des défenseurs, ou laisse ses morts sur le terrain. Plus de commerce entre ennemis.
+- **Paix** : une colonie lasse ou battue prie pour la paix ; l'ennemi accepte s'il est las, s'il ne gagne pas ou si la guerre dure depuis 15 jours.
+  Une trêve de 20 jours (30 avec la diplomatie) suit.
+- **Schisme** : dans un village de 30 habitants (20 s'il est à l'étroit ou morose), un adulte ambitieux et peu enraciné rêve de sa propre colonie.
+  Ses amis, son conjoint et leurs enfants le suivraient (le tiers du village au plus), avec leur part des réserves. Accordé par une prière, le groupe fonde
+  une colonie sœur sur la région libre la plus agréable à moins de 8 cases, qui garde les savoirs et l'affection de sa mère.
 
 - **Élevage** : les poules pondent, les vaches donnent du lait, les moutons de la laine ; les bêtes paissent hors de l'hiver, mais l'hiver
   (et pendant une sécheresse) elles mangent du grain (une vache mange pour deux), faute de quoi l'une d'elles dépérit chaque jour. Les œufs et le lait se mangent
@@ -131,7 +173,10 @@ L'économie et les prières disposent de panneaux défilants ; l'actualisation d
 Les panneaux se replient lorsqu'une carte ou les commandes occupent leur emplacement.
 
 **C** ou **Recentrer** rejoint le camp, ou l'habitant sélectionné. **Tab** passe à la colonie suivante.
-**M** ouvre la carte du monde, **E** l'économie, **P** les prières, **J** le journal et **H** les commandes.
+**M** ouvre la carte du monde, **E** l'économie, **R** les savoirs et relations, **P** les prières, **J** le journal et **H** les commandes.
+Le panneau **Savoirs et relations** montre l'âge de la colonie, le savoir à l'étude et l'arbre des savoirs, puis son opinion de chaque autre colonie
+(avec ses raisons), ses pactes, ses batailles et les bandes de guerriers en marche. La carte du monde trace les alliances (vert), les guerres (rouge)
+et les trêves (pointillé clair), et les bandes de guerriers y avancent sous leur fanion.
 Ces raccourcis sont suspendus pendant la saisie d'un nom. **Échap** annule le renommage en conservant la fiche,
 puis ferme les panneaux avant d'ouvrir le menu de pause. Les déplacements de caméra restent limités au terrain.
 
@@ -151,6 +196,38 @@ les habitants à la case choisie, avec leurs provisions et 400 pièces. Le monde
 Chaque colonie possède sa propre carte locale ; les anciennes colonies restent à leur emplacement lors d'une fondation.
 La simulation est suspendue pendant les menus et la fondation ; annuler conserve la vitesse et la partie précédentes.
 
+### Graphiques des ressources
+
+**E → Graphiques** affiche les flux de la colonie observée, ressource par ressource : **production**, **utilisation**,
+**achats** et **ventes**, sur une même échelle en unités par jour. Choisissez les 20, 60 ou 240 derniers jours ;
+le survol donne les quatre valeurs et la date exacte, et la légende permet de masquer chaque courbe.
+Les moyennes de la période et le stock actuel complètent le graphe. Le panneau reste accessible à toutes les vitesses.
+
+Les provisions initiales, les cargaisons en voyage et les retours de matériaux ne comptent pas comme production.
+Les achats et ventes sont relevés au moment où l'échange est conclu, y compris ceux des colporteurs ; les pertes
+(pourriture, pillage, incendie) sont séparées de l'utilisation. Celle-ci comprend les matériaux affectés aux chantiers
+et aux recettes. Un relevé est pris chaque jour, même si le panneau est fermé ; les 240 derniers sont conservés
+sans réduire les pics commerciaux. Comme les autres courbes, l'historique repart au chargement d'une partie,
+sans changer le format des sauvegardes.
+
+### Vue chiffrée (×200)
+
+Les vitesses sont ×1, ×4 et ×30 (touches **1**, **2**, **3**) et **×200** (touche **4**), qui fait passer une année en 4,5 secondes.
+À ×200, la carte et les habitants ne sont plus dessinés : leurs vues sont libérées, textures comprises, et la simulation reçoit
+jusqu'à 25 ms par image au lieu de 10. À leur place, la **vue chiffrée** (`StatsPanel`) montre le monde (population et sa courbe,
+colonies habitées, caravanes, tombes et leurs causes, vitesse réellement atteinte, temps écoulé) puis une carte par colonie :
+habitants, humeur, réserves, pièces, bâtiments, bêtes, malades, tombes, jalons, alertes (réserves basses, froid, sécheresse,
+prière en attente) et dernière pensée. Les courbes suivent au choix les habitants, les réserves, l'humeur ou les pièces ; sous les cartes,
+la comparaison met les colonies sur la même échelle (les huit premières, chacune avec sa teinte, reprise par le liseré de sa carte).
+Le survol d'une courbe en donne les relevés.
+
+Les relevés (un par jour de jeu ; au-delà de 480, un sur deux) sont tenus par l'affichage (`View/ColonyHistory`) dès le début
+de la partie, quelle que soit la vitesse, et repartent de zéro au chargement. La pause garde la vue chiffrée ; **1**, **2** ou **3**,
+**Observer** sur une colonie (ou son bouton dans la barre des colonies) rendent la carte, repeinte telle que les années l'ont changée,
+et la vitesse d'avant (en restant en pause si le jeu l'était). **Tab** désigne la colonie à retrouver, et celle de l'écran Économie.
+Une partie enregistrée en vue chiffrée s'y recharge sans peindre la carte. Mesuré sur un Ryzen 5 7600X (version Debug du jeu,
+quatre colonies) : ×200 tenu après dix ans de partie, la simulation prenant environ 6 ms par image.
+
 Pour vérifier le parcours des contrôles Godot après compilation :
 
 ```bash
@@ -159,24 +236,26 @@ godot --path Game --fixed-fps 60 -- --smoke-saves
 ```
 
 Le scénario vérifie l'accueil, une graine invalide, un monde vierge, la fondation, les paramètres persistants,
-la pause, l'annulation, la reprise, le remplacement du monde, les raccourcis, la saisie, les limites de caméra et le défilement des panneaux.
+la pause, l'annulation, la reprise, le remplacement du monde, les raccourcis, la saisie, les limites de caméra, le défilement des panneaux
+et la vue chiffrée (carte libérée, pause, choix des courbes, retour à la carte).
 Le second scénario vérifie les sauvegardes, leur restauration,
-les confirmations, les copies de secours, les fichiers endommagés et les raccourcis. Ils fonctionnent aussi avec `--headless`.
+les confirmations, les copies de secours, les fichiers endommagés, les raccourcis et le rechargement en vue chiffrée. Ils fonctionnent aussi avec `--headless`.
 `--smoke-captures=chemin` enregistre les étapes dans un dossier existant lorsque le rendu est activé.
 
 ### Options de développement (en ligne de commande, après `--`)
 
-`--capture=chemin.png` (capture puis quitte), `--advance-hours=N`, `--speed=1|4|30`, `--zoom=N`,
-`--colony=N` (colonie observée), `--open-world` (panneau économie), `--open-map` (carte du monde), `--open-prayers`, `--demo-prayer`,
+`--capture=chemin.png` (capture puis quitte), `--advance-hours=N`, `--speed=1|4|30|200`, `--zoom=N`,
+`--colony=N` (colonie observée), `--open-world` (panneau économie), `--open-graphs` (graphiques des ressources), `--open-map` (carte du monde), `--open-prayers`, `--demo-prayer`,
 `--demo-dam`, `--auto-dam`, `--focus-dam`, `--demo-workshops`, `--demo-quarry`, `--select-first`,
-`--focus-fields`, `--focus-quarry`. Les options sont lues dans l'ordre : `--auto-dam --advance-hours=1000 --focus-dam`.
+`--focus-fields`, `--focus-quarry`, `--open-knowledge`, `--open-relations`, `--demo-war` (la colonie suivante déclare la guerre à la colonie observée
+et envoie ses guerriers ; une troisième s'allie à l'observée). Les options sont lues dans l'ordre : `--auto-dam --advance-hours=1000 --focus-dam`.
 
 Sans option, le jeu ouvre l'accueil. Les outils habituels démarrent directement la partie de démonstration à quatre colonies.
 `--menu`, `--menu-world` et `--menu-settings` affichent les écrans de menu pour une capture ;
 `--empty-world` démarre un monde vierge et `--demo-foundation` affiche un aperçu de camp prêt à confirmer.
 
 `--perf=N` mesure N images puis affiche le temps par image (moyenne, centiles, pire image) et la part de la simulation,
-avant de quitter. Pour comparer deux versions sur la même machine :
+avant de quitter ; en vue chiffrée, il donne aussi la vitesse réellement atteinte. Pour comparer deux versions sur la même machine :
 `godot --path Game --fixed-fps 60 -- --advance-hours=480 --speed=30 --perf=1800`.
 
 ## Conventions
@@ -188,10 +267,12 @@ avant de quitter. Pour comparer deux versions sur la même machine :
 - Le hasard des maladies, du climat et des événements passe par `WorldState.Chance`, à part de `WorldState.Random` : régler ces aléas ne décale
   pas le reste de l'histoire d'une graine. Les quatre derniers métiers (`SkillType.Husbandry` et suivants) sont dérivés des premiers sans tirage,
   pour la même raison. La monnaie reste conservée, aux pièces près que les événements prennent ou apportent (`WorldState.CoinsLostToEvents`).
+  La politique (querelles, présents, batailles, schismes) a son propre générateur, `WorldState.Politics`. Le butin en route compte dans la monnaie du monde
+  (`WarParty.Loot`), comme les pièces d'une caravane.
 - Enrichir la colonie (nouvelles nourritures, plats, bière, élevage) la rend plus attrayante aux voyageurs et accélère sa croissance : `GrowthTests` garde la cadence
-  (doublement en 2 à 5 ans). Le réglage à ajuster est `Migration.MaxTravelerChancePerDay` (0,11 depuis la viande, les enclos multiples et la bière ; 0,16 à l'origine), pas la natalité,
+  (doublement en 2 à 5 ans, médiane de neuf parties : la croissance d'une graine est très chaotique). Le réglage à ajuster est `Migration.MaxTravelerChancePerDay` (0,11 depuis la viande, les enclos multiples et la bière ; 0,16 à l'origine), pas la natalité,
   qui pèse peu devant les arrivées.
-- Le format de sauvegarde est lié au schéma des données : les sauvegardes d'avant l'élevage, la santé et les bâtiments de village sont refusées
+- Le format de sauvegarde est lié au schéma des données : les sauvegardes d'avant les savoirs et la diplomatie sont refusées
   (« version incompatible »).
 - Ajouter un type d'énumération (`ResourceType`, `SkillType`, `BuildingType`…) décale les tirages au hasard :
   des tests dépendants de la graine peuvent bouger, il faut alors les rendre robustes plutôt que d'ajuster la graine.

@@ -118,6 +118,8 @@ public static class Health
             chance *= 1f - 0.4f * Husbandry.ClothesCoverage(colony);
         if (Civic.Has(colony, BuildingType.Well))
             chance *= 0.5f;
+        if (Knowledge.Has(colony, Discovery.Herbalism))
+            chance *= Knowledge.HerbalismFactor;
         if (colonist.Stage == LifeStage.Elder) chance *= 1.5f;
         else if (colonist.Stage == LifeStage.Child) chance *= 1.3f;
         // Une épidémie se propage : chaque malade en plus augmente le risque pour les autres.

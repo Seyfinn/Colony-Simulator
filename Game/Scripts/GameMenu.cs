@@ -240,6 +240,7 @@ public partial class GameMenu : CanvasLayer
         MenuStyle.Text(_body, "Vitesse de départ", 14, MenuStyle.Muted);
         var speed = new OptionButton();
         speed.AddItem("Observation · ×1", 1); speed.AddItem("Rapide · ×4", 4); speed.AddItem("Très rapide · ×30", 30);
+        speed.AddItem("Fulgurante · ×200 · vue chiffrée", 200);
         _body.AddChild(speed);
         var error = MenuStyle.Text(_body, "", 14, MenuStyle.Error, true);
         MenuStyle.Primary(MenuStyle.Button(_body, "Créer et explorer", () =>
@@ -295,6 +296,6 @@ public partial class GameMenu : CanvasLayer
     {
         MenuStyle.Text(_body, "Comment jouer", 24);
         MenuStyle.Text(_body, "1. Créez un monde vierge ou déjà peuplé.\n\n2. Cliquez sur « Fonder une colonie », choisissez son peuple et ses habitants, puis son emplacement sur la carte du monde.\n\n3. Sur le terrain, choisissez une zone plate. Le contour vert indique un camp valide ; le rouge signale un obstacle. Validez pour faire apparaître les fondateurs.\n\n4. Observez le travail, les naissances, le commerce et les prières de vos colonies.", 15, MenuStyle.Ink, true);
-        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nC : recentrer · Tab : colonie suivante\nM : carte du monde · E : économie · P : prières\nJ : journal · H : commandes\nEspace : pause · 1 / 2 / 3 : vitesse\nF5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nÉchap : fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
+        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nC : recentrer · Tab : colonie suivante\nM : carte du monde · E : économie · R : savoirs et relations · P : prières\nJ : journal · H : commandes\nEspace : pause · 1 / 2 / 3 : vitesse\nF5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nÉchap : fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
     }
 }

@@ -1,0 +1,101 @@
+--- a/Game/Scripts/StatsPanel.cs
++++ b/Game/Scripts/StatsPanel.cs
+@@ -27 +27 @@
+-    private static readonly Color CardFill = new(0.09f, 0.16f, 0.135f);
++    private static readonly Color CardFill = DashboardStyle.Surface;
+@@ -136,0 +137,2 @@
++            button.AddThemeColorOverride("font_color", DashboardStyle.MetricTint(metric));
++            button.AddThemeColorOverride("font_pressed_color", DashboardStyle.MetricTint(metric));
+@@ -447 +449,9 @@
+-                DashboardStyle.Text(cell, name.ToUpperInvariant(), 10, DashboardStyle.Muted);
++                var headingRow = DashboardStyle.Row(cell, 4);
++                Texture2D? icon = name switch
++                {
++                    "Réserves" => ResourceIcons.Get(ResourceType.Grain), "Pièces" => ResourceIcons.Get(ResourceType.Coins),
++                    "Bâtiments" => BuildingSprites.Get("Hut"), "Bêtes" => ResourceIcons.Get(ResourceType.Sheep),
++                    "Malades" => VillageArt.Status("sick"), "Jalons" => ResourceIcons.Get("Milestone"), _ => null,
++                };
++                if (icon is not null) DashboardStyle.Picture(headingRow, icon, 14);
++                DashboardStyle.Text(headingRow, name.ToUpperInvariant(), 10, DashboardStyle.Muted);
+@@ -480,0 +491 @@
++            _curve.LineColor = DashboardStyle.MetricTint(metric);
+--- a/Game/Scripts/View/ResourceChart.cs
++++ b/Game/Scripts/View/ResourceChart.cs
+@@ -15,4 +15,4 @@
+-        (ResourceFlow.Production, "Production", Color.FromHtml("#69cea3")),
+-        (ResourceFlow.Usage, "Utilisation", Color.FromHtml("#ed8a7b")),
+-        (ResourceFlow.Purchase, "Achats", Color.FromHtml("#78b9f4")),
+-        (ResourceFlow.Sale, "Ventes", Color.FromHtml("#edc66c")),
++        (ResourceFlow.Production, "Production", DashboardStyle.Mint),
++        (ResourceFlow.Usage, "Utilisation", Color.Color8(237, 147, 126)),
++        (ResourceFlow.Purchase, "Achats", Color.Color8(111, 169, 173)),
++        (ResourceFlow.Sale, "Ventes", DashboardStyle.Gold),
+@@ -24 +24,2 @@
+-    private static readonly Color Grid = new(0.255f, 0.35f, 0.29f, 0.6f);
++    private static readonly Color Grid = DashboardStyle.PlotGrid;
++    public Color ResourceColor { get; set; } = DashboardStyle.Gold;
+@@ -76,0 +78,2 @@
++        DrawRect(plot, DashboardStyle.PlotSurface);
++        DrawLine(plot.Position, new Vector2(plot.End.X, plot.Position.Y), ResourceColor with { A = 0.55f }, 2);
+@@ -111,2 +114,2 @@
+-        DrawRect(box, new Color(0.06f, 0.11f, 0.09f, 0.98f));
+-        DrawRect(box, Grid, false);
++        DrawRect(box, DashboardStyle.Readout);
++        DrawRect(box, ResourceColor with { A = 0.6f }, false);
+--- a/Game/Scripts/View/ResourceGraphs.cs
++++ b/Game/Scripts/View/ResourceGraphs.cs
+@@ -13,0 +14,2 @@
++    private TextureRect _goodIcon = null!;
++    private PanelContainer _stockCard = null!;
+@@ -37 +39,5 @@
+-        _stock = DashboardStyle.Text(this, "", 13, DashboardStyle.Ink);
++        _stockCard = DashboardStyle.Card(this, 8);
++        var stockRow = DashboardStyle.Row(_stockCard);
++        _goodIcon = DashboardStyle.Icon(stockRow, Good, 24);
++        _stock = DashboardStyle.Text(stockRow, "", 13, DashboardStyle.ResourceTint(Good));
++        _stock.SizeFlagsVertical = SizeFlags.ShrinkCenter;
+@@ -51 +57,2 @@
+-        AddChild(_chart);
++        var chartCard = DashboardStyle.Card(this, 8);
++        chartCard.AddChild(_chart);
+@@ -56 +63,6 @@
+-        foreach (var (flow, _, color) in ResourceChart.Flows) _averages[flow] = DashboardStyle.Text(averages, "", 12, color);
++        foreach (var (flow, _, color) in ResourceChart.Flows)
++        {
++            var row = DashboardStyle.Row(DashboardStyle.Card(averages, 6), 6);
++            row.AddChild(new ColorRect { Color = color, CustomMinimumSize = new Vector2(3, 18), MouseFilter = MouseFilterEnum.Ignore });
++            _averages[flow] = DashboardStyle.Text(row, "", 12, color);
++        }
+@@ -68 +80 @@
+-        _stock.Visible = !compact;
++        _stockCard.Visible = !compact;
+@@ -80,0 +93,4 @@
++        Color accent = DashboardStyle.ResourceTint(Good);
++        _goodIcon.Texture = ResourceIcons.Get(Good);
++        _stock.AddThemeColorOverride("font_color", accent);
++        _chart.ResourceColor = accent;
+--- a/Game/Scripts/View/Sparkline.cs
++++ b/Game/Scripts/View/Sparkline.cs
+@@ -18 +18 @@
+-    private static readonly Color Baseline = Color.Color8(65, 89, 75);
++    private static readonly Color Baseline = DashboardStyle.PlotGrid;
+@@ -23 +23 @@
+-    public Color Surface { get; set; } = new(0.09f, 0.16f, 0.135f);
++    public Color Surface { get; set; } = DashboardStyle.Surface;
+@@ -98 +98 @@
+-        DrawRect(box, Surface with { A = 0.94f });
++        DrawRect(box, DashboardStyle.Readout);
+--- a/Game/Scripts/View/ColonyComparison.cs
++++ b/Game/Scripts/View/ColonyComparison.cs
+@@ -30,3 +30,3 @@
+-    private static readonly Color Grid = new(0.255f, 0.35f, 0.29f, 0.55f);
+-
+-    public Color Surface { get; set; } = new(0.09f, 0.16f, 0.135f);
++    private static readonly Color Grid = DashboardStyle.PlotGrid;
++
++    public Color Surface { get; set; } = DashboardStyle.Surface;
+@@ -90,0 +91 @@
++        DrawRect(plot, DashboardStyle.PlotSurface);
+@@ -173 +174 @@
+-        DrawRect(box, Surface with { A = 0.96f });
++        DrawRect(box, DashboardStyle.Readout);

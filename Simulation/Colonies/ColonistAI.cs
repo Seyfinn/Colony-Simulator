@@ -140,7 +140,7 @@ public static class ColonistAI
         {
             if (colonist.CarryingTo is { } site)
                 site.AddInTransit(load.Type, -load.Amount);
-            colony.Stock.Add(load.Type, load.Amount);
+            colony.Stock.Add(load.Type, load.Amount, colonist.WorkCycleStartTicks >= 0 ? ResourceFlow.Production : ResourceFlow.Transfer);
             colonist.Carrying = null;
             colonist.CarryingTo = null;
         }
@@ -821,7 +821,7 @@ public static class ColonistAI
             // Quiconque revient au camp y dépose ce qu'il rapporte (sauf les matériaux destinés à un chantier).
             if (colonist.Carrying is { } load && colonist.CarryingTo is null && IsAtCamp(colonist))
             {
-                colonist.Colony.Stock.Add(load.Type, load.Amount);
+                colonist.Colony.Stock.Add(load.Type, load.Amount, colonist.WorkCycleStartTicks >= 0 ? ResourceFlow.Production : ResourceFlow.Transfer);
                 colonist.Carrying = null;
                 if (colonist.WorkCycleStartTicks >= 0)
                 {
@@ -971,7 +971,7 @@ public static class ColonistAI
             case ActivityKind.Harvest when Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Ripe } plot:
                 plot.Stage = CropStage.Fallow;
                 plot.Growth = 0f;
-                colonist.Carrying = (ResourceType.Grain, Farming.YieldAt(map, activity.TargetX, activity.TargetY));
+                colonist.Carrying = (ResourceType.Grain, Farming.YieldAt(colonist.Colony, map, activity.TargetX, activity.TargetY));
                 break;
             case ActivityKind.Craft when activity.InputsTaken && activity.Building is { Type: BuildingType.Cask } cask:
                 // Les céréales sont versées dans le fût : rien à rapporter, la bière fermente et sera tirée dans cinq jours.

@@ -38,7 +38,7 @@ public partial class Hud : CanvasLayer
     private static readonly ResourceType[] TradeGoods = [ResourceType.Wool, ResourceType.Clothes, ResourceType.Salt, ResourceType.Spices, ResourceType.Hardwood,
         ResourceType.Chickens, ResourceType.Sheep, ResourceType.Cows];
     private readonly Dictionary<GameSpeed, Button> _speedButtons = [];
-    private Button _pause = null!, _journalTab = null!, _workTab = null!, _collapse = null!;
+    private Button _pause = null!, _journalTab = null!, _workTab = null!, _collapse = null!, _recenter = null!;
     private PanelContainer _tray = null!, _help = null!, _colonistPanel = null!;
     private GridContainer _resourceRow = null!;
     private ScrollContainer _journalBody = null!, _workBody = null!;
@@ -131,9 +131,10 @@ public partial class Hud : CanvasLayer
             (GameSpeed.Observation, "×1", "Observation · touche 1"),
             (GameSpeed.Rapide, "×4", "Rapide · touche 2"),
             (GameSpeed.TresRapide, "×30", "Très rapide · touche 3"),
+            (GameSpeed.Fulgurante, "×200", "Fulgurante · touche 4\nLa carte se met en veille : seuls les chiffres et les courbes des colonies restent à l'écran, pour voir passer les années."),
         })
         {
-            var button = Button(speeds, caption, hint, 48);
+            var button = Button(speeds, caption, hint, speed == GameSpeed.Fulgurante ? 56 : 48);
             button.Name = $"Speed{(int)speed}";
             button.ToggleMode = true;
             button.Pressed += () => SpeedRequested?.Invoke(speed);
@@ -376,10 +377,10 @@ public partial class Hud : CanvasLayer
         _tileInfo.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _tileInfo.ClipText = true;
         _tileInfo.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
-        var recenter = Button(row, "⌖  Recentrer", "Revenir au camp ou à l'habitant sélectionné · C", 110);
-        recenter.Name = "Recentrer";
-        recenter.CustomMinimumSize = new Vector2(110, 22);
-        recenter.Pressed += () => RecenterRequested?.Invoke();
+        _recenter = Button(row, "⌖  Recentrer", "Revenir au camp ou à l'habitant sélectionné · C", 110);
+        _recenter.Name = "Recentrer";
+        _recenter.CustomMinimumSize = new Vector2(110, 22);
+        _recenter.Pressed += () => RecenterRequested?.Invoke();
         var helpButton = Button(row, "?  Commandes", "Afficher les commandes du jeu", 115);
         helpButton.Name = "Help";
         helpButton.CustomMinimumSize = new Vector2(115, 22);
@@ -391,7 +392,7 @@ public partial class Hud : CanvasLayer
         _help.Visible = false;
         var commands = Column(_help, 8);
         Section(commands, "COMMANDES");
-        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit ou molette maintenue   Glisser   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nC   Recentrer sur le camp ou l'habitant sélectionné\nTab   Observer la colonie suivante\nM   Carte du monde   ·   E   Économie   ·   P   Prières\nJ   Journal   ·   H   Afficher / fermer les commandes\nEspace   Pause   ·   1 / 2 / 3   Vitesse\nF5   Sauvegarde rapide   ·   F9   Chargement rapide\nÉchap   Fermer un panneau / menu", 13, Ink);
+        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit ou molette maintenue   Glisser   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nC   Recentrer sur le camp ou l'habitant sélectionné\nTab   Observer la colonie suivante\nM   Carte du monde   ·   E   Économie   ·   R   Savoirs et relations   ·   P   Prières\nJ   Journal   ·   H   Afficher / fermer les commandes\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   4   Vue chiffrée (×200)\nF5   Sauvegarde rapide   ·   F9   Chargement rapide\nÉchap   Fermer un panneau / menu", 13, Ink);
     }
 
     private void ResizePanels()
@@ -496,6 +497,9 @@ public partial class Hud : CanvasLayer
     }
 
     public void SetTileInfo(string text) => _tileInfo.Text = string.IsNullOrWhiteSpace(text) ? "Survolez le terrain pour l'inspecter" : text;
+
+    /// <summary>Recentrer n'a de sens qu'avec une carte à l'écran (pas en vue chiffrée).</summary>
+    public void SetMapTools(bool visible) => _recenter.Visible = visible;
 
     public void ShowShares(Colony colony)
     {

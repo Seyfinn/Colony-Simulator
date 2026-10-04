@@ -101,7 +101,7 @@ public static class Events
         {
             colony.RecordEvent(new(ColonyEventKind.Fire, target.X, target.Y, world.Clock.Ticks, ColonyEventOutcome.Extinguished, target.Type));
             int lost = colony.Stock.Get(ResourceType.Wood) / 12;
-            colony.Stock.TryTake(ResourceType.Wood, lost);
+            colony.Stock.TryTake(ResourceType.Wood, lost, ResourceFlow.Loss);
             ColonyBrain.Say(colony, world.Clock, $"Le feu prend {Building.AtThe(target.Type)} : grâce au puits, il est vite éteint.");
         }
         else
@@ -119,7 +119,9 @@ public static class Events
             return;
 
         int adults = colony.Members.Count(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None);
-        float defense = adults + 1.5f * Math.Min(stock.Get(ResourceType.Tools), adults);
+        float defense = (adults + 1.5f * Math.Min(stock.Get(ResourceType.Tools), adults))
+            * (Knowledge.Has(colony, Discovery.Fortification) ? Knowledge.FortificationFactor : 1f)
+            + Diplomacy.AlliedHelp(world, colony, attacker: null);
         float strength = 4f + colony.Members.Count / 3f + world.Clock.Year + 2f * world.Chance.NextSingle();
         GameClock clock = world.Clock;
 
@@ -134,10 +136,10 @@ public static class Events
         int coins = stock.Get(ResourceType.Coins) * 3 / 10;
         int tools = stock.Get(ResourceType.Tools) / 5;
         int grain = stock.Get(ResourceType.Grain) / 6;
-        stock.TryTake(ResourceType.Coins, coins);
+        stock.TryTake(ResourceType.Coins, coins, ResourceFlow.Loss);
         world.CoinsLostToEvents += coins;
-        stock.TryTake(ResourceType.Tools, tools);
-        stock.TryTake(ResourceType.Grain, grain);
+        stock.TryTake(ResourceType.Tools, tools, ResourceFlow.Loss);
+        stock.TryTake(ResourceType.Grain, grain, ResourceFlow.Loss);
 
         int wounded = 0;
         foreach (Colonist victim in colony.Members.Where(m => m.Stage != LifeStage.Child && m.Ailment == Ailment.None)
@@ -163,8 +165,8 @@ public static class Events
             ResourceType bought = surplus.OrderByDescending(g => Economy.Surplus(colony, g)).First();
             int boughtUnits = Math.Min(Economy.Surplus(colony, bought), 6);
             int pay = Math.Max(1, (int)Math.Ceiling(boughtUnits * Economy.Cost(colony, bought)));
-            colony.Stock.TryTake(bought, boughtUnits);
-            colony.Stock.Add(ResourceType.Coins, pay);
+            colony.Stock.TryTake(bought, boughtUnits, ResourceFlow.Sale);
+            colony.Stock.Add(ResourceType.Coins, pay, ResourceFlow.Transfer);
             world.CoinsLostToEvents -= pay;
             colony.RecordEvent(new(ColonyEventKind.Peddler, colony.CampX, colony.CampY, world.Clock.Ticks, ColonyEventOutcome.Traded));
             ColonyBrain.Say(colony, world.Clock, $"Un colporteur de passage nous achète {boughtUnits} {Trade.GoodName(bought, boughtUnits)} pour {pay} pièces.");
@@ -183,11 +185,11 @@ public static class Events
         int price = (int)Math.Ceiling(units * (animal ? Economy.Cost(colony, good) : Economy.BaselineCost(good)));
         GameClock clock = world.Clock;
 
-        if (colony.Stock.TryTake(ResourceType.Coins, price))
+        if (colony.Stock.TryTake(ResourceType.Coins, price, ResourceFlow.Transfer))
         {
             colony.RecordEvent(new(ColonyEventKind.Peddler, colony.CampX, colony.CampY, clock.Ticks, ColonyEventOutcome.Traded));
             world.CoinsLostToEvents += price;
-            colony.Stock.Add(good, units);
+            colony.Stock.Add(good, units, ResourceFlow.Purchase);
             ColonyBrain.Say(colony, clock, $"Un colporteur de passage nous cède {units} {Trade.GoodName(good, units)} pour {price} pièces.");
         }
         else

@@ -1,10 +1,21 @@
-"""Vérifie les noms, dimensions et formats des livraisons T-002/004/005/007/008."""
+"""Vérifie les noms, dimensions et formats des livraisons graphiques, dont T-027/028."""
 from pathlib import Path
 import struct
 
 root = Path(__file__).resolve().parents[1]
 expected = {"icons/coins.png": (16, 16), "world/river_segment.png": (16, 8),
             "world/map_background.png": (1024, 640)}
+for good in ("food", "grain", "wood", "stone", "ironore", "charcoal", "iron", "tools", "flour", "bread", "beer"):
+    expected[f"icons/{good}.png"] = (16, 16)
+for discovery in ("agriculture", "husbandry", "metallurgy", "milling", "masonry", "irrigation", "weaving", "medicine", "brewing", "commerce", "hydraulics", "writing", "diplomacy", "croprotation", "fortification", "warfare", "herbalism", "coinage", "philosophy"):
+    expected[f"icons/knowledge_{discovery}.png"] = (16, 16)
+expected["world/pact_war.png"] = (16, 16)
+for frame in range(4):
+    expected[f"world/warband_{frame}.png"] = (24, 16)
+for building in ("hut", "kiln", "bloomery", "forge", "mill", "oven", "cask", "cask_brewing", "cask_ready"):
+    expected[f"buildings/{building}.png"] = (64, 80)
+for building in ("dam", "dam_side"):
+    expected[f"buildings/{building}.png"] = (32, 48)
 for side in ("", "side_"):
     for frame in range(3):
         expected[f"buildings/dam_construction_{side}{frame}.png"] = (32, 48)
@@ -20,9 +31,11 @@ for name, size in expected.items():
     w, h, depth, color = struct.unpack(">IIBB", data[16:26])
     assert (w, h) == size and (depth, color) == (8, 6), (name, w, h, depth, color)
 for pattern, count in [("buildings/mill_wheel_{}.png", 4),
+                       ("world/warband_{}.png", 4),
                        ("buildings/dam_construction_{}.png", 3),
                        ("buildings/dam_construction_side_{}.png", 3)]:
     assert len({(root / pattern.format(i)).read_bytes() for i in range(count)}) == count, pattern
 for people in ("human", "dwarf", "elf", "orc"):
     assert len({(root / f"peoples/trader_{people}_{i}.png").read_bytes() for i in range(4)}) == 4, people
-print(f"{len(expected)} PNG vérifiés : noms du catalogue, dimensions exactes, RGBA 8 bits ; étapes et roue distinctes.")
+assert len({(root / f"buildings/{name}.png").read_bytes() for name in ("cask", "cask_brewing", "cask_ready")}) == 3, "États du fût"
+print(f"{len(expected)} PNG vérifiés : noms du catalogue, dimensions exactes, RGBA 8 bits ; étapes, roue et états du fût distincts.")

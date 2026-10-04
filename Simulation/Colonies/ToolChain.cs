@@ -172,6 +172,6 @@ public static class ToolChain
     internal static void Refund(Colony colony, Recipe recipe)
     {
         foreach ((ResourceType type, int amount) in recipe.Inputs)
-            colony.Stock.Add(type, amount);
+            colony.Stock.Add(type, amount, ResourceFlow.Transfer);
     }
 }

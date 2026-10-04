@@ -22,13 +22,16 @@ public partial class EconomyDashboard : VBoxContainer
     private VBoxContainer _milestones = null!;
     private Button _milestonesTab = null!;
     private readonly Dictionary<string, Label> _milestoneRows = [];
+    private Button _graphsTab = null!;
+    private ResourceGraphs _graphs = null!;
+    private HBoxContainer _metrics = null!;
 
     public override void _Ready()
     {
         Name = "TableauEconomie";
         Theme = MenuStyle.Theme(); SizeFlagsHorizontal = SizeFlags.ExpandFill;
         AddThemeConstantOverride("separation", 14);
-        var metrics = new HBoxContainer(); metrics.AddThemeConstantOverride("separation", 8); AddChild(metrics);
+        var metrics = _metrics = new HBoxContainer(); metrics.AddThemeConstantOverride("separation", 8); AddChild(metrics);
         _coins = DashboardStyle.Metric(metrics, "Trésorerie", ResourceType.Coins, DashboardStyle.Gold);
         _food = DashboardStyle.Metric(metrics, "Réserves de repas", ResourceType.Bread, DashboardStyle.Mint);
         _gain = DashboardStyle.Metric(metrics, "Travail économisé", ResourceType.Tools, DashboardStyle.Mint);
@@ -36,6 +39,9 @@ public partial class EconomyDashboard : VBoxContainer
         var tabs = DashboardStyle.Row(this);
         _stocksTab = Tab(tabs, "Stocks et besoins", "StocksEconomie", false);
         _commerceTab = Tab(tabs, "Commerce", "CommerceEconomie", true);
+        _graphsTab = new Button { Text = "Graphiques", Name = "GraphiquesEconomie", ToggleMode = true,
+            CustomMinimumSize = new Vector2(0, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        tabs.AddChild(_graphsTab); _graphsTab.Pressed += ShowGraphs;
         _milestonesTab = new Button { Text = "Jalons", Name = "JalonsEconomie", ToggleMode = true, Icon = ResourceIcons.Get("Milestone"),
             CustomMinimumSize = new Vector2(0, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
         tabs.AddChild(_milestonesTab); _milestonesTab.Pressed += ShowMilestones;
@@ -71,6 +77,7 @@ public partial class EconomyDashboard : VBoxContainer
         DashboardStyle.Text(_milestones, "HISTOIRE DE LA COLONIE", 12, DashboardStyle.Gold);
         foreach (Milestone milestone in Milestones.All)
             _milestoneRows[milestone.Id] = DashboardStyle.Text(_milestones, milestone.Title, 13, DashboardStyle.Muted, true);
+        _graphs = new ResourceGraphs(); AddChild(_graphs);
         ShowCommerce(false);
         Resized += ResizeDashboard;
         GetViewport().SizeChanged += ResizeDashboard;
@@ -81,7 +88,9 @@ public partial class EconomyDashboard : VBoxContainer
     {
         _goodsGrid.Columns = Size.X >= 500 ? 2 : 1;
         bool compact = GetViewportRect().Size.Y < 760;
-        _context.Visible = _legend.Visible = !compact;
+        _context.Visible = !compact && !_graphs.Visible;
+        _legend.Visible = !compact;
+        _metrics.Visible = !_graphs.Visible;
         AddThemeConstantOverride("separation", compact ? 8 : 14);
     }
 
@@ -94,16 +103,31 @@ public partial class EconomyDashboard : VBoxContainer
 
     public void ShowCommerce(bool commerce)
     {
+        _graphs.Visible = false; _graphsTab.SetPressedNoSignal(false);
         _milestones.Visible = false; _milestonesTab.SetPressedNoSignal(false);
         _stocks.Visible = !commerce; _commerce.Visible = commerce;
         _stocksTab.SetPressedNoSignal(!commerce); _commerceTab.SetPressedNoSignal(commerce);
+        ResizeDashboard();
     }
 
     public void ShowMilestones()
     {
+        _graphs.Visible = false; _graphsTab.SetPressedNoSignal(false);
         _stocks.Visible = _commerce.Visible = false; _milestones.Visible = true;
         _stocksTab.SetPressedNoSignal(false); _commerceTab.SetPressedNoSignal(false); _milestonesTab.SetPressedNoSignal(true);
+        ResizeDashboard();
     }
+
+    public void ShowGraphs()
+    {
+        _stocks.Visible = _commerce.Visible = _milestones.Visible = false;
+        _graphs.Visible = true;
+        _stocksTab.SetPressedNoSignal(false); _commerceTab.SetPressedNoSignal(false); _milestonesTab.SetPressedNoSignal(false);
+        _graphsTab.SetPressedNoSignal(true);
+        ResizeDashboard();
+    }
+
+    public void RefreshGraphs(Colony colony, ResourceHistory? history) => _graphs.Refresh(colony, history);
 
     public void Refresh(WorldState world, Colony colony)
     {

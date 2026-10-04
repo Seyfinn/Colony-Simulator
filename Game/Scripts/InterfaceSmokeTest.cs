@@ -80,6 +80,7 @@ public partial class Main
             await UiFrames(6);
             SaveSmokeCapture("colonie");
             await VerifyObservationInterface();
+            await VerifyStatsView();
 
             FindNamed<Button>(_hud, "MenuJeu").EmitSignal(BaseButton.SignalName.Pressed);
             frozen = _world.Clock.Ticks;
@@ -123,7 +124,7 @@ public partial class Main
             Require(_observed == 1, "Tab doit observer la colonie suivante.");
             PressObservationKey(Key.Tab);
             Require(_observed == 0, "Tab doit revenir à la première colonie après la dernière.");
-            GD.Print("INTERFACE_SMOKE_OK : menus, fondation, sauvegarde des paramètres, reprise, remplacement, raccourcis, saisie protégée, panneaux et économie stable.");
+            GD.Print("INTERFACE_SMOKE_OK : menus, fondation, sauvegarde des paramètres, reprise, remplacement, raccourcis, saisie protégée, panneaux, économie stable et vue chiffrée.");
             GetTree().Quit();
         }
         catch (Exception exception)
@@ -196,6 +197,23 @@ public partial class Main
         _Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
         Require(!_worldPanel.Open && !_menu.IsOpen, "Échap doit fermer l'économie sans ouvrir la pause.");
 
+        PressObservationKey(Key.R);
+        Require(_worldPanel.CivilizationOpen && !_worldPanel.Open && !_worldPanel.MapOpen, "R doit ouvrir les savoirs et relations, seuls.");
+        await UiFrames(12);
+        Require(FindNamed<PanelContainer>(_worldPanel, "SavoirMetallurgy").IsVisibleInTree(), "L'arbre des savoirs doit s'afficher.");
+        SaveSmokeCapture("savoirs");
+        FindNamed<Button>(_worldPanel, "OngletRelations").EmitSignal(BaseButton.SignalName.Pressed);
+        await UiFrames(12);
+        Require(_worldPanel.ShowingRelations, "L'onglet des relations doit s'ouvrir.");
+        Require(_world.Colonies.Count < 2 || FindNamed<PanelContainer>(_worldPanel, "Relation0").IsVisibleInTree(),
+            "Chaque autre colonie doit avoir sa ligne de relations.");
+        SaveSmokeCapture("relations");
+        PressObservationKey(Key.E);
+        Require(_worldPanel.Open && !_worldPanel.CivilizationOpen, "L'économie et les savoirs doivent s'exclure.");
+        PressObservationKey(Key.R);
+        _Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+        Require(!_worldPanel.CivilizationOpen && !_worldPanel.Open && !_menu.IsOpen, "Échap doit fermer les savoirs sans ouvrir la pause.");
+
         Select(Observed.Members[0]);
         await UiFrames(8);
         FindNamed<Button>(_hud, "RenameColonist").EmitSignal(BaseButton.SignalName.Pressed);
@@ -246,6 +264,64 @@ public partial class Main
         Require(!_prayerPanel.Open && !_menu.IsOpen, "Échap doit fermer les prières.");
         foreach (var prayer in Observed.Prayers.Pending.ToArray()) _world.AnswerPrayer(prayer, false);
         SetSpeed(GameSpeed.Observation);
+    }
+
+    /// <summary>×200 libère la carte au profit de la vue chiffrée, garde la pause, et rend la carte de la colonie choisie.</summary>
+    private async Task VerifyStatsView()
+    {
+        SetSpeed(GameSpeed.TresRapide);
+        await UiFrames(2);
+        var map = _mapView;
+        GetViewport().GuiReleaseFocus();
+        PressObservationKey(Key.Key4);
+        await UiFrames(4);
+        Require(_statsShown && _statsPanel is { Visible: true } && _mapView is null && _colonistsView is null && !IsInstanceValid(map),
+            "La touche 4 doit libérer la carte et les habitants au profit de la vue chiffrée.");
+        StatsPanel stats = _statsPanel!;
+        Require(Descendants(stats).OfType<PanelContainer>().Count(p => p.Name.ToString().StartsWith("CarteColonie")) == _world.Colonies.Count,
+            "La vue chiffrée doit présenter chaque colonie.");
+        long before = _world.Clock.Ticks;
+        await UiFrames(30);
+        Require(_world.Clock.Ticks - before > 30 * (int)GameSpeed.TresRapide * TimeConstants.TicksPerSecond / 60,
+            "En vue chiffrée, le temps doit filer plus vite qu'à ×30.");
+
+        TogglePause();
+        Require(_statsShown && _speed == GameSpeed.Pause, "La pause doit garder la vue chiffrée.");
+        Click(stats, "Réserves");
+        Require(stats.Metric == View.ColonyMetric.FoodDays, "Le choix de courbe doit s'appliquer aux colonies.");
+        var curve = Descendants(stats).OfType<View.Sparkline>().First(s => s.Name == "CourbeColonie");
+        curve._GuiInput(new InputEventMouseMotion { Position = curve.Size / 2 });
+        await UiFrames(3);
+        SaveSmokeCapture("vue-chiffree");
+        Click(stats, "Habitants");
+        (int tx, int ty) = TileUnderMouse();
+        int elevation = Observed.Map.InBounds(tx, ty) ? Observed.Map.GetElevation(tx, ty) : 0;
+        Vector2 camera = _camera.Position;
+        PressObservationKey(Key.C);
+        OnLeftClick();
+        Require(_statsShown && _camera.Position == camera && (!Observed.Map.InBounds(tx, ty) || Observed.Map.GetElevation(tx, ty) == elevation),
+            "Sans carte, ni recentrage ni minage au clic.");
+
+        FindNamed<Button>(FindNamed<PanelContainer>(stats, "CarteColonie0"), "ObserverColonie").EmitSignal(BaseButton.SignalName.Pressed);
+        Require(!_statsShown && FindNamed<PanelContainer>(stats, "RepeintCarte").Visible, "Le retour à la carte doit s'annoncer avant de la repeindre.");
+        await UiFrames(1);
+        SaveSmokeCapture("retour-carte");
+        await UiFrames(3);
+        Require(!stats.Visible && _mapView is not null && _colonistsView is not null,
+            "Observer une colonie doit rendre sa carte et ses habitants.");
+        Require(_speed == GameSpeed.Pause && _speedBeforePause == GameSpeed.TresRapide,
+            "Revenir à la carte doit garder la pause et retrouver la vitesse d'avant.");
+        PressObservationKey(Key.Key4);
+        await UiFrames(2);
+        Require(_statsShown && _speed == GameSpeed.Fulgurante, "La touche 4 doit repasser en vue chiffrée.");
+        PressObservationKey(Key.Key4);
+        PressObservationKey(Key.Key1);
+        PressObservationKey(Key.Key4);
+        await UiFrames(4);
+        Require(_statsShown && stats.Visible && _mapView is null, "Revenir aussitôt à ×200 doit annuler le repeint de la carte.");
+        PressObservationKey(Key.Key1);
+        await UiFrames(4);
+        Require(!_statsShown && _speed == GameSpeed.Observation && _mapView is not null, "La touche 1 doit rendre la carte à ×1.");
     }
 
     private async Task UiFrames(int count)

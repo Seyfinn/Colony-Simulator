@@ -119,6 +119,28 @@ public sealed class Colony
     /// </summary>
     internal HashSet<(int X, int Y)> UnreachableStands { get; } = [];
 
+    /// <summary>Recherches qui n'ont rien donné, avec le nombre de jours avant de les retenter (une année).</summary>
+    private readonly Dictionary<SearchKind, int> _exhaustedDaysLeft = [];
+
+    internal bool IsExhausted(SearchKind kind) => _exhaustedDaysLeft.ContainsKey(kind);
+
+    internal void MarkExhausted(SearchKind kind) => _exhaustedDaysLeft[kind] = Time.TimeConstants.DaysPerYear;
+
+    /// <summary>Oublie les échecs liés à la carrière (elle vient de changer de place).</summary>
+    internal void ForgetQuarrySearches()
+    {
+        _exhaustedDaysLeft.Remove(SearchKind.Rocks);
+        _exhaustedDaysLeft.Remove(SearchKind.Ore);
+    }
+
+    /// <summary>Un jour de plus : les recherches infructueuses vieillissent et sont retentées au bout d'un an.</summary>
+    internal void AgeExhaustedSearches()
+    {
+        foreach (SearchKind kind in _exhaustedDaysLeft.Keys.ToList())
+            if (--_exhaustedDaysLeft[kind] <= 0)
+                _exhaustedDaysLeft.Remove(kind);
+    }
+
     /// <summary>Dernière fois que la carrière a été déplacée (ou jugée épuisée).</summary>
     internal long LastQuarryMoveTicks { get; set; } = long.MinValue / 2;
 
@@ -176,6 +198,38 @@ public sealed class Colony
 
     /// <summary>Les jalons atteints (identifiant → moment), voir <see cref="Milestones"/>.</summary>
     public Dictionary<string, long> Achievements { get; } = [];
+
+    // --- Savoirs (voir Knowledge) ---
+
+    /// <summary>Les savoirs connus, avec le moment de leur découverte.</summary>
+    public Dictionary<Discovery, long> Known { get; } = [];
+
+    /// <summary>Points de savoir déjà accumulés sur les savoirs entamés.</summary>
+    public Dictionary<Discovery, float> ResearchProgress { get; } = [];
+
+    /// <summary>Le savoir que la colonie étudie en ce moment (null si elle sait tout ce qu'elle peut aborder).</summary>
+    public Discovery? Researching { get; internal set; }
+
+    // --- Relations avec les autres colonies (voir Diplomacy) ---
+
+    /// <summary>Ce que la colonie pense de chacune des autres, de -100 (haine) à +100 (amitié).</summary>
+    public Dictionary<Colony, float> Opinions { get; } = [];
+
+    public float OpinionOf(Colony other) => Opinions.GetValueOrDefault(other);
+
+    /// <summary>La colonie dont celle-ci est issue par un schisme (null pour une fondation).</summary>
+    public Colony? Parent { get; internal set; }
+
+    /// <summary>Lassitude de la guerre : elle monte avec les jours de guerre et les morts, et retombe en paix.</summary>
+    public float WarWeariness { get; internal set; }
+
+    /// <summary>Batailles gagnées et perdues dans la guerre en cours (remises à zéro à la paix).</summary>
+    public int BattlesWon { get; internal set; }
+    public int BattlesLost { get; internal set; }
+
+    /// <summary>Dernier départ d'une bande de guerriers, dernier cadeau envoyé à chaque voisine.</summary>
+    internal long LastWarPartyTicks { get; set; } = long.MinValue / 2;
+    internal Dictionary<Colony, long> LastGiftTicks { get; } = [];
 
     /// <summary>Temps passé à semer, pour que le coût des céréales inclue les semailles.</summary>
     private long _sowTicks;

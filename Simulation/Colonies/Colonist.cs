@@ -97,7 +97,7 @@ public sealed class Colonist
     public int Id { get; }
     public string Name { get; private set; }
     public Sex Sex { get; }
-    public Colony Colony { get; }
+    public Colony Colony { get; internal set; }
 
     public const int MaxNameLength = 40;
 

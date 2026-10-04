@@ -4,9 +4,9 @@ namespace GodColony.Simulation.Colonies;
 
 /// <summary>
 /// Les grandes décisions que la colonie ne prend pas seule : elle les soumet au joueur-dieu dans une prière.
-/// (Schismes, migrations massives, guerres, abandon viendront plus tard.)
+/// Un barrage, une alliance, une guerre, la paix, un schisme (voir <see cref="Diplomacy"/> et <see cref="Schism"/>).
 /// </summary>
-public enum DecisionKind { Dam }
+public enum DecisionKind { Dam, Alliance, War, Peace, Schism }
 
 public enum PrayerStatus { Pending, Approved, Refused }
 
@@ -48,12 +48,22 @@ public sealed class Prayer
     internal Action Apply { get; private set; }
 
     /// <summary>Reconstruit la décision depuis son sujet ; les fonctions ne sont pas enregistrées dans le fichier.</summary>
-    internal void RestoreAction()
+    internal void RestoreAction(WorldState world)
     {
         Apply = () => { };
         if (Kind == DecisionKind.Dam && Subject.Split(',') is [var sx, var sy]
             && int.TryParse(sx, out int x) && int.TryParse(sy, out int y))
             Apply = () => ColonyBrain.ApplyDamDecision(Colony, Colony.Map, Colony.Clock, x, y);
+        else if (Kind == DecisionKind.Schism && int.TryParse(Subject, out int leader))
+            Apply = () => Schism.Split(world, Colony, leader);
+        else if (world.Colonies.FirstOrDefault(c => c.Name == Subject) is { } other)
+            Apply = Kind switch
+            {
+                DecisionKind.Alliance => () => Diplomacy.SealAlliance(world, Colony, other),
+                DecisionKind.War => () => Diplomacy.DeclareWar(world, Colony, other),
+                DecisionKind.Peace => () => Diplomacy.OfferPeace(world, Colony, other),
+                _ => Apply,
+            };
     }
 
     internal int CooldownDays { get; init; } = PrayerBook.RefusalCooldownDays;

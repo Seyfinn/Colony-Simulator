@@ -107,7 +107,7 @@ public static class WorldSave
         SavedView view = info.View ?? throw new InvalidDataException("Vue sauvegardée absente.");
         if (info.Name.Length > 80 || info.Ticks < 0 || info.Colonies is < 0 or > WorldState.MaxPlayerColonies || info.Population < 0
             || !float.IsFinite(view.CameraX) || !float.IsFinite(view.CameraY) || !float.IsFinite(view.Zoom) || view.Zoom is < 0.25f or > 6f
-            || (int)view.Speed is not (0 or 1 or 4 or 30) || (int)view.SpeedBeforePause is not (1 or 4 or 30))
+            || (int)view.Speed is not (0 or 1 or 4 or 30 or 200) || (int)view.SpeedBeforePause is not (1 or 4 or 30 or 200))
             throw new InvalidDataException("Résumé de sauvegarde invalide.");
         return info;
     }

@@ -96,3 +96,41 @@ L'export vérifie désormais 292 PNG RGBA 32 × 32 (40 initiaux + 252 ajouts), l
 Les 40 fichiers de production dans `../terrain/` sont tous des PNG RGBA 8 bits en 32 × 32. `python Game/Assets/tools/generer_rivieres.py` réexporte et vérifie les dimensions et les ouvertures cardinales, sans dépendance externe.
 
 `dotnet build Game/GodColony.csproj` : 0 avertissement, 0 erreur. Capture et planche regardées. La simulation n'a pas été modifiée.
+
+## T-023 à T-026 — bière, ressources, métiers et statistiques — 2026-10-04
+
+`metiers.tscn` contrôle les **22 PNG** : onze icônes (dix denrées de base et bière) en 16 × 16, six bâtiments et trois états du fût en 64 × 80, deux barrages en 32 × 48. Icônes bordées d'une marge transparente d'un pixel, images identiques aux sources natives, trois états distincts, seuil exact de `BrewReadyTicks`, bulles identiques à ticks fixes et différentes quand le temps avance. La galerie charge les PNG ; `--fallback` désactive leur lecture dans cette scène seulement et contrôle les mêmes sources de secours. `python Game/Assets/tools/verifier_livraison.py` contrôle 55 PNG RGBA 8 bits, dont les 22 nouveaux.
+
+Après compilation : `godot --path Game res://Assets/validation/metiers.tscn -- --capture=chemin.png`. Ajouter `--preview=local`, `--preview=stats` ou `--preview=comparison`, et `--compact` pour 1100 × 700. **Seule l'option `--export-workshops` écrit les PNG de production**, à partir de `WorkshopArt` / `BuildingSprites.Workshops` ; aucun export à l'exécution habituelle du jeu.
+
+- `metiers_catalogue.png` : icônes ×3 et natives, huit bâtiments ×2, roue séparée, chantiers de barrage et trois fûts. Charbon éclairci pour rester visible sur le fond de l'interface. Repères sel/gâteau/lait de T-014 sur la même planche.
+- `metiers_en_jeu.png` : véritable `ColonistsView`, terrain de graine 42, six bâtiments et trois fûts **placés pour démonstration** ; les échéances sont relatives au début du monde et la scène exige les états vide/fermentation/prêt. Horloge figée, aucune partie sauvegardée chargée. Terrain et stocks identiques avant/après les dessins.
+- `metiers_ouvrages.png` : scène existante `ouvrages.tscn`, véritable moulin et roue sur le mur est ; les sprites gardent leurs points d'attache. Les chantiers et les barrages finis sont contrôlés ensemble sur la galerie, aux deux orientations.
+- `statistiques_stats.png`, `statistiques_comparison.png` et leurs variantes `_compact` : véritables `StatsPanel`, `Sparkline`, `ColonyComparison`. Quatre colonies, 60 journées de **flux de démonstration explicitement ajoutés aux stocks**, relevés par `ColonyHistory` / `ResourceHistory` ; la simulation est figée pendant le rendu. Contrôle de la sélection des quatre indicateurs, des 61 relevés, de l'identité des cartes après rafraîchissement, du bouton Observer, du terrain et des stocks inchangés.
+- `ressources_graphes_large.png`, `ressources_graphes_compact.png` : vrais `WorldPanel` / `ResourceGraphs` dans `economie_production.tscn -- --preview=graphs`. Vérification des 60 relevés, du passage de ressource, de la période de 20 jours, du retour aux 60 jours, du survol et du masquage d'une courbe. Les moyennes, légendes et notes restent accessibles par le défilement existant.
+- `metiers_economy_*`, `metiers_commerce_*`, `metiers_food_*` : icônes dans les stocks, Économie, Commerce et Vivres aux deux tailles. Même scénario de contrôle que les scènes économie/village existantes, sans chargement de sauvegarde utilisateur.
+
+Toutes ces captures ont été inspectées. Résultats : **WORKSHOP_VISUALS_OK**, **ECONOMY_PRODUCTION_UI_OK**, **VILLAGE_VISUALS_OK**. Compilation initiale du projet principal et compilation graphique finale isolée : **0 avertissement / 0 erreur**. **209 tests de simulation verts**, **INTERFACE_SMOKE_OK**, **SAVE_SMOKE_OK** avant la phase suivante du chantier de Claude.
+
+Pendant l'intervention, Claude a commencé `Knowledge.cs` ; la compilation principale a alors signalé `Diplomacy` absent. La vérification et l'export finaux utilisent une copie isolée du jeu avec la dernière simulation compilée (`BuildProjectReferences=false`), puis seuls les 22 PNG sont reportés dans le projet principal. Aucun fichier de simulation ou de test de simulation modifié. Les cinq fichiers de statistiques non suivis de Claude gardent leurs modifications d'apparence locales ; `tools/habillage_statistiques.patch` en conserve **uniquement le delta graphique** pour l'intégration de son socle. Ce patch est déjà appliqué dans le dossier courant : ne pas le réappliquer ici. Pour une copie du socle avant habillage, le patch à contexte nul s'applique avec `git apply --unidiff-zero Game/Assets/tools/habillage_statistiques.patch`. Le commit graphique exclut les fichiers complets non suivis et les changements moteur de Claude.
+
+Vérification finale après arrivée de `Diplomacy.cs` dans le projet principal : compilation **0 avertissement / 0 erreur**, **209 tests verts**, **WORKSHOP_VISUALS_OK** (local, statistiques, secours sans PNG) et **INTERFACE_SMOKE_OK** de nouveau réussis. Le blocage intermédiaire est levé ; le code livré est compilé dans le projet principal.
+## Savoirs, relations et guerriers — T-027 à T-030
+
+Scène isolée `civilisation.tscn`, sources natives `CivilizationArt.cs`. Les 24 PNG de production sont exportés **uniquement** avec `--export-civilization` ; une partie ne crée aucun fichier image. Les sources servent aussi de secours si un PNG manque ou si ses dimensions sont incorrectes.
+
+Validation du 2026-10-04 : compilation sans avertissement ni erreur, **228 tests de simulation réussis**, `INTERFACE_SMOKE_OK`, `SAVE_SMOKE_OK`. `CIVILIZATION_VISUALS_OK` vérifie les tailles, la marge transparente des 19 icônes, leurs silhouettes distinctes, l'identité PNG/source, les quatre poses distinctes, l'identification des guerriers et des civils, les états connu/étudié/accessibles/verrouillés, les effets dans les infobulles, le passage entre les onglets et la conservation des cartes. Stocks, savoirs, opinions, rancunes, positions des colons, pactes, état des bandes et ticks restent identiques pendant les rafraîchissements et le dessin.
+
+Modes validés : `--preview=gallery`, `knowledge`, `relations`, `map`, `return`, `local`. Le mode `--fallback` valide le secours natif avec le chargement des PNG désactivé dans cette scène seulement. La marche mondiale dépend des ticks de la simulation : elle se fige en pause. La marche locale et le mouvement des accessoires suivent la distance déjà parcourue ; aucune activité ni règle de jeu ajoutée.
+
+Captures inspectées :
+
+- `civilisation_gallery.png` : les 19 savoirs, les quatre poses des bandes, les épées croisées et l'équipement des quatre peuples dans les deux sens.
+- `civilisation_knowledge.png`, `civilisation_relations.png` : panneau à 1600 × 900 ; `civilisation_knowledge_compact.png`, `civilisation_relations_compact.png` : 1100 × 700, panneau de 600 pixels et défilement vertical conservé.
+- `civilisation_map.png`, `civilisation_return.png` : vraies routes, aller/retour, liserés des pactes et étiquette placée hors des noms et marqueurs des colonies.
+- `civilisation_local.png` : vraie vue locale, guerriers équipés et civils sans accessoires de guerre.
+- `civilisation_knowledge_en_jeu.png`, `civilisation_relations_en_jeu.png` : deux onglets dans la scène principale, avec `--demo-war`.
+
+Dans cet environnement restreint, Godot émet des diagnostics sur l'accès au magasin de certificats et au cache de shaders ; les scènes, les exports, les captures et les contrôles ci-dessus terminent avec succès.
+
+Les changements de `CivilizationPanel.cs` et `WorldMapView.cs` sont déjà appliqués aux fichiers locaux non commités de Claude. Le delta graphique seul est conservé dans `../tools/habillage_civilisation.patch` ; **ne pas le réappliquer aux fichiers déjà habillés**. Pour une autre copie ayant exactement le socle de cette livraison, utiliser `git apply --unidiff-zero` ; le contrôle inverse valide que le delta est effectivement présent.

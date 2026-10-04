@@ -91,19 +91,21 @@ public sealed class Stockpile
 
     public bool TryTakeMeal() => TryTakeMeal(out _);
 
-    public void Add(ResourceType type, int amount)
+    public void Add(ResourceType type, int amount, ResourceFlow flow = ResourceFlow.Production)
     {
         _amounts[type] = Get(type) + amount;
+        ResourceAccounting.Record(this, type, flow, amount);
         if (type == ResourceType.Meat && amount > 0)
             _meatByAge[0] = _meatByAge.GetValueOrDefault(0) + amount;
     }
 
     /// <summary>Retire une quantité si elle est disponible (la viande la plus vieille d'abord). Renvoie false sinon, sans rien retirer.</summary>
-    public bool TryTake(ResourceType type, int amount)
+    public bool TryTake(ResourceType type, int amount, ResourceFlow flow = ResourceFlow.Usage)
     {
         if (Get(type) < amount)
             return false;
         _amounts[type] = Get(type) - amount;
+        ResourceAccounting.Record(this, type, flow, amount);
         if (type == ResourceType.Meat)
             RemoveMeat(amount, 0);
         return true;
@@ -151,6 +153,7 @@ public sealed class Stockpile
             lost += rot;
         }
         _amounts[ResourceType.Meat] = Get(ResourceType.Meat) - lost;
+        ResourceAccounting.Record(this, ResourceType.Meat, ResourceFlow.Loss, lost);
         return lost;
     }
 }

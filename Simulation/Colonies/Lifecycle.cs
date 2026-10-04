@@ -278,6 +278,7 @@ public static class Lifecycle
             "faim" => $"{colonist.Name} {colonist.Surname} est mort{(female ? "e" : "")} de faim, à {age:0} ans.",
             "maladie" => $"{colonist.Name} {colonist.Surname} succombe à la fièvre, à {age:0} ans.",
             "blessure" => $"{colonist.Name} {colonist.Surname} succombe à ses blessures, à {age:0} ans.",
+            "guerre" => $"{colonist.Name} {colonist.Surname} tombe au combat, à {age:0} ans.",
             _ => $"{colonist.Name} {colonist.Surname} s'éteint de vieillesse, à {age:0} ans.",
         });
     }

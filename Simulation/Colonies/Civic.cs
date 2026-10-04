@@ -25,36 +25,47 @@ public static class Civic
 
     public static Building? Site(Colony colony, BuildingType type) => colony.Buildings.FirstOrDefault(b => b.Type == type && b.IsComplete);
 
-    /// <summary>Le prochain bâtiment de la vie du village à bâtir, ou null. Un seul de chaque, un chantier à la fois.</summary>
+    /// <summary>
+    /// Le prochain bâtiment de la vie du village à bâtir, ou null. Un seul de chaque, un chantier à la fois. La colonie passe
+    /// ceux qu'elle ne sait pas encore bâtir (voir <see cref="Knowledge"/>) : elle les étudie en attendant.
+    /// </summary>
     public static BuildingType? NextToBuild(Colony colony)
+    {
+        foreach (BuildingType type in Candidates(colony))
+            if (Knowledge.Allows(colony, type))
+                return type;
+        return null;
+    }
+
+    /// <summary>Les bâtiments du village que la colonie voudrait, du plus pressé au moins pressé, qu'elle sache les bâtir ou non.</summary>
+    public static IEnumerable<BuildingType> Candidates(Colony colony)
     {
         int people = colony.Members.Count;
         if (people < 6)
-            return null;
+            yield break;
 
         if (!Planned(colony, BuildingType.Pen) && (colony.Fields.Count > 0 || colony.Stock.Get(ResourceType.Grain) >= 10))
-            return BuildingType.Pen;
+            yield return BuildingType.Pen;
         if (!Planned(colony, BuildingType.Well) && people >= 8)
-            return BuildingType.Well;
+            yield return BuildingType.Well;
         if (!Planned(colony, BuildingType.Loom) && Has(colony, BuildingType.Pen)
             && (colony.Stock.Get(ResourceType.Wool) >= 2 || colony.WoolReady >= 2f))
-            return BuildingType.Loom;
+            yield return BuildingType.Loom;
         if (!Planned(colony, BuildingType.Storehouse) && (people >= 14 || Perishables(colony) >= StorageCapacity(colony) / 2))
-            return BuildingType.Storehouse;
+            yield return BuildingType.Storehouse;
         if (!Planned(colony, BuildingType.Infirmary) && ((colony.IllnessCases >= 2 && people >= 7) || people >= 12))
-            return BuildingType.Infirmary;
+            yield return BuildingType.Infirmary;
         if (!Planned(colony, BuildingType.Market) && people >= 8 && (colony.Trades.Count > 0 || people >= 14))
-            return BuildingType.Market;
+            yield return BuildingType.Market;
         if (!Planned(colony, BuildingType.Tavern) && people >= 12)
-            return BuildingType.Tavern;
+            yield return BuildingType.Tavern;
         if (Cuisine.WantsCask(colony))
-            return BuildingType.Cask;
+            yield return BuildingType.Cask;
         if (!Planned(colony, BuildingType.School) && (colony.Children >= 3 || people >= 16))
-            return BuildingType.School;
+            yield return BuildingType.School;
         // Un village prospère agrandit son élevage : un enclos de plus quand les premiers débordent (voir Husbandry.WantsAnotherPen).
         if (Husbandry.WantsAnotherPen(colony))
-            return BuildingType.Pen;
-        return null;
+            yield return BuildingType.Pen;
     }
 
     public static string Announcement(BuildingType type) => type switch
@@ -96,7 +107,7 @@ public static class Civic
         foreach (ResourceType good in new[] { ResourceType.Milk, ResourceType.Grain, ResourceType.Flour, ResourceType.Eggs, ResourceType.Bread })
         {
             int take = Math.Min(rot - lost, colony.Stock.Get(good));
-            if (take > 0 && colony.Stock.TryTake(good, take))
+            if (take > 0 && colony.Stock.TryTake(good, take, ResourceFlow.Loss))
                 lost += take;
             if (lost >= rot)
                 break;
@@ -192,7 +203,7 @@ public static class Civic
         building.Residents.Clear();
         colony.FillVacancies();
         int wood = colony.Stock.Get(ResourceType.Wood);
-        colony.Stock.TryTake(ResourceType.Wood, wood / 4);
+        colony.Stock.TryTake(ResourceType.Wood, wood / 4, ResourceFlow.Loss);
         ColonyBrain.Say(colony, clock, $"Un incendie ravage {Building.WithArticle(building.Type)} : il est réduit en cendres !");
     }
 

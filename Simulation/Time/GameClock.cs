@@ -68,4 +68,7 @@ public enum GameSpeed
     Observation = 1,
     Rapide = 4,
     TresRapide = 30,
+
+    /// <summary>Pour voir passer les années : une année en moins de cinq secondes. Le jeu n'affiche alors que les chiffres des colonies.</summary>
+    Fulgurante = 200,
 }

@@ -23,7 +23,7 @@ internal static class StateGraph
         typeof(Field), typeof(FieldPlot), typeof(Canal), typeof(Activity), typeof(Grave), typeof(Thought),
         typeof(ColonySensors), typeof(ChainDemand), typeof(BreadDemand), typeof(Caravan), typeof(TradeLine),
         typeof(TradeRecord), typeof(Prayer), typeof(PrayerBook), typeof(ColonyBrain.NarrationTopic),
-        typeof(WorldGrid), typeof(WorldTile), typeof(WorldRoute),
+        typeof(WorldGrid), typeof(WorldTile), typeof(WorldRoute), typeof(Pact), typeof(WarParty),
     ];
     private static readonly Dictionary<string, Type> KnownTypes = DataTypes
         .Concat(typeof(WorldState).Assembly.GetTypes().Where(t => t.IsEnum))
@@ -52,7 +52,7 @@ internal static class StateGraph
         {
             colony.Pathfinder = new Pathfinding.Pathfinder(colony.Map);
             if (FieldCache[typeof(Colony)].Single(f => f.Name == "_prayers").GetValue(colony) is PrayerBook book)
-                foreach (Prayer prayer in book.All) prayer.RestoreAction();
+                foreach (Prayer prayer in book.All) prayer.RestoreAction(world);
         }
         return world;
     }

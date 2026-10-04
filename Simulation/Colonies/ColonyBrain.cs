@@ -165,14 +165,19 @@ public static class ColonyBrain
         // Le fer manque, la pierre déborde et aucun filon n'est à portée de la carrière : les mineurs
         // resteraient les bras croisés. On ouvre un front de taille là où le minerai se voit.
         bool wantOre = colony.Sensors?.Chain is { Active: true, OreMissing: > 0 };
-        if (wantOre && !WorkSites.OreWithinReach(map, quarry))
+        if (wantOre && !WorkSites.OreWithinReach(map, colony))
         {
             colony.LastQuarryMoveTicks = clock.Ticks;
-            if (WorkSites.FindQuarry(map, colony.CampX, colony.CampY, forOre: true) is { } oreQuarry && oreQuarry != quarry)
+            if (colony.IsExhausted(SearchKind.OreQuarry))
+                return;
+            if (WorkSites.FindOreQuarry(map, colony.CampX, colony.CampY) is { } oreQuarry && oreQuarry != quarry)
             {
                 colony.Quarry = oreQuarry;
+                colony.ForgetQuarrySearches();
                 Say(colony, clock, "Aucun filon près de la carrière : nous ouvrons un front de taille vers le minerai de fer.");
             }
+            else
+                colony.MarkExhausted(SearchKind.OreQuarry); // aucun filon visible nulle part : on revérifiera dans un an
             return;
         }
 
@@ -183,6 +188,7 @@ public static class ColonyBrain
             || WorkSites.RocksLeft(map, next) <= WorkSites.RocksLeft(map, quarry))
             return;
         colony.Quarry = next;
+        colony.ForgetQuarrySearches();
         Say(colony, clock, "La carrière est presque épuisée : nous ouvrons un nouveau front de taille.");
     }
 
@@ -241,6 +247,7 @@ public static class ColonyBrain
     public static void OnDayStart(Colony colony, GameClock clock)
     {
         colony.UnreachableStands.Clear();
+        colony.AgeExhaustedSearches();
         foreach (Colony other in colony.Grudges.Keys.ToList())
         {
             colony.Grudges[other] = Math.Max(0f, colony.Grudges[other] - GrudgeFadePerDay);
@@ -368,7 +375,7 @@ public static class ColonyBrain
     {
         if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || clock.Season == Season.Hiver
             || colony.Fields.Count == 0 || colony.ConstructionSites.Any() || colony.Buildings.Any(b => b.IsDam)
-            || colony.Prayers.IsQuiet(DecisionKind.Dam, clock))
+            || colony.Prayers.IsQuiet(DecisionKind.Dam, clock) || !Knowledge.Allows(colony, BuildingType.Dam))
             return;
         if (!colony.Fields.Any(f => Irrigation.IrrigatedShare(map, f) < 0.5f))
             return;
@@ -399,7 +406,7 @@ public static class ColonyBrain
     private static bool PlanCanal(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
     {
         if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || clock.Season == Season.Hiver
-            || colony.Fields.Count == 0 || colony.CanalsInProgress.Any())
+            || colony.Fields.Count == 0 || colony.CanalsInProgress.Any() || !Knowledge.Has(colony, Discovery.Irrigation))
             return false;
         if (Irrigation.PlanBest(map, colony) is not { } canal)
             return false;
@@ -494,7 +501,9 @@ public static class ColonyBrain
         float heatingPressure = Pressure(heatingTarget - wood, heatingTarget);
 
         // Bois total : le chauffage, ce que les chantiers attendent encore, et celui que la charbonnière va brûler.
-        ChainDemand chain = ToolChain.Demand(colony);
+        // Sans la métallurgie, le fer ne sert à rien : on ne brûle pas de charbon et l'on ne cherche pas le minerai pour lui.
+        ChainDemand chain = Knowledge.Has(colony, Discovery.Metallurgy) ? ToolChain.Demand(colony)
+            : ChainDemand.None with { ToolsWanted = ToolChain.ToolsWanted(colony) };
         float woodTarget = heatingTarget + colony.ConstructionSites.Sum(b => b.WoodStillToBring) + chain.WoodForCharcoal;
         float woodPressure = Pressure(woodTarget - wood, woodTarget);
 
