@@ -153,7 +153,8 @@ public class IronChainTests(ITestOutputHelper output)
         int maxTools = 0;
         long firstToolDay = -1;
 
-        for (int day = 1; day <= 60; day++)
+        // Les autres chantiers (moulin, four, enclos…) passent parfois avant la forge : on laisse quatre ans à la chaîne du fer.
+        for (int day = 1; day <= 80; day++)
         {
             for (long i = 0; i < TimeConstants.TicksPerDay; i++)
                 world.Step();

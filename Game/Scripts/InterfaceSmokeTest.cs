@@ -139,7 +139,8 @@ public partial class Main
     {
         SetSpeed(GameSpeed.Pause);
         var savedFood = new Dictionary<ResourceType, int>();
-        foreach (var type in new[] { ResourceType.Food, ResourceType.Fish, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour })
+        foreach (var type in new[] { ResourceType.Food, ResourceType.Fish, ResourceType.Eggs, ResourceType.Milk, ResourceType.Meat, ResourceType.SaltedMeat,
+                ResourceType.Cake, ResourceType.Stew, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour })
         {
             savedFood[type] = Observed.Stock.Get(type);
             Observed.Stock.TryTake(type, savedFood[type]);

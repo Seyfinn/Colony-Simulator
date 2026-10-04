@@ -137,6 +137,22 @@ public static class WorkSites
     /// <summary>On n'envisage qu'un nombre limité d'emplacements, les plus proches du camp à pied.</summary>
     private const int QuarryCandidates = 160;
 
+    /// <summary>Pour dénicher du fer, on ratisse bien plus large : le filon est rarement au pied du camp.</summary>
+    private const int OreQuarryCandidates = 4000;
+
+    /// <summary>Un filon (affleurant ou à faible profondeur) est-il à portée de pioche autour de la carrière ?</summary>
+    public static bool OreWithinReach(LocalMap map, (int X, int Y) quarry)
+    {
+        for (int dy = -OreSearchRadius; dy <= OreSearchRadius; dy++)
+        for (int dx = -OreSearchRadius; dx <= OreSearchRadius; dx++)
+        {
+            int x = quarry.X + dx, y = quarry.Y + dy;
+            if (map.CanMine(x, y) && map.DepthToOre(x, y, OreProspectDepth) != int.MaxValue)
+                return true;
+        }
+        return false;
+    }
+
     /// <summary>Une carrière qui offre moins de roches à portée que cela est épuisée : la colonie en cherche une autre.</summary>
     public const int ExhaustedQuarryRocks = 25;
 
@@ -155,15 +171,16 @@ public static class WorkSites
     /// Choisit où ouvrir la carrière : parmi les roches que l'on atteint à pied depuis le camp, le gisement le plus
     /// riche (beaucoup de roche à portée, des filons de fer visibles), sans aller trop loin du camp.
     /// </summary>
-    public static (int X, int Y)? FindQuarry(LocalMap map, int campX, int campY)
+    public static (int X, int Y)? FindQuarry(LocalMap map, int campX, int campY, bool forOre = false)
     {
+        int maxCandidates = forOre ? OreQuarryCandidates : QuarryCandidates;
         var distance = new Dictionary<(int, int), int> { [(campX, campY)] = 0 };
         var queue = new Queue<(int X, int Y)>();
         queue.Enqueue((campX, campY));
         var candidates = new List<((int X, int Y) Rock, int Steps)>();
         var seen = new HashSet<(int, int)>();
 
-        while (queue.Count > 0 && candidates.Count < QuarryCandidates)
+        while (queue.Count > 0 && candidates.Count < maxCandidates)
         {
             (int x, int y) = queue.Dequeue();
             foreach ((int dx, int dy) in Neighbors)
@@ -171,7 +188,7 @@ public static class WorkSites
                 int nx = x + dx, ny = y + dy;
                 if (CanMineFrom(map, x, y, nx, ny) && seen.Add((nx, ny)))
                     candidates.Add(((nx, ny), distance[(x, y)] + 1));
-                if (Math.Max(Math.Abs(nx - campX), Math.Abs(ny - campY)) <= QuarrySearchRadius
+                if ((forOre || Math.Max(Math.Abs(nx - campX), Math.Abs(ny - campY)) <= QuarrySearchRadius)
                     && map.CanStep(x, y, nx, ny) && !distance.ContainsKey((nx, ny)))
                 {
                     distance[(nx, ny)] = distance[(x, y)] + 1;
@@ -189,6 +206,7 @@ public static class WorkSites
         foreach (((int rx, int ry), int steps) in candidates)
         {
             float richness = 0f;
+            int veins = 0;
             for (int dy = -QuarryJudgeRadius; dy <= QuarryJudgeRadius; dy++)
             for (int dx = -QuarryJudgeRadius; dx <= QuarryJudgeRadius; dx++)
             {
@@ -197,9 +215,15 @@ public static class WorkSites
                     continue;
                 richness += 1f;
                 if (map.TopMaterial(x, y) == Material.IronOre)
+                {
                     richness += 3f;
+                    veins++;
+                }
             }
-            float score = richness >= RichEnoughQuarry ? 1000f - steps : richness;
+            // En quête de fer : le premier gisement qui laisse voir un filon, le plus proche du camp.
+            if (forOre && veins == 0)
+                continue;
+            float score = forOre || richness >= RichEnoughQuarry ? 1000f - steps : richness;
             if (score > bestScore)
             {
                 bestScore = score;

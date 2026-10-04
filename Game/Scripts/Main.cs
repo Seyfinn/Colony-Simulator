@@ -218,7 +218,8 @@ public partial class Main : Node2D
             }
             else if (arg == "--demo-workshops")
             {
-                foreach (BuildingType type in new[] { BuildingType.Hut, BuildingType.Kiln, BuildingType.Bloomery, BuildingType.Forge, BuildingType.Mill, BuildingType.Oven })
+                foreach (BuildingType type in new[] { BuildingType.Hut, BuildingType.Kiln, BuildingType.Bloomery, BuildingType.Forge, BuildingType.Mill, BuildingType.Oven,
+                    BuildingType.Pen, BuildingType.Loom, BuildingType.Market, BuildingType.Infirmary, BuildingType.Storehouse, BuildingType.Well, BuildingType.Tavern, BuildingType.Cask, BuildingType.School })
                     Urbanism.BuildInstantly(Observed.Map, Observed, type);
             }
             else if (arg == "--demo-dam")
