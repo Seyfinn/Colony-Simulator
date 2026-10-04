@@ -143,6 +143,11 @@ Les cases voisines sont reliées par un **masque de connexions** à 4 bits : nor
 | `lake_edge_<masque>.png` | Rives du lac de retenue (masque des voisins qui ne sont **pas** de l'eau), 0 à 15 | PNG (T-001) |
 | `water_deep.png`, `water_deep_1.png` | Eau profonde, 2 images d'animation douce | Code |
 
+Berges des fleuves larges : **Code**, suggestion facultative de Claude livrée le 2026-10-04.
+`TerrainPainter.Riverbanks.cs` ajoute plages de sable irrégulières, liseré humide, galets et eau peu profonde ;
+`RiverbankDetails.cs` pose roseaux et touffes sur la terre, selon le biome. Eau plus froide en taïga/toundra,
+plus verte en marais/jungle et transition du fleuve vers le lac adoucie. Aucun nouveau PNG de production ni changement de taille.
+
 ### 4.4 Personnages — `peoples/<espece>_<age>_<sexe>_<image>.png`
 
 Espèces : `human`, `dwarf`, `elf`, `orc`. Âges : `child`, `teen`, `adult`, `elder`. Sexes : `f`, `m`.
@@ -206,6 +211,14 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — ChatGPT/Codex — berges naturelles des grands fleuves
+- Suggestion facultative de Claude réalisée à la demande de l'utilisateur, qui autorise aussi les améliorations visuelles connexes. Livraison **Code**, sans nouveau fichier image de production ni changement du contrat : plages irrégulières, sable humide, galets, eau peu profonde, roseaux et touffes près de l'eau. La végétation est clairsemée en désert/toundra et plus dense en marais ; elle ne crée aucune ressource.
+- `View/TerrainPainter.Riverbanks.cs` remplace les rives de lac génériques sur les cases de fleuve large, sans toucher aux ruisseaux PNG, canaux ni retenues. `TerrainPainter.cs` accorde l'eau au climat (taïga/toundra, jungle/marais) et fond la couleur du courant dans le lac à l'embouchure. `RiverbankDetails.cs`, appelé par `EnvironmentDetails`, ancre les petits décors sur la terre voisine de l'eau. Géométrie, passabilité, débits, poissons et flore récoltable inchangés.
+- Peinture sans appel à Godot ni cache partagé supplémentaire, compatible avec les morceaux peints en parallèle. Les dépendances restent dans les huit voisines : `TerrainReach` / `TerrainReachNearWater` inchangés. Les textures des petits décors sont créées sur le fil de dessin seulement.
+- Validation sur copie isolée, puis build du projet principal : **0 avertissement / 0 erreur**. Scène isolée `validation/berges.tscn` : **RIVERBANKS_OK**, peinture répétée et parallèle identique, raccords entre deux morceaux identiques à la peinture entière, repeinture après inondation/canal identique à une peinture complète, empreintes de relief/sol/flore/croissance/humidité/eau/poissons/débit inchangées. Contrôle également réussi sans les PNG de terrain. Captures `berges.png` (quatre climats sur cartes de démonstration de même géométrie) et `berges_en_jeu.png` (vraie scène principale, `--focus-river --zoom=2`) inspectées.
+- **À Claude** : `--smoke-menu` échoue sur le total/détail des stocks alimentaires (`InterfaceSmokeTest.cs`, assertion « Le total et le détail doivent suivre les variations du stock »). Même échec reproduit avec `TerrainPainter` et `EnvironmentDetails` d'origine sur la copie du projet en cours, avant ces ajouts graphiques ; à examiner dans tes changements d'interface/cuisine. Aucun fichier de simulation, test de simulation, `Hud.cs` ou `Main.cs` modifié par cette livraison.
+- Le dossier principal contenait déjà les changements de village/cuisine de Claude : intégration et commit limités aux fichiers de berges et à leur documentation. Commit **« Graphismes : enrichir les berges des grands fleuves »** (commit portant cette entrée). Aucun branchement restant attendu.
 
 ### 2026-10-04 — ChatGPT/Codex — économie et production plus visuelles, à la demande de l'utilisateur
 - `View/EconomyDashboard.cs` : trésorerie, jours de repas, travail économisé ; cartes de ressources avec icône, stock, jauge du besoin réel, manque ou surplus, coût et valeur (estimations marquées `~`). Onglet commerce avec caravanes, progression et échanges illustrés. Les données de l'élevage, des bêtes régionales, des objectifs et des rancunes restent disponibles ; elles ne sont pas recalculées côté interface.

@@ -16,6 +16,7 @@ public static class EnvironmentDetails
     {
         if (map.HasWater(x, y) || map.IsCanal(x, y)) return;
         Surface surface = map.GetSurface(x, y);
+        if (surface is Surface.Grass or Surface.Dirt or Surface.Sand && RiverbankDetails.Draw(canvas, map, x, y, origin)) return;
         if (surface is not (Surface.Grass or Surface.Dirt or Surface.Stone)) return;
         WoodlandBiome biome = BiomeVisuals.At(map, x, y);
         if (surface == Surface.Stone && biome != WoodlandBiome.Highland) return;

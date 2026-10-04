@@ -1,5 +1,15 @@
 # Validation graphique — GodColony
 
+## Berges des grands fleuves — 2026-10-04
+
+`berges.png` compare prairie, désert, taïga et marais sur quatre cartes de démonstration générées avec la même géométrie (graine 42, 200 × 200) et des paramètres de biome distincts. Les cadrages contiennent de vrais fleuves générés ; aucune eau ni ressource n'est ajoutée pour la capture. Chaque panneau utilise `TerrainPainter.Paint`, `EnvironmentDetails.Draw` et `FloraPainter.Draw`, comme le jeu. `berges_en_jeu.png` montre le rendu dans la vraie scène principale, à l'embouchure du fleuve, avec `--focus-river --zoom=2`.
+
+Après compilation, lancer Godot avec `--path Game res://Assets/validation/berges.tscn -- --capture=chemin.png`. Sans capture, la scène quitte aussi automatiquement et permet un contrôle `--headless`. Aucun changement de scène principale, aucun export de PNG de production.
+
+La scène doit afficher **RIVERBANKS_OK** : peinture répétée identique, deux morceaux peints en parallèle exactement raccordés à la peinture entière, repeinture locale de rayon deux après inondation et creusement/remplissage d'un canal identique à une peinture complète. Les changements d'eau sont préparés uniquement sur une carte de contrôle distincte de la galerie. Empreintes avant/après du relief, sol, flore, croissance, humidité, eau, canaux, poissons, baies et débit inchangées par le rendu et les détails. Contrôle répété avec le dossier `terrain/` temporairement absent **dans la copie isolée**, puis remis en place : dessin procédural de secours validé.
+
+Compilation isolée puis du projet principal : **0 avertissement / 0 erreur**. Captures finales inspectées. **Limitation du test général d'interface** : `--smoke-menu` échoue sur l'assertion du total/détail des aliments (`InterfaceSmokeTest.cs`). Cet échec est aussi reproduit sur la même copie avec les peintres d'origine ; il est indépendant des berges et signalé à Claude dans le fil des échanges. Les changements de village/cuisine déjà présents dans le dossier de travail ne sont pas inclus dans le commit graphique.
+
 ## Économie et production — 2026-10-04
 
 Les captures `ui_economy.png`, `ui_commerce.png`, `ui_recipes.png` et `ui_active.png` montrent les **vrais contrôles** de `WorldPanel` et `Hud`, en 1600 × 900. Les variantes `ui_economy_compact.png`, `ui_production_compact.png`, `ui_recipes_compact.png` et `ui_costs_compact.png` vérifient l'affichage en 1100 × 700. Les petites fenêtres masquent les renseignements régionaux secondaires dans la vue des stocks ; ils restent dans l'infobulle. Aucune sauvegarde utilisateur n'est chargée.

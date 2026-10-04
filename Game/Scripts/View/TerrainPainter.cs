@@ -6,7 +6,7 @@ using GodColony.Simulation.World;
 namespace GodColony.View;
 
 /// <summary>Terrain pastoral en 32 pixels : sols nuancés, rives, roche stratifiée et veines de fer.</summary>
-public static class TerrainPainter
+public static partial class TerrainPainter
 {
     public const int TileSize = 32;
     private const int StratumHeight = 8;
@@ -133,7 +133,7 @@ public static class TerrainPainter
         int riverCorners = RiverTiles.Corners(map, x, y);
         byte[]? riverShape = wide ? null : RiverTiles.River(riverMask, riverCorners, river);
         byte[]? riverTile = !canal && surface != Surface.Water ? riverShape : null;
-        byte[]? lakeTile = surface == Surface.Water
+        byte[]? lakeTile = surface == Surface.Water && !wide
             ? RiverTiles.Shore(RiverTiles.LakeEdges(map, x, y, riverMask), riverShape) : null;
         // Avec le jeu complet de PNG, les rives restent dans la case ; sans lui, garder l'ancien tracé.
         bool pngRivers = RiverTiles.Complete;
@@ -143,6 +143,10 @@ public static class TerrainPainter
         int west = Elevation(map, x - 1, y, height), east = Elevation(map, x + 1, y, height);
         Surface n = Neighbor(map, x, y - 1, surface), s = Neighbor(map, x, y + 1, surface);
         Surface w = Neighbor(map, x - 1, y, surface), e = Neighbor(map, x + 1, y, surface);
+        // À l'embouchure, fondre le courant dans l'eau profonde plutôt que dessiner une séparation rectiligne.
+        bool DeepWater(int ax, int ay) => wide && map.InBounds(ax, ay) && map.IsWater(ax, ay) && !map.IsWideRiver(ax, ay);
+        bool lakeNorth = DeepWater(x, y - 1), lakeSouth = DeepWater(x, y + 1);
+        bool lakeWest = DeepWater(x - 1, y), lakeEast = DeepWater(x + 1, y);
         int cliff = surface != Surface.Water && !river ? Math.Min(Math.Max(0, north - height), 3) * StratumHeight : 0;
         float ambient = 0.86f + height * 0.016f;
         var noise = new PixelNoise();
@@ -178,6 +182,24 @@ public static class TerrainPainter
                 else if (px > 25) grass = Blend(grass, pe, (px - 25) / 12f);
                 color = wide ? RiverPixel(ref noise, wx, wy, wideFlowX, wideFlowY, wideFlow)
                     : GroundPixel(ref noise, surface, wx, wy, height, biome, grass, region, soilPalette);
+                if (wide)
+                {
+                    color = region switch
+                    {
+                        Biome.Swamp => Blend(color, new Rgb(65, 110, 87), 0.32f),
+                        Biome.TropicalForest => Blend(color, new Rgb(63, 123, 105), 0.19f),
+                        Biome.BorealForest or Biome.Tundra => Blend(color, new Rgb(76, 128, 147), 0.16f),
+                        _ => color,
+                    };
+                    int estuary = TileSize;
+                    if (lakeNorth) estuary = Math.Min(estuary, py);
+                    if (lakeSouth) estuary = Math.Min(estuary, 31 - py);
+                    if (lakeWest) estuary = Math.Min(estuary, px);
+                    if (lakeEast) estuary = Math.Min(estuary, 31 - px);
+                    if (estuary < 12)
+                        color = Blend(color, GroundPixel(ref noise, Surface.Water, wx, wy, height, biome, grass, region, soilPalette),
+                            1 - estuary / 12f);
+                }
                 if (flooded) color = Blend(color, Depth, 0.22f);
                 int edge = 2 + (int)(noise.Edge.At(wx / 9f, wy / 9f) * 4);
                 int distance = TileSize;
@@ -261,6 +283,7 @@ public static class TerrainPainter
         }
         if (lakeTile is not null) RiverTiles.Blend(lakeTile, pixels, stride, ox, oy);
         if (canalTile is not null) RiverTiles.Blend(canalTile, pixels, stride, ox, oy);
+        PaintRiverbank(map, x, y, pixels, stride, ox, oy, wide, riverMask, riverCorners);
     }
 
     private static Rgb GroundPixel(ref PixelNoise noise, Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass,
