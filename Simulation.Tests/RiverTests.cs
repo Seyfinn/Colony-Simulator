@@ -66,14 +66,19 @@ public class RiverTests(ITestOutputHelper output)
         var world = new WorldState(12345, startingColonists: 6, migration: false, lifecycle: false);
         LocalMap map = world.Map;
 
-        (int X, int Y) river = RiverTiles(map)[0];
-        (int X, int Y)? bank = null;
-        for (int d = 1; d <= LocalMap.BankReach && bank is null; d++)
-            if (!map.HasWater(river.X + d, river.Y))
-                bank = (river.X + d, river.Y);
-        Assert.NotNull(bank);
-        Assert.True(map.IsFertileBank(bank!.Value.X, bank.Value.Y));
-        Assert.Equal(Farming.PlotYield + Farming.BankBonus, Farming.YieldAt(map, bank.Value.X, bank.Value.Y));
+        // Une berge : une case de terre à portée d'une rivière, hors de l'eau.
+        (int X, int Y) bank = (-1, -1);
+        foreach ((int x, int y) in RiverTiles(map))
+        {
+            for (int d = 1; d <= LocalMap.BankReach && bank.X < 0; d++)
+                if (map.InBounds(x + d, y) && !map.HasWater(x + d, y) && !map.IsIrrigated(x + d, y) && map.GetSoil(x + d, y) != SoilType.Sand)
+                    bank = (x + d, y);
+            if (bank.X >= 0)
+                break;
+        }
+        Assert.True(bank.X >= 0);
+        Assert.True(map.IsFertileBank(bank.X, bank.Y));
+        Assert.Equal(Farming.PlotYield + Farming.BankBonus, Farming.YieldAt(map, bank.X, bank.Y));
 
         // Loin de toute eau : rendement normal.
         (int X, int Y) far = (-1, -1);

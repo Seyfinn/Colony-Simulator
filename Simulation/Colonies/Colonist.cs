@@ -29,7 +29,7 @@ public sealed class Colonist
     public const float AdultAge = 6f;
     public const float ElderAge = 16f;
 
-    public string Surname { get; init; } = "";
+    public string Surname { get; internal set; } = "";
     public string FullName => Surname.Length == 0 ? Name : $"{Name} {Surname}";
 
     /// <summary>Le moment de la naissance, en ticks (négatif pour ceux qui sont nés avant la fondation).</summary>
@@ -95,9 +95,24 @@ public sealed class Colonist
     public WorkSector Sector { get; internal set; }
 
     public int Id { get; }
-    public string Name { get; }
+    public string Name { get; private set; }
     public Sex Sex { get; }
     public Colony Colony { get; }
+
+    public const int MaxNameLength = 40;
+
+    /// <summary>Change l'identité affichée, en conservant le colon et tous ses liens familiaux et sociaux.</summary>
+    public bool TryRename(string? name, string? surname)
+    {
+        string firstName = name?.Trim() ?? "";
+        string familyName = surname?.Trim() ?? "";
+        if (firstName.Length == 0 || firstName.Length > MaxNameLength || familyName.Length > MaxNameLength
+            || firstName.Any(char.IsControl) || familyName.Any(char.IsControl))
+            return false;
+        Name = firstName;
+        Surname = familyName;
+        return true;
+    }
 
     /// <summary>Position en cases (le centre d'une case est à +0,5).</summary>
     public float X { get; internal set; }

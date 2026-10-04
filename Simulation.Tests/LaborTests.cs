@@ -33,12 +33,16 @@ public class LaborTests(ITestOutputHelper output)
         output.WriteLine($"Produit : nourriture {colony.Labor.TotalProduced(ResourceType.Food)}, bois {colony.Labor.TotalProduced(ResourceType.Wood)}, " +
                          $"pierre {colony.Labor.TotalProduced(ResourceType.Stone)}");
 
-        foreach (ResourceType type in new[] { ResourceType.Food, ResourceType.Wood, ResourceType.Stone })
+        foreach (ResourceType type in new[] { ResourceType.Food, ResourceType.Wood })
         {
             double? hours = colony.Labor.HoursPerUnit(type);
             Assert.NotNull(hours);
             Assert.InRange(hours.Value, 0.05, 20);
         }
+        // La carrière donne de la pierre, ou du minerai si elle est tombée sur un filon : l'un des deux au moins est mesuré.
+        double? mined = colony.Labor.HoursPerUnit(ResourceType.Stone) ?? colony.Labor.HoursPerUnit(ResourceType.IronOre);
+        Assert.NotNull(mined);
+        Assert.InRange(mined.Value, 0.05, 20);
         Assert.NotNull(colony.Labor.HoursPerHut);
         Assert.Contains(colony.Thoughts, t => t.Text.StartsWith("Bilan de saison"));
     }

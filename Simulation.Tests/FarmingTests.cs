@@ -72,9 +72,12 @@ public class FarmingTests(ITestOutputHelper output)
         int plots = Farming.Plots(colony).Count();
 
         int maxGrowing = 0, maxRipe = 0, maxGrain = 0;
+        bool harvestAnnounced = false;
         for (int day = 1; day <= 20; day++)
         {
             RunDays(world, 1);
+            // La colonie ne garde que ses trente dernières pensées : on guette l'annonce de la moisson au fil des jours.
+            harvestAnnounced |= colony.Thoughts.Any(t => t.Text.Contains("moisson"));
             maxGrowing = Math.Max(maxGrowing, Farming.Plots(colony).Count(p => p.Stage == CropStage.Growing));
             maxRipe = Math.Max(maxRipe, Farming.Plots(colony).Count(p => p.Stage == CropStage.Ripe));
             maxGrain = Math.Max(maxGrain, colony.Stock.Get(ResourceType.Grain));
@@ -91,7 +94,7 @@ public class FarmingTests(ITestOutputHelper output)
         Assert.True(maxRipe > 0, "Les céréales doivent arriver à maturité.");
         Assert.True(colony.Labor.TotalProduced(ResourceType.Grain) >= plots, "Au moins une récolte par parcelle en moyenne.");
         Assert.NotNull(colony.Labor.HoursPerUnit(ResourceType.Grain));
-        Assert.Contains(colony.Thoughts, t => t.Text.Contains("moisson"));
+        Assert.True(harvestAnnounced, "La colonie doit annoncer la moisson.");
         Assert.True(colony.Members.Average(m => m.Needs.Food) > 0.3f);
     }
 

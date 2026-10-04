@@ -335,14 +335,15 @@ public static class ColonyBrain
             "Construire un barrage sur la rivière ?",
             $"Nos champs manquent d'eau. Un barrage en ({x}, {y}) formerait en amont un lac de {tiles} cases : des poissons, des berges fertiles et de l'eau à portée de nos champs. " +
             "La rivière coulerait moins fort en aval.",
-            () =>
-            {
-                if (Hydrology.FindReservoir(map, colony, x, y) is null)
-                    return;
-                Urbanism.PlanBuilding(map, colony, BuildingType.Dam, x, y);
-                Say(colony, clock, "Nous bâtissons un barrage sur la rivière.");
-            },
+            () => ApplyDamDecision(colony, map, clock, x, y),
             clock, DamRefusalCooldownDays);
+    }
+
+    internal static void ApplyDamDecision(Colony colony, LocalMap map, GameClock clock, int x, int y)
+    {
+        if (Hydrology.FindReservoir(map, colony, x, y) is null) return;
+        Urbanism.PlanBuilding(map, colony, BuildingType.Dam, x, y);
+        Say(colony, clock, "Nous bâtissons un barrage sur la rivière.");
     }
 
     /// <summary>

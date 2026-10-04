@@ -20,6 +20,8 @@ public partial class Hud : CanvasLayer
     public event Action<GameSpeed>? SpeedRequested;
     public event Action? PauseRequested;
     public event Action? SelectionClosed;
+    public event Action? MenuRequested;
+    public event Action<Colonist, string, string>? ColonistRenameRequested;
 
     private Control _root = null!;
     private Label _colonyName = null!, _colonyMeta = null!, _calendar = null!, _hour = null!, _tileInfo = null!;
@@ -27,6 +29,7 @@ public partial class Hud : CanvasLayer
     private readonly Dictionary<GameSpeed, Button> _speedButtons = [];
     private Button _pause = null!, _journalTab = null!, _workTab = null!, _collapse = null!;
     private PanelContainer _tray = null!, _help = null!, _colonistPanel = null!;
+    private HBoxContainer _resourceRow = null!;
     private ScrollContainer _journalBody = null!, _workBody = null!;
     private bool _trayExpanded = true, _showWork;
     private readonly List<(Label Date, Label Message)> _thoughtRows = [];
@@ -38,6 +41,11 @@ public partial class Hud : CanvasLayer
     private ColonistAppearance? _portraitAppearance;
     private Label _colonistName = null!, _colonistActivity = null!, _colonistSector = null!;
     private Label _colonistAge = null!, _colonistFamily = null!, _colonistTraits = null!, _colonistRelations = null!;
+    private Colonist? _shownColonist;
+    private ScrollContainer _colonistScroll = null!;
+    private VBoxContainer _nameEditor = null!;
+    private LineEdit _firstNameEdit = null!, _surnameEdit = null!;
+    private Button _rename = null!, _confirmRename = null!;
     private readonly Dictionary<SkillType, Label> _skills = [];
     private NeedBar _food = null!, _rest = null!, _leisure = null!, _social = null!, _comfort = null!, _mood = null!;
 
@@ -58,6 +66,15 @@ public partial class Hud : CanvasLayer
         BuildFooter();
         _root.Resized += ResizePanels;
         ResizePanels();
+    }
+
+    public override void _Input(InputEvent @event)
+    {
+        if (_nameEditor.IsVisibleInTree() && @event is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape })
+        {
+            CancelRename();
+            GetViewport().SetInputAsHandled();
+        }
     }
 
     private void BuildHeader()
@@ -100,11 +117,15 @@ public partial class Hud : CanvasLayer
             button.Pressed += () => SpeedRequested?.Invoke(speed);
             _speedButtons[speed] = button;
         }
+        var menu = Button(row, "Menu", "Menu et paramètres · Échap", 70);
+        menu.Name = "MenuJeu";
+        menu.Pressed += () => MenuRequested?.Invoke();
     }
 
     private void BuildResources()
     {
         var row = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
+        _resourceRow = row;
         _root.AddChild(row);
         Place(row, 0, 0, 1, 0, 16, 98, -16, 168);
         row.AddThemeConstantOverride("separation", 8);
@@ -207,10 +228,14 @@ public partial class Hud : CanvasLayer
         var column = Column(_colonistPanel, 10);
         var heading = Row(column, 4);
         Text(heading, "HABITANT", 11, Gold).SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        _rename = Button(heading, "Renommer", "Changer le prénom et le nom de famille", 88);
+        _rename.Name = "RenameColonist";
+        _rename.Pressed += BeginRename;
         var close = Button(heading, "×", "Fermer la fiche · Échap", 28);
         close.Name = "CloseInspector";
         close.Pressed += () => SelectionClosed?.Invoke();
         var scroll = Scroll(column, 0);
+        _colonistScroll = scroll;
         scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         var content = Column(scroll, 6);
         content.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -228,7 +253,23 @@ public partial class Hud : CanvasLayer
         var name = Column(identity, 4);
         name.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _colonistName = Wrapped(name, "", 21, Ink);
+        _colonistName.Name = "ColonistName";
         _colonistAge = Text(name, "", 12, Muted);
+        _nameEditor = Column(content, 4);
+        _nameEditor.Name = "ColonistNameEditor";
+        _nameEditor.Visible = false;
+        Text(_nameEditor, "Prénom", 12, Muted);
+        _firstNameEdit = NameField(_nameEditor, "ColonistFirstName", "Prénom obligatoire");
+        Text(_nameEditor, "Nom de famille", 12, Muted);
+        _surnameEdit = NameField(_nameEditor, "ColonistSurname", "Facultatif");
+        var nameActions = Row(_nameEditor, 6);
+        _confirmRename = Button(nameActions, "Valider", "Enregistrer le nom · Entrée", 85);
+        _confirmRename.Name = "ConfirmColonistName";
+        _confirmRename.Pressed += ConfirmRename;
+        var cancelRename = Button(nameActions, "Annuler", "Conserver le nom actuel · Échap", 85);
+        cancelRename.Name = "CancelColonistName";
+        cancelRename.Pressed += CancelRename;
+        _firstNameEdit.TextChanged += _ => _confirmRename.Disabled = string.IsNullOrWhiteSpace(_firstNameEdit.Text);
         _colonistActivity = Wrapped(content, "", 14, Gold);
         Section(content, "BIEN-ÊTRE");
         _mood = new NeedBar(content, "Humeur", Gold);
@@ -274,7 +315,7 @@ public partial class Hud : CanvasLayer
         _help.Visible = false;
         var commands = Column(_help, 8);
         Section(commands, "COMMANDES");
-        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit maintenu   Glisser la carte   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   Échap   Fermer la fiche", 13, Ink);
+        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit maintenu   Glisser la carte   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nFonder une colonie   Choisir une région, puis placer le camp\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   Échap   Menu / annuler", 13, Ink);
     }
 
     private void ResizePanels()
@@ -305,6 +346,7 @@ public partial class Hud : CanvasLayer
 
     public void ShowColony(Colony colony, GameClock clock)
     {
+        _resourceRow.Show(); _tray.Show();
         _colonyName.Text = colony.Name;
         int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
         string population = $"{colony.Members.Count} habitants" + (colony.Children > 0 ? $" · {colony.Children} enfants" : "");
@@ -313,6 +355,22 @@ public partial class Hud : CanvasLayer
         _colonyMeta.Text = $"{population}   ·   Humeur {colony.AverageMood * 100:0} %   ·   Attrait {Migration.Attractiveness(colony, clock) * 100:0} %";
         _colonyMeta.TooltipText = _colonyMeta.Text;
         foreach (var (resource, value) in _stocks) value.Text = colony.Stock.Get(resource).ToString("N0");
+    }
+
+    public void ShowUnsettled(string name, string hint)
+    {
+        CancelRename();
+        _shownColonist = null;
+        _colonyName.Text = name; _colonyMeta.Text = hint;
+        _resourceRow.Hide(); _tray.Hide(); _colonistPanel.Hide();
+    }
+
+    public void ResetColony() => _thoughtStamp = "";
+
+    public void SetSpeedControlsEnabled(bool enabled)
+    {
+        _pause.Disabled = !enabled;
+        foreach (Button button in _speedButtons.Values) button.Disabled = !enabled;
     }
 
     public void SetTileInfo(string text) => _tileInfo.Text = string.IsNullOrWhiteSpace(text) ? "Survolez le terrain pour l'inspecter" : text;
@@ -355,6 +413,8 @@ public partial class Hud : CanvasLayer
 
     public void ShowColonist(Colonist? colonist, WoodlandBiome biome = WoodlandBiome.TemperatePlain)
     {
+        if (_shownColonist != colonist) CancelRename();
+        _shownColonist = colonist;
         _colonistPanel.Visible = colonist is not null;
         if (colonist is null) return;
         var appearance = PeoplesSprites.Describe(colonist, biome);
@@ -402,6 +462,52 @@ public partial class Hud : CanvasLayer
             label.TooltipText = talent > 1.2f ? "Très doué : apprend plus vite" : talent < 0.75f ? "Apprentissage plus lent" : "Apprentissage normal";
         }
     }
+
+    private LineEdit NameField(Node parent, string name, string placeholder)
+    {
+        var field = new LineEdit
+        {
+            Name = name, PlaceholderText = placeholder, MaxLength = Colonist.MaxNameLength,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        field.AddThemeStyleboxOverride("normal", Style(new Color(0.08f, 0.14f, 0.12f), Border, 5, 6));
+        field.AddThemeStyleboxOverride("focus", Style(new Color(0.08f, 0.14f, 0.12f), Gold, 5, 6));
+        field.AddThemeColorOverride("font_color", Ink);
+        field.AddThemeColorOverride("font_placeholder_color", Muted);
+        parent.AddChild(field);
+        field.TextSubmitted += _ => ConfirmRename();
+        return field;
+    }
+
+    private void BeginRename()
+    {
+        if (_shownColonist is null) return;
+        _firstNameEdit.Text = _shownColonist.Name;
+        _surnameEdit.Text = _shownColonist.Surname;
+        _confirmRename.Disabled = false;
+        _nameEditor.Show();
+        _colonistScroll.ScrollVertical = 0;
+        _rename.Disabled = true;
+        _firstNameEdit.GrabFocus();
+        _firstNameEdit.SelectAll();
+    }
+
+    private void ConfirmRename()
+    {
+        if (_shownColonist is null || string.IsNullOrWhiteSpace(_firstNameEdit.Text)) return;
+        ColonistRenameRequested?.Invoke(_shownColonist, _firstNameEdit.Text, _surnameEdit.Text);
+        _colonistName.Text = _shownColonist.FullName;
+        CancelRename();
+    }
+
+    public void CancelRename()
+    {
+        _firstNameEdit.ReleaseFocus();
+        _surnameEdit.ReleaseFocus();
+        _nameEditor.Hide();
+        _rename.Disabled = false;
+    }
+
     public static string SectorName(WorkSector sector) => sector.ToString() switch
     {
         "Food" => "cueillette et pêche", "Farm" => "agriculture", "Wood" => "bois", "Stone" => "pierre",

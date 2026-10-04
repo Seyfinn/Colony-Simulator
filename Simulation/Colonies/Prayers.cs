@@ -45,7 +45,16 @@ public sealed class Prayer
     /// <summary>Vrai si la décision a été accordée d'office, sans que le joueur ait été sollicité.</summary>
     public bool AutoApproved { get; internal set; }
 
-    internal Action Apply { get; }
+    internal Action Apply { get; private set; }
+
+    /// <summary>Reconstruit la décision depuis son sujet ; les fonctions ne sont pas enregistrées dans le fichier.</summary>
+    internal void RestoreAction()
+    {
+        Apply = () => { };
+        if (Kind == DecisionKind.Dam && Subject.Split(',') is [var sx, var sy]
+            && int.TryParse(sx, out int x) && int.TryParse(sy, out int y))
+            Apply = () => ColonyBrain.ApplyDamDecision(Colony, Colony.Map, Colony.Clock, x, y);
+    }
 
     internal int CooldownDays { get; init; } = PrayerBook.RefusalCooldownDays;
 }

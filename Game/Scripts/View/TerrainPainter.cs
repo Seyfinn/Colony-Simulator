@@ -76,8 +76,17 @@ public static class TerrainPainter
     {
         int height = map.GetElevation(x, y);
         bool canal = map.IsCanal(x, y), wet = canal && map.IsCanalWet(x, y);
-        bool river = !canal && map.GetSurface(x, y) == Surface.River;
         bool flooded = map.IsFlooded(x, y);
+        // Un fleuve large se peint comme une nappe d'eau courante : les tuiles de rivière sont faites pour un lit d'une case.
+        bool wide = !canal && !flooded && map.IsWideRiver(x, y);
+        bool river = !canal && !wide && map.GetSurface(x, y) == Surface.River;
+        (int wideFlowX, int wideFlowY, float wideFlow) = (0, 1, 1f);
+        if (wide)
+        {
+            if (map.RiverDownstream(x, y) is { } downstream)
+                (wideFlowX, wideFlowY) = (Math.Sign(downstream.X - x), Math.Sign(downstream.Y - y));
+            wideFlow = map.GetFlow(x, y);
+        }
         Surface surface = VisualSurface(map, x, y);
         WoodlandBiome biome = BiomeVisuals.At(map, x, y);
         GrassPalette palette = Palette(biome);
@@ -87,7 +96,7 @@ public static class TerrainPainter
         byte[]? canalTile = canal ? RiverTiles.Get($"canal_{(wet ? "wet" : "dry")}_{connections}") : null;
         int riverMask = RiverTiles.Connections(map, x, y);
         int riverCorners = RiverTiles.Corners(map, x, y);
-        byte[]? riverShape = RiverTiles.River(riverMask, riverCorners, river);
+        byte[]? riverShape = wide ? null : RiverTiles.River(riverMask, riverCorners, river);
         byte[]? riverTile = !canal && surface != Surface.Water ? riverShape : null;
         byte[]? lakeTile = surface == Surface.Water
             ? RiverTiles.Shore(RiverTiles.LakeEdges(map, x, y, riverMask), riverShape) : null;
@@ -132,7 +141,8 @@ public static class TerrainPainter
                 GrassPalette grass = rowGrass;
                 if (px < 6) grass = Blend(grass, pw, (6 - px) / 12f);
                 else if (px > 25) grass = Blend(grass, pe, (px - 25) / 12f);
-                color = GroundPixel(ref noise, surface, wx, wy, height, biome, grass);
+                color = wide ? RiverPixel(ref noise, wx, wy, wideFlowX, wideFlowY, wideFlow)
+                    : GroundPixel(ref noise, surface, wx, wy, height, biome, grass);
                 if (flooded) color = Blend(color, Depth, 0.22f);
                 int edge = 2 + (int)(noise.Edge.At(wx / 9f, wy / 9f) * 4);
                 int distance = TileSize;
@@ -277,8 +287,10 @@ public static class TerrainPainter
 
     private static int Elevation(LocalMap map, int x, int y, int fallback) => map.InBounds(x, y) ? map.GetElevation(x, y) : fallback;
     private static Surface Neighbor(LocalMap map, int x, int y, Surface fallback) => map.InBounds(x, y) ? VisualSurface(map, x, y) : fallback;
-    private static Surface VisualSurface(LocalMap map, int x, int y) => map.IsCanal(x, y) || (map.IsRiver(x, y) && !map.IsFlooded(x, y))
-        ? Underlying(map, x, y) : Structural(map.GetSurface(x, y));
+    private static Surface VisualSurface(LocalMap map, int x, int y) =>
+        !map.IsCanal(x, y) && !map.IsFlooded(x, y) && map.IsWideRiver(x, y) ? Surface.Water
+        : map.IsCanal(x, y) || (map.IsRiver(x, y) && !map.IsFlooded(x, y)) ? Underlying(map, x, y)
+        : Structural(map.GetSurface(x, y));
     private static Surface Underlying(LocalMap map, int x, int y) => map.GetSoil(x, y) switch
     {
         SoilType.Dirt => Surface.Dirt, SoilType.Sand => Surface.Sand, _ => Surface.Grass,

@@ -3,6 +3,7 @@ using GodColony.Simulation.Generation;
 using GodColony.Simulation.Map;
 using GodColony.Simulation.Pathfinding;
 using GodColony.Simulation.Time;
+using GodColony.Simulation.World;
 
 namespace GodColony.Simulation;
 
@@ -15,6 +16,11 @@ public sealed class WorldState
     private const long StartTicks = TimeConstants.TicksPerDay * 8 / 24;
 
     private int _nextColonistId = 1;
+    private readonly int _mapWidth, _mapHeight;
+    private readonly LocalMap? _emptyMap;
+
+    public int Seed { get; }
+    public const int MaxPlayerColonies = 16;
 
     /// <summary>Les voyageurs et les départs sont-ils actifs ? (On peut les couper pour étudier une colonie fermée.)</summary>
     private readonly bool _migration;
@@ -25,8 +31,11 @@ public sealed class WorldState
     /// <summary>Le commerce entre colonies est-il actif ? (On peut le couper pour étudier des colonies isolées.)</summary>
     private readonly bool _trade;
 
-    /// <summary>Écart entre les graines des cartes de deux colonies.</summary>
+    /// <summary>Écart entre les graines des cartes locales de deux cases du monde.</summary>
     private const int MapSeedStep = 7919;
+
+    /// <summary>La graine de la carte locale d'une case : une même case donne toujours la même région.</summary>
+    private int RegionSeed(int tile) => unchecked(Seed + (tile + 1) * MapSeedStep);
 
     private static string ColonyName(int index, Species species) =>
         index == 0 ? "Première colonie" : $"Colonie {species.Adjective}";
@@ -36,8 +45,8 @@ public sealed class WorldState
     public GameClock Clock { get; }
     public List<Colony> Colonies { get; } = [];
 
-    /// <summary>Où sont les colonies les unes par rapport aux autres.</summary>
-    public WorldMap WorldMap { get; } = new();
+    /// <summary>La carte du monde (cases, biomes, fleuves) et la case de chaque colonie.</summary>
+    public WorldMap WorldMap { get; }
 
     /// <summary>Les caravanes en route entre deux colonies.</summary>
     public List<Caravan> Caravans { get; } = [];
@@ -46,7 +55,7 @@ public sealed class WorldState
     public int CompletedCaravans { get; internal set; }
 
     /// <summary>La carte de la première colonie (la seule, dans une partie à une colonie). Chaque colonie a la sienne.</summary>
-    public LocalMap Map => Colonies[0].Map;
+    public LocalMap Map => Colonies.Count > 0 ? Colonies[0].Map : _emptyMap!;
 
     public Pathfinder Pathfinder => Colonies[0].Pathfinder;
 
@@ -57,33 +66,84 @@ public sealed class WorldState
     /// <param name="migration">Faux pour couper les arrivées de voyageurs et les départs.</param>
     /// <param name="trade">Faux pour que les colonies n'échangent rien.</param>
     /// <param name="colonyCount">
-    /// Nombre de colonies. Chacune a son espèce (humains, puis nains, elfes, orcs) et sa propre carte locale,
-    /// dont le relief convient à son peuple.
+    /// Nombre de colonies. Chacune a son espèce (humains, puis nains, elfes, orcs) et s'installe sur la case du monde
+    /// qui plaît le plus à son peuple ; sa carte locale est générée à partir de cette case (biome, relief, fleuve, côte).
     /// </param>
-    public WorldState(int seed, int mapWidth = 160, int mapHeight = 160, int? startingColonists = null, bool migration = true, bool lifecycle = true, int colonyCount = 1, bool trade = true)
+    public WorldState(int seed, int mapWidth = MapGenerator.DefaultSize, int mapHeight = MapGenerator.DefaultSize, int? startingColonists = null, bool migration = true, bool lifecycle = true, int colonyCount = 1, bool trade = true)
     {
+        Seed = seed;
+        _mapWidth = mapWidth;
+        _mapHeight = mapHeight;
         _trade = trade;
         _migration = migration;
         _lifecycle = lifecycle;
         Random = new Random(seed);
         Clock = new GameClock(StartTicks);
+        WorldMap = new WorldMap(WorldGenerator.Generate(seed));
+        if (colonyCount == 0)
+            _emptyMap = GenerateColonyMap(WorldMap.SuggestTile(Species.Human));
+        var peoples = Enumerable.Range(0, colonyCount).Select(i => Species.All[i % Species.All.Count]).ToList();
+        List<int> tiles = WorldMap.ChooseStartingTiles(peoples);
         for (int i = 0; i < colonyCount; i++)
         {
-            Species species = Species.All[i % Species.All.Count];
-            LocalMap map = MapGenerator.Generate(mapWidth, mapHeight, seed + i * MapSeedStep, species.Biome);
+            Species species = peoples[i];
+            LocalMap map = GenerateColonyMap(tiles[i]);
             int founders = startingColonists
                 ?? Random.Next(ColonyFounder.MinStartingColonists, ColonyFounder.MaxStartingColonists + 1);
-            Colonies.Add(ColonyFounder.Found(map, Random, ColonyName(i, species), founders, NextColonistId, Clock, species));
+            Colony colony = ColonyFounder.Found(map, Random, ColonyName(i, species), founders, NextColonistId, Clock, species);
+            WorldMap.PlaceAt(colony, tiles[i]);
+            Colonies.Add(colony);
         }
-        for (int i = 0; i < Colonies.Count; i++)
-        {
-            WorldMap.Place(Colonies[i], i, Colonies.Count);
-            // Le même fleuve traverse les colonies dans l'ordre : chacune est en amont de la suivante.
-            if (i > 0)
-                Colonies[i - 1].Downstream = Colonies[i];
-        }
+        UpdateRivers();
         foreach (Colony colony in Colonies)
             ColonyBrain.Think(colony, colony.Map, Clock);
+    }
+
+    /// <summary>
+    /// La carte locale d'une case du monde : son terrain suit le biome, le relief, le fleuve et la côte de la case.
+    /// Ne modifie rien et ne consomme pas le hasard de la vie des habitants.
+    /// </summary>
+    public LocalMap GenerateColonyMap(int tile) => MapGenerator.Generate(_mapWidth, _mapHeight,
+        RegionSeed(tile), MapStyle.For(WorldMap.Grid[tile]));
+
+    /// <summary>Qui est en aval de qui : suit les fleuves de la carte du monde.</summary>
+    private void UpdateRivers()
+    {
+        foreach (Colony colony in Colonies)
+            colony.Downstream = WorldMap.DownstreamOf(colony);
+    }
+
+    /// <summary>Fonde une colonie en cours de partie sur la case <paramref name="tile"/> du monde ; une erreur ne modifie aucun état.</summary>
+    public bool TryFoundColony(LocalMap map, int campX, int campY, string name, Species species,
+        int founders, int tile, out Colony? colony, out string reason)
+    {
+        colony = null;
+        name = name.Trim();
+        if (Colonies.Count >= MaxPlayerColonies)
+            reason = $"Le monde accueille au maximum {MaxPlayerColonies} colonies.";
+        else if (name.Length is < 1 or > 40 || name.Any(char.IsControl))
+            reason = "Donnez un nom de 1 à 40 caractères à la colonie.";
+        else if (Colonies.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase)))
+            reason = "Une colonie porte déjà ce nom.";
+        else if (!Species.All.Contains(species))
+            reason = "Choisissez un peuple disponible.";
+        else if (founders < ColonyFounder.MinStartingColonists || founders > ColonyFounder.MaxPlayerFounders)
+            reason = $"Choisissez de {ColonyFounder.MinStartingColonists} à {ColonyFounder.MaxPlayerFounders} fondateurs.";
+        else if (map.Width != _mapWidth || map.Height != _mapHeight || Colonies.Any(c => ReferenceEquals(c.Map, map)))
+            reason = "Cette région est déjà occupée ou ne correspond pas à la taille du monde.";
+        else if (!WorldMap.CanSettle(tile, out reason) || !ColonyFounder.CanFoundAt(map, campX, campY, out reason))
+            return false;
+        else
+        {
+            colony = ColonyFounder.FoundAt(map, Random, name, founders, NextColonistId, Clock, species, campX, campY);
+            WorldMap.PlaceAt(colony, tile);
+            Colonies.Add(colony);
+            UpdateRivers();
+            ColonyBrain.Think(colony, map, Clock);
+            reason = $"{colony.Name} a été fondée avec {founders} habitants.";
+            return true;
+        }
+        return false;
     }
 
     /// <summary>Le joueur répond à une prière : accord ou refus.</summary>

@@ -76,8 +76,8 @@ public static class TreeDistribution
         for (int x = 0; x < map.Width; x++)
         {
             int index = y * map.Width + x;
-            // Même champ d'humidité que celui qui génère les sols de la simulation.
-            float moisture = Noise.Fractal2D(x / 25f, y / 25f, map.Seed + 13, 4);
+            // Le champ d'humidité que la simulation a utilisé pour générer les sols et les forêts.
+            float moisture = map.GetMoisture(x, y);
             var environment = Environment(map.GetElevation(x, y), moisture, distance[index]);
             float roll = Noise.Hash01(x, y, 107, map.Seed);
             // Quelques groupes cohérents au milieu d'une majorité de tirages individuels.

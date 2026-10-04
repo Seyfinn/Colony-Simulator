@@ -78,7 +78,7 @@ public static class RiverTiles
         for (int sx = x - 1; sx <= x + 1; sx++)
         {
             if (!map.InBounds(sx, sy) || !map.IsRiver(sx, sy) || map.IsFlooded(sx, sy)) continue;
-            if (map.RiverDownstream(sx, sy) is { } next) Edge(sx, sy, next.X, next.Y);
+            if (map.RiverDownstream(sx, sy) is { } next && !BothWide(map, sx, sy, next.X, next.Y)) Edge(sx, sy, next.X, next.Y);
             // Une prise d'eau ouvre aussi la berge de la rivière vers le canal alimenté.
             foreach (var (dx, dy) in CanalSteps)
                 if (map.InBounds(sx + dx, sy + dy) && map.IsCanalWet(sx + dx, sy + dy))
@@ -95,12 +95,19 @@ public static class RiverTiles
         for (int sx = x - 1; sx <= x + 1; sx++)
         {
             if (!map.InBounds(sx, sy) || !map.IsRiver(sx, sy) || map.IsFlooded(sx, sy)) continue;
-            if (map.RiverDownstream(sx, sy) is not { } next || sx == next.X || sy == next.Y) continue;
+            if (map.RiverDownstream(sx, sy) is not { } next || sx == next.X || sy == next.Y || BothWide(map, sx, sy, next.X, next.Y)) continue;
             if ((x == next.X && y == sy) || (x == sx && y == next.Y))
                 mask |= Direction(Math.Max(sx, next.X) == x ? -1 : 1, Math.Max(sy, next.Y) == y ? -1 : 1);
         }
         return mask;
     }
+
+    /// <summary>
+    /// Deux cases d'un fleuve large : leur liaison n'a pas de tuile de rivière, le fleuve large est peint comme une nappe d'eau
+    /// (voir <see cref="TerrainPainter"/>), et ses cases voisines n'ont pas de berge de ruisseau à dessiner.
+    /// </summary>
+    public static bool BothWide(LocalMap map, int ax, int ay, int bx, int by) =>
+        map.InBounds(bx, by) && map.IsWideRiver(ax, ay) && map.IsWideRiver(bx, by);
 
     // L'eau l'emporte sur une berge superposée : aucun trait de terre à une confluence.
     private static int Priority(byte[] data, int index)
@@ -165,7 +172,8 @@ public static class RiverTiles
 
     public static int LakeEdges(LocalMap map, int x, int y, int riverMask)
     {
-        bool Land(int px, int py) => map.InBounds(px, py) && !map.IsWater(px, py) && !map.IsCanalWet(px, py);
+        bool Land(int px, int py) => map.InBounds(px, py) && !map.IsWater(px, py) && !map.IsCanalWet(px, py)
+            && !(map.IsWideRiver(px, py) && !map.IsFlooded(px, py));
         int mask = (Land(x, y - 1) ? 1 : 0) | (Land(x + 1, y) ? 2 : 0)
             | (Land(x, y + 1) ? 4 : 0) | (Land(x - 1, y) ? 8 : 0);
         return mask & ~riverMask; // L'embouchure reste ouverte.

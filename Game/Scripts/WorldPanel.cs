@@ -23,16 +23,37 @@ public partial class WorldPanel : CanvasLayer
     private static readonly Color Edge = Color.Color8(65, 89, 75);
 
     public event Action<int>? ColonyRequested;
+    public event Action? FoundingRequested;
+    public event Action<int>? SiteRequested;
 
     private WorldState _world = null!;
     private VBoxContainer _stack = null!, _details = null!;
     private HBoxContainer _colonyRow = null!;
     private readonly List<Button> _colonyButtons = [];
-    private Button _economyButton = null!, _mapButton = null!;
+    private Button _economyButton = null!, _mapButton = null!, _foundingButton = null!;
     private WorldMapView _map = null!;
     private double _sinceRefresh = 1;
     private bool _open;
     private int _observed;
+    public bool PickingSite
+    {
+        get => _map.PickingSite;
+        set
+        {
+            _map.PickingSite = value;
+            // Pendant une fondation, le panneau de fondation occupe la droite de l'écran.
+            _map.OffsetRight = value ? -420 : -16;
+            if (value) MapOpen = true;
+        }
+    }
+
+    public void SetNavigationEnabled(bool enabled)
+    {
+        _colonyRow.GetParent<Control>().Visible = enabled;
+        _mapButton.Disabled = !enabled;
+        _economyButton.Disabled = !enabled || _world.Colonies.Count == 0;
+        _foundingButton.Disabled = !enabled;
+    }
 
     /// <summary>Le détail de l'économie est-il déplié ?</summary>
     public bool Open
@@ -65,21 +86,48 @@ public partial class WorldPanel : CanvasLayer
         _stack = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         _stack.AddThemeConstantOverride("separation", 8);
         root.AddChild(_stack);
-        _stack.AnchorLeft = 0; _stack.AnchorRight = 0; _stack.AnchorTop = 0; _stack.AnchorBottom = 0;
-        _stack.OffsetLeft = 16; _stack.OffsetRight = 420; _stack.OffsetTop = 184;
+        _stack.AnchorLeft = 0; _stack.AnchorRight = 1; _stack.AnchorTop = 0; _stack.AnchorBottom = 0;
+        _stack.OffsetLeft = 16; _stack.OffsetRight = -16; _stack.OffsetTop = 184;
+
+        var navigation = new HBoxContainer();
+        navigation.AddThemeConstantOverride("separation", 8);
+        _stack.AddChild(navigation);
+        _mapButton = Chip("Carte du monde");
+        _mapButton.Name = "CarteMonde";
+        _mapButton.ToggleMode = true;
+        _mapButton.Pressed += () => MapOpen = !MapOpen;
+        navigation.AddChild(_mapButton);
+        _economyButton = Chip("Économie");
+        _economyButton.Name = "Economie";
+        _economyButton.ToggleMode = true;
+        _economyButton.Pressed += () => Open = !Open;
+        navigation.AddChild(_economyButton);
+        var founding = Chip("+ Fonder une colonie");
+        _foundingButton = founding;
+        founding.Name = "FonderColonie";
+        founding.Pressed += () => FoundingRequested?.Invoke();
+        navigation.AddChild(founding);
+
+        var coloniesScroll = new ScrollContainer
+        {
+            CustomMinimumSize = new Vector2(0, 42), VerticalScrollMode = ScrollContainer.ScrollMode.Disabled,
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        _stack.AddChild(coloniesScroll);
 
         _colonyRow = new HBoxContainer { MouseFilter = Control.MouseFilterEnum.Ignore };
         _colonyRow.AddThemeConstantOverride("separation", 6);
-        _stack.AddChild(_colonyRow);
+        coloniesScroll.AddChild(_colonyRow);
 
         // La carte du monde : un grand panneau au centre, qu'on ouvre depuis le bouton « Carte ».
         _map = new WorldMapView { Visible = false, MouseFilter = Control.MouseFilterEnum.Stop };
         root.AddChild(_map);
-        _map.AnchorLeft = 0.5f; _map.AnchorRight = 0.5f; _map.AnchorTop = 0.5f; _map.AnchorBottom = 0.5f;
-        _map.OffsetLeft = -300; _map.OffsetRight = 300; _map.OffsetTop = -210; _map.OffsetBottom = 210;
+        _map.AnchorRight = 1; _map.AnchorBottom = 1;
+        _map.OffsetLeft = 16; _map.OffsetRight = -16; _map.OffsetTop = 276; _map.OffsetBottom = -16;
         if (_world is not null)
             _map.Init(_world);
-        _map.ColonyClicked += index => ColonyRequested?.Invoke(index);
+        _map.ColonyClicked += index => { MapOpen = false; ColonyRequested?.Invoke(index); };
+        _map.SiteClicked += tile => SiteRequested?.Invoke(tile);
 
         _details = new VBoxContainer { MouseFilter = Control.MouseFilterEnum.Stop };
         _details.AddThemeConstantOverride("separation", 4);
@@ -110,7 +158,10 @@ public partial class WorldPanel : CanvasLayer
         if (_colonyButtons.Count != _world.Colonies.Count)
         {
             foreach (Node child in _colonyRow.GetChildren())
+            {
+                _colonyRow.RemoveChild(child);
                 child.QueueFree();
+            }
             _colonyButtons.Clear();
             for (int i = 0; i < _world.Colonies.Count; i++)
             {
@@ -122,32 +173,18 @@ public partial class WorldPanel : CanvasLayer
                 _colonyRow.AddChild(button);
                 _colonyButtons.Add(button);
             }
-            _economyButton = Chip("Économie");
-            _economyButton.Name = "Economie";
-            _economyButton.ToggleMode = true;
-            _economyButton.Pressed += () => Open = !Open;
-            _colonyRow.AddChild(_economyButton);
-            _mapButton = Chip("Carte");
-            _mapButton.Name = "CarteMonde";
-            _mapButton.ToggleMode = true;
-            _mapButton.Pressed += () => MapOpen = !MapOpen;
-            _colonyRow.AddChild(_mapButton);
         }
         for (int i = 0; i < _colonyButtons.Count; i++)
             _colonyButtons[i].SetPressedNoSignal(i == _observed);
         _economyButton.SetPressedNoSignal(_open);
         _mapButton.SetPressedNoSignal(MapOpen);
         _map.Observed = _observed;
-        _colonyRow.Visible = _world.Colonies.Count > 1;
-        if (_world.Colonies.Count <= 1)
-        {
-            _open = false;
-            MapOpen = false;
-        }
+        _economyButton.Disabled = _world.Colonies.Count == 0 || _foundingButton.Disabled;
+        if (_world.Colonies.Count == 0) _open = false;
 
         foreach (Node child in _details.GetChildren())
             child.QueueFree();
-        if (_open)
+        if (_open && _world.Colonies.Count > 0)
             _details.AddChild(BuildDetails(_world.Colonies[_observed]));
     }
 

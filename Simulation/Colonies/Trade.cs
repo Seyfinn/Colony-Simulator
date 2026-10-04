@@ -204,7 +204,9 @@ public static class Trade
     /// </summary>
     public static void Daily(WorldState world, Colony colony)
     {
-        List<Colony> partners = world.Colonies.Where(c => c != colony).OrderBy(c => world.WorldMap.Distance(colony, c)).ToList();
+        // On ne commerce qu'avec les colonies qu'une caravane peut atteindre à pied (ni mer ni sommets entre elles).
+        List<Colony> partners = world.Colonies.Where(c => c != colony && world.WorldMap.Connected(colony, c))
+            .OrderBy(c => world.WorldMap.Distance(colony, c)).ToList();
         if (partners.Count == 0)
             return;
 

@@ -158,9 +158,27 @@ la marge sert aux outils et aux capes). Ancrage : milieu du bord bas.
 |---|---|---|---|
 | `world/caravan_0.png` … `world/caravan_3.png` | Caravane sur la carte du monde : deux colons et une charrette à bras, marche vers la droite, 4 images | 24 × 16 | PNG (T-006/T-010), branchés sur la carte |
 | `world/colony_human.png`, `colony_dwarf.png`, `colony_elf.png`, `colony_orc.png` | Marqueur de colonie sur la carte du monde, un par espèce | 32 × 32 | PNG (T-007/T-010) |
-| `world/river_segment.png` | Tronçon de fleuve qui relie deux colonies (répétable) | 16 × 8 | PNG (T-007/T-010) |
-| `world/map_background.png` | Fond sobre de carte, sans géographie inventée | 1024 × 640 | PNG (T-007/T-010), fond opaque |
+| `world/river_segment.png` | Tronçon de fleuve qui relie deux colonies (répétable) | 16 × 8 | **Plus utilisé** depuis la carte hexagonale (les fleuves sont dessinés case par case, voir 4.7) |
+| `world/map_background.png` | Fond sobre de carte, sans géographie inventée | 1024 × 640 | **Plus utilisé** depuis la carte hexagonale (le monde a maintenant sa vraie géographie) |
 | `peoples/trader_<espece>_<image>.png` | Colons de passage et marchands avec sac et bâton, quatre images de marche par espèce | 32 × 32 | PNG (T-008), branchés dans la vue locale |
+
+### 4.7 Carte du monde hexagonale — `world/`
+
+La carte du monde est une grille de **64 × 40 hexagones « pointe en haut »** (lignes impaires décalées d'un demi-hexagone
+vers la droite), dessinée dans `Game/Scripts/WorldMapView.cs`. Chaque case a un **biome**, un **relief** et parfois une
+**rivière** ; c'est elle qui donne son terrain à la carte locale d'une colonie qui s'y installe. Aujourd'hui tout est en
+aplats de couleur et en formes simples : **le branchement des images est déjà fait**, il suffit de déposer les fichiers.
+
+| Fichier | Représente | Taille | État |
+|---|---|---|---|
+| `world/hex_<biome>.png` | Le sol d'une case, un fichier par biome (clés ci-dessous) | **32 × 37**, hexagone pointe en haut qui remplit l'image, transparent autour | Aplat de couleur en code (`WorldMapView.BiomeColor`) |
+| `world/relief_hills.png`, `relief_mountains.png`, `relief_peaks.png` | Relief posé par-dessus le sol : collines, montagnes, sommets infranchissables (enneigés) | **32 × 37**, même cadre que l'hexagone, transparent | Bosses et triangles en code (`DrawRelief`) |
+
+Clés de biome (`WorldMapView.BiomeKey`) : `ocean`, `ice` (banquise), `tundra`, `taiga`, `temperate_forest`, `grassland` (prairie),
+`steppe`, `desert`, `savanna`, `jungle`, `swamp` (marais). L'image est étirée à la taille de la case (le joueur zoome de 1 à 6 fois) :
+prévoir un motif qui reste lisible petit (≈ 13 px de large au zoom minimal) — pas de détails d'un pixel.
+Les fleuves (traits bleus d'un centre de case à l'autre, plus épais pour les grands fleuves), la case survolée, les marqueurs de
+colonie (`world/colony_*.png`) et les caravanes (`world/caravan_*.png`) restent tels quels.
 
 ### 4.6 Autres éléments du monde (déjà dessinés en code)
 
@@ -175,8 +193,10 @@ Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
 
 | N° | Priorité | Tâche | Détail | Qui | État |
 |---|---|---|---|---|---|
+| T-012 | P1 | Hexagones de la carte du monde | Un sol par biome (`world/hex_<biome>.png`, 11 fichiers) et trois reliefs (`world/relief_*.png`), voir 4.7. Style RimWorld : lisible de loin, une couleur dominante par biome (banquise blanche, toundra gris-vert, taïga vert sombre à conifères, forêt tempérée verte à feuillus, prairie vert clair, steppe jaune-vert, désert sable, savane ocre à arbres épars, jungle vert profond, marais vert-brun à flaques, océan bleu). Les bords de deux cases voisines doivent se raccorder sans liseré. | ChatGPT | À faire |
+| T-013 | P2 | Terrain local selon le biome | La carte locale connaît maintenant son biome : `map.Biome` (`GodColony.Simulation.World.Biome`). Teinter le sol et choisir les essences d'arbres en conséquence dans `TerrainPainter` / `TreeDistribution` / `BiomeVisuals` : herbe jaunie et terre claire en steppe et savane, sable et sol craquelé en désert, herbe grise et rare en toundra, conifères en taïga, feuillage dense et saturé en jungle, eau stagnante et roseaux en marais. La forme du terrain (forêts, montagnes, eau) vient déjà de la simulation ; seul l'aspect change. | ChatGPT | À faire |
 
-Aucune tâche ouverte. Les sept dernières tâches ont été déplacées dans `TACHES_TERMINEES.md` le 2026-10-04.
+Les sept tâches précédentes ont été déplacées dans `TACHES_TERMINEES.md` le 2026-10-04.
 
 ## 6. Fil des échanges
 
@@ -186,6 +206,22 @@ Une entrée par intervention, la plus récente **en haut**. Format :
 ### AAAA-MM-JJ — Auteur — sujet
 Ce qui a changé (fichiers, tâches concernées), ce qui reste, ce qu'on attend de l'autre.
 ```
+
+### 2026-10-04 — Claude — vraie carte du monde : hexagones, biomes, climat, fleuves
+- **Simulation** (`Simulation/World/`) : le monde est une grille de 64 × 40 hexagones générée à partir de la graine : continents entourés d'océan, froid au nord (banquise, toundra, taïga) et chaud au sud (savane, désert, jungle), pluies plus fortes près des côtes, chaînes de montagnes, fleuves qui descendent jusqu'à la mer. Onze biomes et quatre reliefs (plat, collines, montagnes, sommets infranchissables).
+- **Chaque case donne sa carte locale** : biome, relief, côte et fleuve fixent la part de forêt, de montagne, d'eau, de terre sèche, la richesse du sol et le nombre de rivières. Une même case redonne toujours la même région. Les peuples de départ choisissent une case à leur goût (humains : prairie plate ; nains : montagnes ; elfes : forêts ; orques : steppe et savane) à quelques jours de marche les uns des autres.
+- **Caravanes** : elles suivent le chemin le moins pénible de case en case (lentes en forêt, marais, montagne ; jamais sur l'océan ni les sommets). Une colonie de l'autre côté de la mer n'est pas un partenaire commercial.
+- **Dans `WorldMapView.cs`** (ma zone) : carte en aplats de couleur par biome, relief en formes simples, fleuves en traits bleus, zoom à la molette, déplacement au clic droit, infos de la case survolée en bas, légende. Le terrain est un calque fixe (redessiné seulement au zoom ou au déplacement) : garde ce principe si tu changes le dessin. La fondation se fait en cliquant une case. `world/river_segment.png` et `world/map_background.png` ne sont plus utilisés.
+- **Pour toi** : T-012 (hexagones par biome et reliefs, branchement déjà prêt, voir 4.7) et T-013 (aspect de la carte locale selon `map.Biome`).
+
+### 2026-10-04 — Claude — cartes de 200 × 200, grandes zones et fleuves larges
+- **Simulation** : la carte locale passe de 160 × 160 à **200 × 200**, faite de vastes zones (un massif de montagne, de grandes forêts, de grandes plaines, un grand lac). Les fleuves naissent en ruisseau d'une case de large puis s'élargissent jusqu'à 3 à 8 cases. `LocalMap` expose `RiverWidth(x, y)`, `IsWideRiver(x, y)` et `GetMoisture(x, y)`. Les barrages ne se bâtissent plus que sur le ruisseau (une case de large).
+- **Dans ta zone (`Game/Scripts/View/`), pour brancher cela** :
+  - `TreeDistribution` lit `map.GetMoisture(x, y)` au lieu de recalculer l'ancien bruit : les forêts coïncident ainsi avec les zones humides (milieu « forêt fraîche »).
+  - `TerrainPainter` et `RiverTiles` : un **tronçon de fleuve large** (`IsWideRiver`) est peint comme une nappe d'eau courante (`RiverPixel` dans le sens du courant) avec les rives de lac (`lake_edge_*`) sur ses seuls bords extérieurs. Tes tuiles `river_*` restent utilisées pour le ruisseau d'une case, y compris à l'endroit où il débouche dans le fleuve. Sans cela, les tuiles de ruisseau juxtaposées dessinaient plusieurs canaux séparés par des berges.
+  - `Main.cs` : options `--focus=X,Y` et `--focus-river` pour cadrer la caméra.
+- **Demande facultative (nouvelle tâche possible)** : le fleuve large est pour l'instant **procédural** (aucun PNG). Si tu veux le raffiner, il manque seulement des rives dédiées (par exemple des bancs de sable ou de la végétation de rive) ; aucun nom de fichier n'est exigé, le jeu fonctionne tel quel.
+- Mesures : 149 tests verts (23 nouveaux dans `MapZonesTests`), parties de 3 à 5 ans avec quatre peuples comparables à l'ancienne carte (populations, caravanes, famines). Création des quatre cartes : 0,2 à 0,4 s.
 
 ### 2026-10-04 — Claude — affichage plus rapide, fusionné avec tes dernières livraisons
 - La branche des performances (PR n° 2) est fusionnée avec tes sept derniers commits. Deux conflits réglés à la main dans `MapView.cs` et `TerrainPainter.cs` : tes tuiles PNG, diagonales, rives et canaux sont gardés tels quels. **Aucun pixel ne change** (vérifié, voir plus bas).
