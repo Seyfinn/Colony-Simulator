@@ -27,15 +27,24 @@ public partial class Main
         DisplayServer.WindowSetMinSize(new Vector2I(1100, 700));
         _settings = GameSettings.Load();
         _settings.Apply();
+        _saves = new SaveSlots(ProjectSettings.GlobalizePath("user://saves"));
         _menu = new GameMenu();
         _menu.Init(_settings);
+        _menu.ReadSaveSlot = _saves.Read;
         AddChild(_menu);
         _menu.WorldRequested += options => StartWorld(options);
         _menu.ResumeRequested += ResumeWorld;
         _menu.HomeRequested += HideWorldInterface;
         _menu.SettingsChanged += ApplySettings;
+        _menu.SaveRequested += SaveWorld;
+        _menu.LoadRequested += LoadWorld;
 
         string[] args = OS.GetCmdlineUserArgs();
+        if (args.Contains("--smoke-saves"))
+        {
+            Callable.From(RunSaveSmokeTest).CallDeferred();
+            return;
+        }
         if (args.Contains("--smoke-menu"))
         {
             Callable.From(RunInterfaceSmokeTest).CallDeferred();
@@ -57,7 +66,7 @@ public partial class Main
         if (args.Contains("--menu-settings")) _menu.ShowSettings();
     }
 
-    private void StartWorld(WorldCreationOptions options, bool development = false)
+    private void StartWorld(WorldCreationOptions options, bool development = false, WorldState? restored = null, int observed = 0)
     {
         // Retirer les vues débranche leurs événements ; le menu est conservé entre deux parties.
         foreach (Node child in GetChildren())
@@ -68,7 +77,7 @@ public partial class Main
         _colonistsView = null; _selected = null; _foundingMap = null; _foundingSite = null;
         _notification = null; _notificationTime = 0;
         _pendingTicks = 0; _hudCooldown = 0;
-        BuildWorld(options, development);
+        BuildWorld(options, development, restored, observed);
         _menu.HasWorld = true; _menu.Close();
         _camera.ControlsEnabled = true;
     }
@@ -106,6 +115,16 @@ public partial class Main
 
     public override void _Input(InputEvent @event)
     {
+        if (@event is InputEventKey { Pressed: true, Echo: false } shortcut && shortcut.Keycode is Key.F5 or Key.F9)
+        {
+            if (!_menu.IsBusy)
+            {
+                if (shortcut.Keycode == Key.F5) SaveWorld(SaveSlots.QuickSlot);
+                else { if (_world is not null) OpenPauseMenu(); _menu.RequestQuickLoad(); }
+            }
+            GetViewport().SetInputAsHandled();
+            return;
+        }
         if (@event is not InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape }) return;
         if (_menu.IsOpen) _menu.Back();
         else if (_foundingPanel.IsOpen) CancelFounding();

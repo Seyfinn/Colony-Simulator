@@ -42,7 +42,7 @@ Le jeu se lance depuis Godot 4.7 (version .NET) en ouvrant `Game/project.godot`.
 
 ### Menus et fondation des colonies
 
-Au lancement, l'accueil propose **Créer un monde**, **Paramètres**, **Comment jouer** et **Quitter**.
+Au lancement, l'accueil propose **Créer un monde**, **Charger une partie**, **Paramètres**, **Comment jouer** et **Quitter**.
 Le formulaire de monde permet de choisir la graine, la taille des régions (128, 200 ou 256 cases de côté),
 0 à 4 colonies initiales, leurs fondateurs, les migrations, le cycle de vie, le commerce et la vitesse.
 Un monde vierge attend la fondation de sa première colonie.
@@ -50,7 +50,16 @@ Un monde vierge attend la fondation de sa première colonie.
 En partie, **Menu** ou **Échap** ouvre le menu de pause ; il permet aussi de retourner à l'accueil et de reprendre
 le monde courant. La création d'un autre monde demande confirmation avant de remplacer la partie.
 Les préférences de plein écran, de synchronisation verticale, d'ambiance et de caméra sont enregistrées
-dans `user://settings.cfg`. Les parties elles-mêmes ne sont pas encore sauvegardées sur disque.
+dans `user://settings.cfg`.
+
+**Sauvegarder la partie** propose trois emplacements avec le nom du monde, la date, les colonies et la population.
+**Charger une partie** les retrouve depuis l'accueil ou le menu de pause. **F5** enregistre dans un quatrième emplacement
+de sauvegarde rapide ; **F9** le charge, après confirmation si une partie est en cours. Les fichiers vivent dans
+`user://saves` (sous Windows, `%APPDATA%/Godot/app_userdata/GodColony/saves`).
+Le terrain modifié, les colonies, les habitants, les familles, les travaux, les stocks, les caravanes, les prières et le hasard
+sont conservés, ainsi que la caméra, la vitesse et la sélection. Remplacer un emplacement conserve sa version précédente,
+chargeable avec **Charger la version précédente**. Un fichier invalide est refusé avant de remplacer la partie courante.
+Le format est versionné et lié au schéma de simulation ; une évolution de ce schéma nécessitera une migration.
 
 **Fonder une colonie** ouvre le choix du nom, du peuple et de 5 à 20 fondateurs. Cliquez d'abord sur une case libre
 de la carte du monde (son biome et son relief donnent le terrain de la région), puis sur une zone plate de 5 × 5 cases sur le terrain. Le contour vert indique un site valide,
@@ -63,10 +72,12 @@ Pour vérifier le parcours des contrôles Godot après compilation :
 
 ```bash
 godot --path Game --fixed-fps 60 -- --smoke-menu
+godot --path Game --fixed-fps 60 -- --smoke-saves
 ```
 
 Le scénario vérifie l'accueil, une graine invalide, un monde vierge, la fondation, les paramètres persistants,
-la pause, l'annulation, la reprise et le remplacement du monde. Il fonctionne aussi avec `--headless`.
+la pause, l'annulation, la reprise et le remplacement du monde. Le second scénario vérifie les sauvegardes, leur restauration,
+les confirmations, les copies de secours, les fichiers endommagés et les raccourcis. Ils fonctionnent aussi avec `--headless`.
 `--smoke-captures=chemin` enregistre les étapes dans un dossier existant lorsque le rendu est activé.
 
 ### Options de développement (en ligne de commande, après `--`)

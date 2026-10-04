@@ -209,7 +209,7 @@ public partial class WorldMapView : Control
 
     private void PaintTerrain(CanvasItem g)
     {
-        if (_world is null)
+        if (_world is null || Size.X <= 0 || Size.Y <= 0)
             return;
         WorldGrid grid = _world.WorldMap.Grid;
         g.DrawRect(Land, BiomeColor(Biome.Ocean).Darkened(0.2f));
@@ -238,7 +238,7 @@ public partial class WorldMapView : Control
 
     private void PaintOverlay(CanvasItem g)
     {
-        if (_world is null)
+        if (_world is null || Size.X <= 0 || Size.Y <= 0)
             return;
         var font = ArtDirection.BodyFont;
         _hovered = TileAt(GetLocalMousePosition());

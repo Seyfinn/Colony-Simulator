@@ -1,6 +1,7 @@
 using System;
 using Godot;
 using GodColony.Simulation.Time;
+using GodColony.Simulation.Persistence;
 using GodColony.View;
 
 namespace GodColony;
@@ -15,15 +16,24 @@ public partial class GameMenu : CanvasLayer
     public event Action? ResumeRequested;
     public event Action? HomeRequested;
     public event Action? SettingsChanged;
+    public event Action<int>? SaveRequested;
+    public event Action<int, bool>? LoadRequested;
+    public Func<int, SaveSlot>? ReadSaveSlot { get; set; }
     private Control _root = null!;
     private VBoxContainer _body = null!;
     private ConfirmationDialog _replace = null!;
+    private ConfirmationDialog _fileConfirm = null!;
+    private Action? _confirmedAction;
+    private string _saveMessage = "";
+    private bool _saveError;
+    private string _busyTitle = "Création du monde…";
     private GameSettings _settings = null!;
     private string _page = "home";
     private bool _pausedPage;
     private WorldCreationOptions? _pendingWorld;
     public bool HasWorld { get; set; }
     public bool IsOpen => _root.Visible;
+    public bool IsBusy => _page == "busy" && IsOpen;
 
     public void Init(GameSettings settings) => _settings = settings;
 
@@ -46,11 +56,15 @@ public partial class GameMenu : CanvasLayer
         _body = MenuStyle.Column(scroll, 12);
         _replace = new ConfirmationDialog
         {
-            Title = "Créer un nouveau monde ?", DialogText = "La partie actuelle sera remplacée. Elle n'est pas sauvegardée.",
+            Title = "Créer un nouveau monde ?", DialogText = "La partie actuelle sera remplacée. Les changements depuis la dernière sauvegarde seront perdus.",
             OkButtonText = "Créer le monde", CancelButtonText = "Annuler",
         };
         _root.AddChild(_replace);
         _replace.Confirmed += () => { if (_pendingWorld is { } options) Generate(options); };
+        _fileConfirm = new ConfirmationDialog { CancelButtonText = "Annuler" };
+        _root.AddChild(_fileConfirm);
+        _fileConfirm.Confirmed += () => { Action? action = _confirmedAction; _confirmedAction = null; action?.Invoke(); };
+        _fileConfirm.Canceled += () => _confirmedAction = null;
         ShowHome();
     }
 
@@ -69,9 +83,18 @@ public partial class GameMenu : CanvasLayer
     public void Close() => _root.Hide();
     public void ShowCreation() => ShowPage("world");
     public void ShowSettings() => ShowPage("settings");
+    public void ShowSaveResult(string message, bool error = false) => ShowFileResult("save", message, error);
+    public void ShowLoadError(string message) => ShowFileResult("load", message, true);
+    private void ShowFileResult(string page, string message, bool error)
+    {
+        _saveMessage = message; _saveError = error;
+        ShowPage(page);
+    }
+    public void RequestQuickLoad() => RequestLoad(SaveSlots.QuickSlot, false);
 
     public void Back()
     {
+        if (_fileConfirm.Visible) { _fileConfirm.Hide(); _confirmedAction = null; return; }
         if (_replace.Visible) { _replace.Hide(); return; }
         if (_page == "busy") return;
         if (_page != "home") ShowPage("home");
@@ -92,7 +115,9 @@ public partial class GameMenu : CanvasLayer
             case "world": BuildWorld(); break;
             case "settings": BuildSettings(); break;
             case "help": BuildHelp(); break;
-            case "busy": MenuStyle.Text(_body, "Création du monde…", 23); MenuStyle.Text(_body, "Le relief, les rivières et les forêts prennent forme.", 15, MenuStyle.Muted); break;
+            case "save": BuildSaves(false); break;
+            case "load": BuildSaves(true); break;
+            case "busy": MenuStyle.Text(_body, _busyTitle, 23); MenuStyle.Text(_body, "Préparation du monde et de ses habitants.", 15, MenuStyle.Muted); break;
         }
         if (page is not "home" and not "busy") MenuStyle.Button(_body, "← Retour", () => ShowPage("home"));
         foreach (Node child in _body.GetChildren())
@@ -104,12 +129,68 @@ public partial class GameMenu : CanvasLayer
         MenuStyle.Text(_body, _pausedPage ? "Partie en pause" : "Bienvenue", 24);
         MenuStyle.Text(_body, "Façonnez un monde, fondez des colonies et observez leurs habitants construire leur histoire.", 15, MenuStyle.Muted, true);
         if (HasWorld) MenuStyle.Button(_body, "Reprendre la partie", () => ResumeRequested?.Invoke());
+        if (HasWorld) MenuStyle.Button(_body, "Sauvegarder la partie", () => { _saveMessage = ""; ShowPage("save"); });
+        MenuStyle.Button(_body, "Charger une partie", () => { _saveMessage = ""; ShowPage("load"); });
         MenuStyle.Button(_body, "Créer un monde", () => ShowPage("world"));
         MenuStyle.Button(_body, "Paramètres", () => ShowPage("settings"));
         MenuStyle.Button(_body, "Comment jouer", () => ShowPage("help"));
         if (_pausedPage) MenuStyle.Button(_body, "Retour à l'accueil", () => { HomeRequested?.Invoke(); ShowHome(); });
         MenuStyle.Button(_body, "Quitter le jeu", () => GetTree().Quit());
-        MenuStyle.Text(_body, "Les mondes restent disponibles pendant cette session.\nLa sauvegarde des parties n'est pas encore disponible.", 12, MenuStyle.Muted, true);
+        MenuStyle.Text(_body, "F5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nPensez à sauvegarder avant de quitter le jeu.", 12, MenuStyle.Muted, true);
+    }
+
+    private void BuildSaves(bool loading)
+    {
+        MenuStyle.Text(_body, loading ? "Charger une partie" : "Sauvegarder la partie", 24);
+        if (!loading && !HasWorld) { MenuStyle.Text(_body, "Créez ou chargez un monde avant de sauvegarder.", 15, MenuStyle.Muted, true); return; }
+        if (_saveMessage.Length > 0) MenuStyle.Text(_body, _saveMessage, 14, _saveError ? MenuStyle.Error : ArtDirection.Sage, true);
+        for (int i = 0; i <= SaveSlots.QuickSlot; i++)
+        {
+            int index = i;
+            SaveSlot slot = ReadSaveSlot?.Invoke(index) ?? new SaveSlot(index, false, null, null, false);
+            if (!loading && i == SaveSlots.QuickSlot) continue;
+            var card = new PanelContainer();
+            _body.AddChild(card);
+            var column = MenuStyle.Column(card, 6);
+            MenuStyle.Text(column, i == SaveSlots.QuickSlot ? "Sauvegarde rapide · F5" : $"Emplacement {i + 1}", 17, ArtDirection.Brass);
+            string description = slot.Info is { } info
+                ? $"{info.Name} · {info.Colonies} colonies · {info.Population} habitants\nAn {new GameClock(info.Ticks).Year} · {info.SavedAt.ToLocalTime():dd/MM/yyyy HH:mm}"
+                : slot.Error ?? "Emplacement vide";
+            MenuStyle.Text(column, description, 13, MenuStyle.Muted, true);
+            if (loading)
+            {
+                var load = MenuStyle.Button(column, "Charger", () => RequestLoad(index, false));
+                load.Name = $"Charger{index}"; load.Disabled = slot.Info is null;
+                if (slot.BackupAvailable)
+                    MenuStyle.Button(column, "Charger la version précédente", () => RequestLoad(index, true)).Name = $"ChargerSecours{index}";
+            }
+            else
+            {
+                var save = MenuStyle.Button(column, slot.Exists ? "Remplacer cette sauvegarde" : "Sauvegarder ici", () =>
+                {
+                    if (!slot.Exists) SaveRequested?.Invoke(index);
+                    else ConfirmFile("Remplacer la sauvegarde ?", "La sauvegarde actuelle de cet emplacement sera remplacée. Sa version précédente sera conservée en secours.",
+                        "Remplacer", () => SaveRequested?.Invoke(index));
+                });
+                save.Name = $"Sauvegarder{index}";
+            }
+        }
+    }
+
+    private void RequestLoad(int slot, bool backup)
+    {
+        SaveSlot? state = ReadSaveSlot?.Invoke(slot);
+        if (!(backup ? state?.BackupAvailable ?? false : state?.Exists ?? false)) { ShowLoadError("Aucune sauvegarde disponible dans cet emplacement."); return; }
+        if (!HasWorld) LoadRequested?.Invoke(slot, backup);
+        else ConfirmFile("Charger la partie ?", "La partie actuelle sera remplacée. Les changements depuis votre dernière sauvegarde seront perdus.",
+            "Charger", () => LoadRequested?.Invoke(slot, backup));
+    }
+
+    private void ConfirmFile(string title, string text, string action, Action confirmed)
+    {
+        _confirmedAction = confirmed;
+        _fileConfirm.Title = title; _fileConfirm.DialogText = text; _fileConfirm.OkButtonText = action;
+        _fileConfirm.PopupCentered();
     }
 
     private void BuildWorld()
@@ -154,12 +235,18 @@ public partial class GameMenu : CanvasLayer
 
     private void Generate(WorldCreationOptions options)
     {
+        RunFileOperation("Création du monde…", () => WorldRequested?.Invoke(options));
+    }
+
+    public void RunFileOperation(string title, Action action)
+    {
+        _busyTitle = title;
         ShowPage("busy");
         Callable.From((Action)(async () =>
         {
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
             await ToSignal(GetTree(), SceneTree.SignalName.ProcessFrame);
-            WorldRequested?.Invoke(options);
+            action();
         })).CallDeferred();
     }
 
@@ -190,6 +277,6 @@ public partial class GameMenu : CanvasLayer
     {
         MenuStyle.Text(_body, "Comment jouer", 24);
         MenuStyle.Text(_body, "1. Créez un monde vierge ou déjà peuplé.\n\n2. Cliquez sur « Fonder une colonie », choisissez son peuple et ses habitants, puis son emplacement sur la carte du monde.\n\n3. Sur le terrain, choisissez une zone plate. Le contour vert indique un camp valide ; le rouge signale un obstacle. Validez pour faire apparaître les fondateurs.\n\n4. Observez le travail, les naissances, le commerce et les prières de vos colonies.", 15, MenuStyle.Ink, true);
-        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nEspace : pause · 1 / 2 / 3 : vitesse\nÉchap : annuler la fondation, fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
+        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nEspace : pause · 1 / 2 / 3 : vitesse\nF5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nÉchap : annuler la fondation, fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
     }
 }

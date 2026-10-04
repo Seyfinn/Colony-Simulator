@@ -96,7 +96,7 @@ public partial class Main
             FindNamed<OptionButton>(_menu, "TailleMonde").Select(0);
             FindNamed<OptionButton>(_menu, "ColoniesInitiales").Select(2);
             Click(_menu, "Créer et explorer");
-            var confirmation = Descendants(_menu).OfType<ConfirmationDialog>().Single();
+            var confirmation = Descendants(_menu).OfType<ConfirmationDialog>().Single(d => d.Visible);
             Require(confirmation.Visible && _world.Colonies[0] == colony, "La partie doit rester intacte avant confirmation de remplacement.");
             confirmation.Hide(); confirmation.EmitSignal(ConfirmationDialog.SignalName.Confirmed);
             await UiFrames(6);

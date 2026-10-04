@@ -83,12 +83,12 @@ public partial class Main : Node2D
         InitMenus();
     }
 
-    private void BuildWorld(WorldCreationOptions options, bool development = false)
+    private void BuildWorld(WorldCreationOptions options, bool development = false, WorldState? restored = null, int observed = 0)
     {
-        _world = new WorldState(options.Seed, options.Size, options.Size,
+        _world = restored ?? new WorldState(options.Seed, options.Size, options.Size,
             startingColonists: development ? null : options.Founders, migration: options.Migration,
             lifecycle: options.Lifecycle, colonyCount: options.Colonies, trade: options.Trade);
-        _observed = 0;
+        _observed = Math.Clamp(observed, 0, Math.Max(0, _world.Colonies.Count - 1));
         Colony? colony = _world.Colonies.Count > 0 ? Observed : null;
         LocalMap map = colony?.Map ?? _world.Map;
 
@@ -129,6 +129,7 @@ public partial class Main : Node2D
         _worldPanel = new WorldPanel();
         AddChild(_worldPanel);
         _worldPanel.Init(_world);
+        _worldPanel.Observed = _observed;
         _worldPanel.ColonyRequested += ObserveColony;
         _worldPanel.FoundingRequested += BeginFounding;
         _worldPanel.SiteRequested += PreviewRegion;
