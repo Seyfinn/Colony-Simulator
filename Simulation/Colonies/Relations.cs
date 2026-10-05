@@ -101,8 +101,8 @@ public static class Relations
     /// <summary>Chaque jour, les liens s'effacent doucement ; ceux qui ont quitté la colonie sont oubliés.</summary>
     public static void FadeDaily(Colony colony)
     {
-        var present = colony.Members.Select(m => m.Id).ToHashSet();
-        foreach (Colonist colonist in colony.Members)
+        var present = colony.PresentMembers.Select(m => m.Id).ToHashSet();
+        foreach (Colonist colonist in colony.PresentMembers)
         foreach (int id in colonist.Affinities.Keys.ToList())
         {
             if (!present.Contains(id))

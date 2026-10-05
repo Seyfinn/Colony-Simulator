@@ -35,8 +35,8 @@ public static class FoodChain
     /// <summary>Le moulin doit être à moins de cette distance (en cases) du camp.</summary>
     public const int MillSearchRadius = 20;
 
-    private static readonly Recipe Milling = new(BuildingType.Mill, [(ResourceType.Grain, GrainPerBatch)], ResourceType.Flour, FlourPerBatch, 6f);
-    private static readonly Recipe Baking = new(BuildingType.Oven, [(ResourceType.Flour, FlourPerBatch), (ResourceType.Wood, 1)], ResourceType.Bread, BreadPerBatch, 8f);
+    private static readonly Recipe Milling = new(BuildingType.Mill, [(ResourceType.Grain, GrainPerBatch)], ResourceType.Flour, FlourPerBatch, 10f);
+    private static readonly Recipe Baking = new(BuildingType.Oven, [(ResourceType.Flour, FlourPerBatch), (ResourceType.Wood, 1)], ResourceType.Bread, BreadPerBatch, 14f);
 
     public static bool IsFoodWorkshop(BuildingType type) => type is BuildingType.Mill or BuildingType.Oven;
 
@@ -47,7 +47,7 @@ public static class FoodChain
         _ => throw new ArgumentException("Ce bâtiment ne fait ni farine ni pain.", nameof(workshop)),
     };
 
-    private static float DailyMeals(Colony colony) => Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay;
+    private static float DailyMeals(Colony colony) => Math.Max(1, colony.PresentMembers.Count) * ColonyBrain.MealsPerColonistPerDay;
 
     public static BreadDemand Demand(Colony colony)
     {
@@ -71,7 +71,7 @@ public static class FoodChain
         bool hasMill = colony.Buildings.Any(b => b.Type == BuildingType.Mill);
         bool hasOven = colony.Buildings.Any(b => b.Type == BuildingType.Oven);
         if (!hasMill)
-            return demand.GrainSurplus >= SurplusToBuildMill && Urbanism.FindMillSite(map, colony) is not null ? BuildingType.Mill : null;
+            return demand.GrainSurplus >= SurplusToBuildMill && !SettlementPlanner.IsKnownImpossible(colony, BuildingType.Mill) ? BuildingType.Mill : null;
         return hasOven ? null : BuildingType.Oven;
     }
 

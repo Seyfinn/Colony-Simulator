@@ -13,10 +13,17 @@ public sealed record TradePlan(Colony From, Colony To, IReadOnlyList<TradeLine> 
 {
     /// <summary>Bilan en pièces pour la colonie qui envoie la caravane (positif : elle encaisse).</summary>
     public double NetCoins => Lines.Sum(l => l.IsSale ? l.Total : -l.Total);
+    public bool Emergency { get; init; }
+    public bool ContactOnly { get; init; }
 }
 
 /// <summary>Le compte rendu d'un voyage achevé, gardé par chaque colonie pour s'en souvenir.</summary>
-public sealed record TradeRecord(long Ticks, string Partner, IReadOnlyList<TradeLine> Lines, int NetCoins, bool WeSent);
+public sealed record TradeRecord(long Ticks, string Partner, IReadOnlyList<TradeLine> Lines, int NetCoins, bool WeSent)
+{
+    public double? GainHours { get; init; }
+    public double? CostHours { get; init; }
+    public double? ExpectedGainHours { get; init; }
+}
 
 public enum CaravanState { Outbound, Returning, Home }
 
@@ -34,19 +41,57 @@ public sealed class Caravan
         From = from;
         To = to;
         Traders = traders;
-        Plan = lines;
+        Plan = lines.ToArray();
         DepartTicks = departTicks;
         ArriveTicks = arriveTicks;
         ReturnTicks = returnTicks;
+        PlannedReturnTicks = returnTicks;
+        LastRouteTicks = departTicks;
+        LastNeedsTicks = departTicks;
+        _inventory = new Stockpile(Cargo);
+        _provisions = new Stockpile();
     }
 
+    public int Id { get; internal set; }
+    public int FromSettlementId { get; internal set; }
+    public int ToSettlementId { get; internal set; }
+    public TerritorialPurpose Purpose { get; internal set; }
+    public int TargetRegion { get; internal set; }
+    public bool Delivered { get; internal set; }
+    public List<GodColony.Simulation.Map.DepositKnowledge>? SurveyReports { get; internal set; }
+
+    /// <summary>Pour une prospection : temps réellement travaillé sur place, et profondeur de sondage qui en résulte.</summary>
+    public long WorkedTicks { get; internal set; }
+
+    /// <summary>Pour un aménagement de route : l'arête (régions voisines) et le niveau visé.</summary>
+    public int RoadEdgeA { get; internal set; }
+    public int RoadEdgeB { get; internal set; }
+    public int RoadLevel { get; internal set; }
+    public int SurveyReach { get; internal set; }
     public Colony From { get; }
     public Colony To { get; }
     public IReadOnlyList<Colonist> Traders { get; }
     public IReadOnlyList<TradeLine> Plan { get; }
     public long DepartTicks { get; }
-    public long ArriveTicks { get; }
-    public long ReturnTicks { get; }
+    public long ArriveTicks { get; internal set; }
+    public long ReturnTicks { get; internal set; }
+    public long PlannedReturnTicks { get; internal set; }
+    public bool ContactOnly { get; internal set; }
+    public bool Aborted { get; internal set; }
+    public double ProvisionCostHours { get; internal set; }
+    /// <summary>Quantités chargées et coûts unitaires au départ ; null pour un ancien voyage sans bilan reconstituable.</summary>
+    public IReadOnlyList<TradeLine>? DepartureValues { get; internal set; }
+    public List<MarketOffer> OutboundOffers { get; internal set; } = [];
+    public List<MarketOffer> ReturnOffers { get; internal set; } = [];
+    public long ReportTicks { get; internal set; } = -1;
+    public int OutboundBudget { get; internal set; }
+    public int ReturnBudget { get; internal set; }
+    public WorldRoute? Route { get; internal set; }
+    public int RouteIndex { get; internal set; }
+    public double SegmentTravelCost { get; internal set; }
+    internal long LastRouteTicks { get; set; }
+    internal long RestUntilTicks { get; set; }
+    internal int RouteRevision { get; set; } = -1;
     public CaravanState State { get; internal set; } = CaravanState.Outbound;
 
     /// <summary>Le travail que l'échange devait épargner, si tout se passait comme prévu.</summary>
@@ -56,7 +101,14 @@ public sealed class Caravan
     public int CoinsAtDeparture { get; internal set; }
 
     /// <summary>Ce qu'elle transporte en ce moment : au départ, les marchandises à vendre ; au retour, ce qu'elle rapporte.</summary>
+    private Stockpile? _inventory;
+    private Stockpile? _provisions;
+    public Stockpile Inventory => _inventory ??= new Stockpile(Cargo);
+    public Stockpile Provisions => _provisions ??= new Stockpile();
     public Dictionary<ResourceType, int> Cargo { get; } = [];
+    internal long LastNeedsTicks { get; set; }
+    public string? BlockedReason { get; internal set; }
+    public double LoadWeight => ResourceCatalog.WeightOf(Cargo) + ResourceCatalog.WeightOf(Provisions.Amounts);
 
     /// <summary>Les pièces qu'elle porte : de quoi acheter à l'aller, le produit des ventes au retour.</summary>
     public int Coins
@@ -71,6 +123,8 @@ public sealed class Caravan
     /// </summary>
     public float RoutePosition(long nowTicks)
     {
+        if (Route is { } route && route.Cost > 0)
+            return Math.Clamp((float)((route.Cumulative[Math.Min(RouteIndex, route.Cumulative.Count - 1)] + SegmentTravelCost) / route.Cost), 0, 1);
         if (nowTicks <= ArriveTicks)
             return Math.Clamp((nowTicks - DepartTicks) / (float)Math.Max(1, ArriveTicks - DepartTicks), 0f, 1f);
         long backStart = ReturnTicks - (ArriveTicks - DepartTicks);
@@ -80,7 +134,9 @@ public sealed class Caravan
     }
 
     /// <summary>Avancement du voyage entier, de 0 (départ) à 1 (retour).</summary>
-    public float Progress(long nowTicks) => Math.Clamp((nowTicks - DepartTicks) / (float)(ReturnTicks - DepartTicks), 0f, 1f);
+    public float Progress(long nowTicks) => Route is null
+        ? Math.Clamp((nowTicks - DepartTicks) / (float)Math.Max(1, ReturnTicks - DepartTicks), 0f, 1f)
+        : State == CaravanState.Home ? 1 : (State == CaravanState.Outbound ? 0 : 0.5f) + RoutePosition(nowTicks) * 0.5f;
 
     internal List<TradeLine> Settled { get; } = [];
 }
@@ -90,15 +146,32 @@ public sealed class Caravan
 /// échange rapporte nettement plus qu'il ne coûte en travail de caravane, envoie des colons le conclure.
 /// Le prix est négocié au milieu des deux valeurs : les deux colonies y gagnent.
 /// </summary>
-public static class Trade
+public static partial class Trade
 {
     /// <summary>Heure à laquelle les colonies réfléchissent à leurs échanges.</summary>
     public const int PlanningHour = 9;
 
     public const int TradersPerCaravan = 2;
 
-    /// <summary>Charge maximale d'une caravane, en unités (tous biens confondus).</summary>
+    /// <summary>Charge maximale d'une caravane, en unités de poids (provisions et pièces comprises).</summary>
     public const int CarryCapacity = 36;
+
+    /// <summary>Les étals du plus grand marché préparent davantage de marchandises pour chaque voyage.</summary>
+    public static int CapacityOf(Colony from, Colony to)
+    {
+        int capacity = CarryCapacity + Math.Max(MarketBonus(from), MarketBonus(to));
+        // La monnaie frappée allège les comptes : on emporte un quart de plus.
+        return Knowledge.Has(from, Discovery.Coinage) ? (int)(capacity * Knowledge.CoinageCapacityFactor) : capacity;
+    }
+
+    private static int MarketBonus(Colony colony) => colony.Buildings
+        .Where(b => b.Type == BuildingType.Market && b.IsComplete).Sum(b => CarryCapacity * b.Width * b.Height / 24);
+
+    /// <summary>Entre alliés, un échange n'a pas besoin de rapporter plus que le voyage ne coûte.</summary>
+    public const double AlliedGainOverCost = 1.0;
+
+    /// <summary>Chaque niveau de négoce des marchands rabat ce pourcentage du coût d'un voyage (au plus 40 %).</summary>
+    private const double TradingSkillDiscount = 0.02;
 
     /// <summary>Heures de travail utiles par jour et par colon : le coût d'un colon en voyage.</summary>
     public const double WorkHoursPerDay = 8;
@@ -118,7 +191,8 @@ public static class Trade
     /// <summary>Colons minimum pour oser en envoyer en voyage.</summary>
     public const int MinColonistsToTrade = 6;
 
-    private const int MaxExportInterest = 6;
+    /// <summary>Unités qu'une colonie veut produire au plus pour l'exportation d'un bien sur son horizon, et voyages comptés pour les transporter.</summary>
+    private const int ExportHorizonUnits = 24, ExportTrips = 2;
     private const int MaxRecords = 20;
 
     // ---------- Préparation ----------
@@ -128,21 +202,37 @@ public static class Trade
     /// à celui qui en manque et en estime plus la valeur, on achète ce qu'on manque à celui qui en a trop et l'estime moins.
     /// Renvoie null si rien ne rapporte assez.
     /// </summary>
-    public static TradePlan? Plan(WorldState world, Colony from, Colony to)
+    public static TradePlan? Plan(WorldState world, Colony from, Colony to, bool emergency = false)
     {
-        float tripDays = 2f * world.WorldMap.TravelDays(from, to) + 0.5f;
-        double cost = TradersPerCaravan * tripDays * WorkHoursPerDay;
+        if (from == to || !world.Colonies.Contains(from) || !world.Colonies.Contains(to)
+            || !world.WorldMap.Connected(from, to) || Diplomacy.AtWar(world, from, to))
+            return null;
+        WorldRoute? route = RouteForTrade(world, from, world.WorldMap.TileOf(from), world.WorldMap.TileOf(to));
+        if (route is null) return null;
+        float tripDays = 2f * route.Cost / WorldMap.CaravanTilesPerDay + 0.5f;
+        double bargain = Math.Min(0.4, TradingSkillDiscount * Specialties.TraderLevel(PickTraders(from, emergency)));
+        double cost = TradersPerCaravan * tripDays * WorkHoursPerDay * (1 - bargain)
+            * (Knowledge.Has(from, Discovery.Coinage) ? Knowledge.CoinageCostFactor : 1.0);
+        int capacity = CapacityOf(from, to);
 
-        var candidates = new List<(TradeLine Line, double GainPerUnit)>();
-        foreach (ResourceType good in Economy.Tradable)
+        SupplierMemory? memory = Suppliers(world, from).FirstOrDefault(m => m.Supplier == to);
+        if (memory is null || memory.AgeDays(world.Clock.Ticks) > OfferLifetimeDays)
         {
-            // Je vends : chaque unité part tant qu'ils lui accordent plus de valeur que moi.
-            Clearing sale = Economy.Clear(from, to, good, CarryCapacity);
+            var food = ProvisionLoad(from, tripDays, []);
+            return food is not null && SafeDeparture(from, [], food) && LoadFits([], food, capacity)
+                ? new TradePlan(from, to, [], 0, cost + food.Sum(p => p.Amount * Economy.Cost(from, p.Resource)), tripDays) { ContactOnly = true } : null;
+        }
+        var candidates = new List<(TradeLine Line, double GainPerUnit)>();
+        foreach (MarketOffer offer in memory.Offers)
+        {
+            ResourceType good = offer.Good;
+            Clearing sale = emergency ? Clearing.None : KnownClearing(world, from, offer, true, capacity, false);
             if (sale.Units > 0)
                 candidates.Add((new TradeLine(good, sale.Units, sale.UnitPrice, IsSale: true), sale.GainHours / sale.Units));
 
             // J'achète : chaque unité vient tant que je lui accorde plus de valeur qu'eux.
-            Clearing purchase = Economy.Clear(to, from, good, CarryCapacity);
+            Clearing purchase = emergency && ResourceCatalog.Nutrition(good) == 0
+                ? Clearing.None : KnownClearing(world, from, offer, false, capacity, emergency);
             if (purchase.Units > 0)
                 candidates.Add((new TradeLine(good, purchase.Units, purchase.UnitPrice, IsSale: false), purchase.GainHours / purchase.Units));
         }
@@ -151,26 +241,44 @@ public static class Trade
 
         // On remplit la caravane en commençant par ce qui rapporte le plus par unité transportée.
         var lines = new List<(TradeLine Line, double Gain)>();
-        int room = CarryCapacity;
-        foreach ((TradeLine line, double gain) in candidates.OrderByDescending(c => c.GainPerUnit))
+        double room = capacity;
+        foreach ((TradeLine line, double gain) in candidates.OrderByDescending(c => c.GainPerUnit / ResourceCatalog.Weight(c.Line.Good)))
         {
-            int units = Math.Min(line.Units, room);
+            int units = Math.Min(line.Units, (int)(room / ResourceCatalog.Weight(line.Good)));
             if (units <= 0)
-                break;
+                continue;
             lines.Add((line with { Units = units }, gain));
-            room -= units;
+            room -= units * ResourceCatalog.Weight(line.Good);
         }
 
         // Les pièces sont physiques : chacun ne paie que ce que contient sa bourse.
-        lines = FitPurse(lines, isSale: false, available: from.Stock.Get(ResourceType.Coins));
-        lines = FitPurse(lines, isSale: true, available: to.Stock.Get(ResourceType.Coins));
+        lines = FitPurse(lines, isSale: false, available: from.Stock.Available(ResourceType.Coins));
+        lines = FitPurse(lines, isSale: true, available: memory.BuyingBudget);
+        List<(ResourceType Resource, int Amount)>? provisions;
+        while (lines.Count > 0)
+        {
+            var proposed = lines.Select(l => l.Line).ToList();
+            provisions = ProvisionLoad(from, tripDays, proposed);
+            if (provisions is not null && LoadFits(proposed, provisions, capacity) && SafeDeparture(from, proposed, provisions))
+                break;
+            var last = lines[^1];
+            if (last.Line.Units <= 1) lines.RemoveAt(lines.Count - 1);
+            else lines[^1] = (last.Line with { Units = last.Line.Units - 1 }, last.Gain);
+        }
+        lines.RemoveAll(l => l.Line.Total < 1);
+        if (lines.Count == 0) return null;
+        provisions = ProvisionLoad(from, tripDays, lines.Select(l => l.Line))!;
+        cost += provisions.Sum(p => p.Amount * Economy.Cost(from, p.Resource));
 
         // La rancune (d'un côté ou de l'autre) rend le voyage moins tentant : il faut qu'il rapporte bien plus.
         double grudge = Math.Max(from.GrudgeAgainst(to), to.GrudgeAgainst(from));
         double gainHours = lines.Sum(l => l.Line.Units * l.Gain);
-        if (lines.Count == 0 || gainHours < cost * RequiredGainOverCost * (1 + GrudgeCostFactor * grudge))
+        double required = Diplomacy.AreAllied(world, from, to) ? AlliedGainOverCost : RequiredGainOverCost;
+        decimal boughtNutrition = lines.Where(l => !l.Line.IsSale).Sum(l => l.Line.Units * ResourceCatalog.Nutrition(l.Line.Good));
+        if (emergency ? boughtNutrition <= provisions.Sum(p => p.Amount * ResourceCatalog.Nutrition(p.Resource))
+            : gainHours < cost * required * (1 + GrudgeCostFactor * grudge))
             return null;
-        return new TradePlan(from, to, lines.Select(l => l.Line).ToList(), gainHours, cost, tripDays);
+        return new TradePlan(from, to, lines.Select(l => l.Line).ToList(), gainHours, cost, tripDays) { Emergency = emergency };
     }
 
     /// <summary>Réduit les achats d'un côté (les moins rentables d'abord) jusqu'à ce que la bourse suffise.</summary>
@@ -179,7 +287,7 @@ public static class Trade
         // Les lignes d'achat de la colonie qui envoie sont payées avec ses pièces (isSale = false) ;
         // ses lignes de vente sont payées par le destinataire (isSale = true).
         var result = lines.ToList();
-        double spend() => result.Where(l => l.Line.IsSale == isSale).Sum(l => l.Line.Total);
+        double spend() => result.Where(l => l.Line.IsSale == isSale).Sum(l => Math.Ceiling(l.Line.Total));
         while (spend() > available)
         {
             int worst = -1;
@@ -204,24 +312,27 @@ public static class Trade
     /// </summary>
     public static void Daily(WorldState world, Colony colony)
     {
-        // On ne commerce qu'avec les colonies qu'une caravane peut atteindre à pied (ni mer ni sommets entre elles).
-        List<Colony> partners = world.Colonies.Where(c => c != colony && world.WorldMap.Connected(colony, c))
+        // On ne commerce qu'avec les colonies qu'une caravane peut atteindre à pied (ni mer ni sommets entre elles), et jamais avec l'ennemi.
+        List<Colony> partners = world.Colonies.Where(c => c != colony && c.PresentMembers.Count > 0 && world.WorldMap.Connected(colony, c)
+                && !Diplomacy.AtWar(world, colony, c))
             .OrderBy(c => world.WorldMap.Distance(colony, c)).ToList();
         if (partners.Count == 0)
             return;
 
-        UpdateExportInterest(colony, partners);
+        ProductionPlanner.Revise(world, colony, partners);
+        UpdateExportInterest(world, colony, partners);
 
         long now = world.Clock.Ticks;
         bool busy = world.Caravans.Any(c => c.From == colony && c.State != CaravanState.Home);
         bool resting = now - colony.LastCaravanTicks < DaysBetweenCaravans * TimeConstants.TicksPerDay;
-        bool strong = colony.Members.Count >= MinColonistsToTrade && (colony.Sensors?.SurvivalAssured ?? true);
+        bool emergency = NeedsEmergencyFood(colony);
+        bool strong = colony.PresentMembers.Count >= MinColonistsToTrade && ((colony.Sensors?.SurvivalAssured ?? true) || emergency);
         if (busy || resting || !strong)
             return;
 
         TradePlan? best = null;
         foreach (Colony partner in partners)
-            if (Plan(world, colony, partner) is { } plan && (best is null || plan.GainHours - plan.CostHours > best.GainHours - best.CostHours))
+            if (Plan(world, colony, partner, emergency) is { } plan && (best is null || PlanScore(world, plan) > PlanScore(world, best)))
                 best = plan;
         if (best is not null)
             Depart(world, best);
@@ -231,27 +342,40 @@ public static class Trade
     /// Ce que la colonie fabriquerait volontiers en plus pour ses voisines : des outils, quand elle sait les faire
     /// moins cher qu'elles et qu'elles en manquent. C'est ainsi que la spécialisation naît du commerce.
     /// </summary>
-    private static void UpdateExportInterest(Colony colony, List<Colony> partners)
+    private static void UpdateExportInterest(WorldState world, Colony colony, List<Colony> partners)
     {
-        int tools = 0;
-        foreach (Colony partner in partners)
+        // L'objectif d'exportation d'une filière retenue : la demande agrégée des acheteurs solvables, non déjà promise, plafonnée par le transport et un horizon.
+        foreach (ResourceType good in Economy.Tradable)
         {
-            if (colony.Labor.HoursPerUnit(ResourceType.Tools) is null && colony.Stock.Get(ResourceType.Tools) == 0)
-                continue;
-            // Combien d'outils le voisin paierait-il plus cher que ce qu'ils nous coûtent à fabriquer ?
-            double mine = Economy.Cost(colony, ResourceType.Tools) * (1 + MinValueGap);
-            int wanted = Economy.UnitsWillingToBuy(partner, ResourceType.Tools, mine, MaxExportInterest);
-            tools = Math.Max(tools, wanted);
+            if (!colony.FocusGoods.Contains(good)) { colony.ExportInterest[good] = 0; continue; }
+            double mine = Economy.Cost(colony, good) * (1 + MinValueGap);
+            int demand = 0, perTrip = int.MaxValue;
+            foreach (Colony partner in partners)
+            {
+                SupplierMemory? memory = Suppliers(world, colony).FirstOrDefault(m => m.Supplier == partner);
+                MarketOffer? offer = memory?.Offers.FirstOrDefault(o => o.Good == good);
+                if (memory is null || memory.AgeDays(world.Clock.Ticks) > OfferLifetimeDays || offer is null
+                    || offer.BuyPrice < mine + ProductionPlanner.TransportPerUnit(world, colony, partner, good)) continue;
+                // Chaque acheteur compte pour ce qu'il veut et peut payer ; les commandes de plusieurs acheteurs s'additionnent.
+                int solvent = (int)Math.Min(int.MaxValue, memory.BuyingBudget / Math.Max(1.0, offer.BuyPrice));
+                demand += Math.Min(offer.Wanted, solvent);
+                perTrip = Math.Min(perTrip, (int)Math.Max(1, CapacityOf(colony, partner) / ResourceCatalog.Weight(good)));
+            }
+            int promised = world.Caravans.Where(c => c.From == colony && !c.Aborted && c.Purpose == TerritorialPurpose.Commerce)
+                .Sum(c => c.Plan.Where(l => l.IsSale && l.Good == good).Sum(l => l.Units));
+            // Sur l'horizon, la capacité de transport est celle de quelques voyages, pas d'un seul.
+            colony.ExportInterest[good] = perTrip == int.MaxValue ? 0 : Math.Clamp(demand - promised, 0, Math.Min(ExportHorizonUnits, perTrip * ExportTrips));
         }
-        colony.ExportInterest[ResourceType.Tools] = tools;
     }
 
     // ---------- Départ ----------
 
     /// <summary>Les colons qui partent : des adultes libres, de préférence ceux dont la colonie a le moins besoin.</summary>
-    private static List<Colonist> PickTraders(Colony colony) =>
-        colony.Members
-            .Where(m => m.Stage == LifeStage.Adult && m.Partner is null && m.PregnantUntilTicks is null && m.Transit == TransitState.None)
+    private static List<Colonist> PickTraders(Colony colony, bool emergency = false) =>
+        colony.PresentMembers
+            .Where(m => m.Stage == LifeStage.Adult && m.Partner is null && m.PregnantUntilTicks is null && m.Transit == TransitState.None
+                && m.Ailment == Ailment.None && m.Needs.Food > 0.2f
+                && (!emergency || m.Sector is not (WorkSector.Food or WorkSector.Farm or WorkSector.Wood)))
             .OrderByDescending(m => m.Sector == WorkSector.Free)
             .ThenBy(m => m.Id)
             .Take(TradersPerCaravan)
@@ -260,30 +384,64 @@ public static class Trade
     /// <summary>La caravane quitte la colonie avec ses marchandises et ses pièces.</summary>
     public static Caravan? Depart(WorldState world, TradePlan plan)
     {
-        List<Colonist> traders = PickTraders(plan.From);
+        if (plan.From == plan.To || !world.Colonies.Contains(plan.From) || !world.Colonies.Contains(plan.To)
+            || !world.WorldMap.Connected(plan.From, plan.To) || Diplomacy.AtWar(world, plan.From, plan.To)
+            || world.Caravans.Any(c => c.From == plan.From && c.State != CaravanState.Home)
+            || (plan.Lines.Count == 0 && !plan.ContactOnly) || plan.Lines.Any(l => l.Units <= 0 || !double.IsFinite(l.UnitPrice) || l.UnitPrice <= 0
+                || !Economy.Tradable.Contains(l.Good))
+            || !double.IsFinite(plan.GainHours) || !double.IsFinite(plan.CostHours))
+            return null;
+        bool emergency = plan.Emergency || NeedsEmergencyFood(plan.From);
+        List<Colonist> traders = PickTraders(plan.From, emergency);
         if (traders.Count < TradersPerCaravan)
             return null;
 
         long now = world.Clock.Ticks;
-        long oneWay = (long)(world.WorldMap.TravelDays(plan.From, plan.To) * TimeConstants.TicksPerDay);
+        WorldRoute? route = RouteForTrade(world, plan.From, world.WorldMap.TileOf(plan.From), world.WorldMap.TileOf(plan.To));
+        if (route is null) return null;
+        double oneWayDays = route.Cost / WorldMap.CaravanTilesPerDay;
+        double tripDays = 2 * oneWayDays + 0.5;
+        var provisions = ProvisionLoad(plan.From, tripDays, plan.Lines);
+        double payment = PurchaseCoins(plan.Lines);
+        if (provisions is null || payment > int.MaxValue || payment > plan.From.Stock.Available(ResourceType.Coins)
+            || !LoadFits(plan.Lines, provisions, CapacityOf(plan.From, plan.To))
+            || !SafeDeparture(plan.From, plan.Lines, provisions)
+            || traders.Any(t => Migration.FindEdgePoint(world, plan.From, t.TileX, t.TileY) is null))
+            return null;
+        long oneWay = Math.Max(1, (long)Math.Ceiling(oneWayDays * TimeConstants.TicksPerDay));
         var caravan = new Caravan(plan.From, plan.To, traders, plan.Lines, plan.GainHours, now, now + oneWay, now + 2 * oneWay + TimeConstants.TicksPerDay / 2);
 
-        // Les marchandises à vendre et les pièces pour acheter quittent le stock (ce qu'il n'y a plus en stock n'est pas emporté).
-        int coins = 0;
-        foreach (TradeLine line in plan.Lines)
+        caravan.ContactOnly = plan.ContactOnly;
+        caravan.Route = route;
+        caravan.RouteRevision = RoutingRevision(world, plan.From);
+        caravan.OutboundOffers = Publish(plan.From);
+        caravan.OutboundBudget = plan.From.Stock.Available(ResourceType.Coins);
+        caravan.ProvisionCostHours = provisions.Sum(p => p.Amount * Economy.Cost(plan.From, p.Resource));
+        caravan.DepartureValues = Economy.Tradable.Concat(provisions.Select(p => p.Resource)).Distinct()
+            .Select(g => new TradeLine(g, plan.Lines.Where(l => l.IsSale && l.Good == g).Sum(l => l.Units)
+                + provisions.Where(p => p.Resource == g).Sum(p => p.Amount), Economy.Cost(plan.From, g), false)).ToArray();
+
+        // Préparer toutes les promesses avant le moindre retrait : un départ impossible ne laisse ni débit ni colon détaché.
+        List<(StockReservation Reservation, Stockpile Destination)> reservations = [];
+        var loads = plan.Lines.Where(l => l.IsSale).Select(l => (l.Good, l.Units, caravan.Inventory))
+            .Concat(provisions.Select(p => (p.Resource, p.Amount, caravan.Provisions)))
+            .Append((ResourceType.Coins, (int)payment, caravan.Inventory));
+        foreach (var (resource, amount, destination) in loads)
         {
-            if (line.IsSale)
+            if (amount == 0) continue;
+            StockReservation? reservation = plan.From.Stock.Reserve("Départ de caravane", resource, amount, emergency ? 100 : 50, now + 1, now);
+            if (reservation is null)
             {
-                if (plan.From.Stock.TryTake(line.Good, line.Units))
-                    caravan.Cargo[line.Good] = caravan.Cargo.GetValueOrDefault(line.Good) + line.Units;
+                foreach (var held in reservations) plan.From.Stock.CancelReservation(held.Reservation);
+                return null;
             }
-            else
-                coins += (int)Math.Ceiling(line.Total);
+            reservations.Add((reservation, destination));
         }
-        coins = Math.Min(coins, plan.From.Stock.Get(ResourceType.Coins));
-        plan.From.Stock.TryTake(ResourceType.Coins, coins);
-        caravan.Coins = coins;
-        caravan.CoinsAtDeparture = coins;
+        foreach (var held in reservations)
+            if (!plan.From.Stock.LoadReservation(held.Reservation, held.Destination, now))
+                throw new InvalidOperationException("Le chargement préparé n'est plus disponible.");
+        caravan.CoinsAtDeparture = caravan.Coins;
+        world.RegisterTrip(caravan);
 
         // Les marchands sortent de la colonie en marchant jusqu'au bord de la carte, puis le voyage se poursuit hors écran.
         foreach (Colonist trader in traders)
@@ -298,6 +456,11 @@ public static class Trade
         plan.From.LastCaravanTicks = now;
         world.Caravans.Add(caravan);
 
+        if (plan.ContactOnly)
+        {
+            ColonyBrain.Say(plan.From, world.Clock, $"Des marchands partent rencontrer {plan.To.Name} pour découvrir ses offres.");
+            return caravan;
+        }
         string sells = Describe(plan.Lines.Where(l => l.IsSale)), buys = Describe(plan.Lines.Where(l => !l.IsSale));
         ColonyBrain.Say(plan.From, world.Clock,
             $"Une caravane part pour {plan.To.Name} : " +
@@ -321,7 +484,22 @@ public static class Trade
         ResourceType.Iron => "fer",
         ResourceType.Tools => units > 1 ? "outils" : "outil",
         ResourceType.Coins => "pièces",
-        _ => "vivres",
+        ResourceType.Wool => "laine",
+        ResourceType.Clothes => units > 1 ? "vêtements" : "vêtement",
+        ResourceType.Salt => "sel",
+        ResourceType.Spices => "épices",
+        ResourceType.Hardwood => "bois dur",
+        ResourceType.Chickens => units > 1 ? "poules" : "poule",
+        ResourceType.Sheep => units > 1 ? "moutons" : "mouton",
+        ResourceType.Cows => units > 1 ? "vaches" : "vache",
+        ResourceType.Milk => "lait",
+        ResourceType.Eggs => "œufs",
+        ResourceType.Meat => "viande",
+        ResourceType.SaltedMeat => "viande salée",
+        ResourceType.Cake => units > 1 ? "gâteaux" : "gâteau",
+        ResourceType.Stew => "ragoût",
+        ResourceType.Beer => "bière",
+        _ => (int)good >= 27 ? ResourceCatalog.Name(good) : "vivres",
     };
 
     // ---------- En route ----------
@@ -332,10 +510,9 @@ public static class Trade
         long now = world.Clock.Ticks;
         foreach (Caravan caravan in world.Caravans.ToList())
         {
-            if (caravan.State == CaravanState.Outbound && now >= caravan.ArriveTicks)
-                Settle(world, caravan);
-            if (caravan.State == CaravanState.Returning && now >= caravan.ReturnTicks)
-                ComeHome(world, caravan);
+            using var scope = caravan.From.UseSettlement(world.SettlementById(caravan.FromSettlementId) ?? caravan.From.PrimarySettlement);
+            MaintainTravelers(world, caravan);
+            AdvanceVoyage(world, caravan);
         }
     }
 
@@ -345,6 +522,7 @@ public static class Trade
     /// </summary>
     private static void Settle(WorldState world, Caravan caravan)
     {
+        if (caravan.Purpose != TerritorialPurpose.Commerce) { TerritorialTravel.Arrive(world, caravan); return; }
         Colony seller = caravan.From, host = caravan.To;
         foreach (TradeLine line in caravan.Plan)
         {
@@ -352,34 +530,51 @@ public static class Trade
             {
                 // Je vends à l'hôte : il achète ce qu'il juge valoir ce prix, et paie ce qu'il peut.
                 int carried = caravan.Cargo.GetValueOrDefault(line.Good);
-                int affordable = line.UnitPrice <= 0 ? carried : (int)Math.Min(carried, host.Stock.Get(ResourceType.Coins) / line.UnitPrice);
+                int affordable = (int)Math.Min(carried, host.Stock.Available(ResourceType.Coins) / line.UnitPrice);
+                int coinRoom = (int)Math.Min(int.MaxValue, Math.Floor(Math.Max(0, CapacityOf(seller, host) - caravan.LoadWeight)
+                    / (line.UnitPrice * ResourceCatalog.Weight(ResourceType.Coins))));
+                affordable = Math.Min(affordable, coinRoom);
                 int wanted = Economy.UnitsWillingToBuy(host, line.Good, line.UnitPrice, line.Units);
+                SupplyForecast need = Forecast(world, host, line.Good);
+                wanted = Math.Min(wanted, need.Urgent ? need.Shortage : need.PurchaseNeed);
                 int units = Math.Min(Math.Min(wanted, carried), affordable);
                 if (units <= 0)
                     continue;
-                int pay = (int)Math.Round(units * line.UnitPrice);
-                pay = Math.Min(pay, host.Stock.Get(ResourceType.Coins));
-                host.Stock.TryTake(ResourceType.Coins, pay);
-                host.Stock.Add(line.Good, units);
-                caravan.Cargo[line.Good] = carried - units;
-                caravan.Coins += pay;
-                caravan.Settled.Add(line with { Units = units });
+                int pay = LotPayment(units, line.UnitPrice);
+                if (pay == 0) continue;
+                if (!caravan.Inventory.TrySellTo(host.Stock, line.Good, units, pay, outgoing: ResourceFlow.Transfer))
+                    continue;
+                ResourceAccounting.Record(seller.Stock, line.Good, ResourceFlow.Sale, units);
+                caravan.Settled.Add(line with { Units = units, UnitPrice = pay / (double)units });
             }
             else
             {
                 // J'achète à l'hôte : il livre ce qu'il a de trop, je paie avec les pièces que je porte.
                 int available = Economy.UnitsWillingToSell(host, line.Good, line.UnitPrice, line.Units);
-                int affordable = line.UnitPrice <= 0 ? available : (int)Math.Min(available, caravan.Coins / line.UnitPrice);
-                int units = Math.Min(available, affordable);
-                if (units <= 0 || !host.Stock.TryTake(line.Good, units))
+                int affordable = (int)Math.Min(available, caravan.Coins / line.UnitPrice);
+                // Retirer les pièces ne peut pas rendre la charge plus lourde ; ce calcul conservateur protège aussi les invendus.
+                int room = (int)Math.Floor(Math.Max(0, CapacityOf(seller, host) - caravan.LoadWeight) / ResourceCatalog.Weight(line.Good));
+                int units = Math.Min(Math.Min(available, affordable), room);
+                int pay = LotPayment(units, line.UnitPrice);
+                if (pay == 0) continue;
+                if (!host.Stock.TrySellTo(caravan.Inventory, line.Good, units, pay, incoming: ResourceFlow.Transfer))
                     continue;
-                int pay = Math.Min((int)Math.Round(units * line.UnitPrice), caravan.Coins);
-                caravan.Coins -= pay;
-                host.Stock.Add(ResourceType.Coins, pay);
-                caravan.Cargo[line.Good] = caravan.Cargo.GetValueOrDefault(line.Good) + units;
-                caravan.Settled.Add(line with { Units = units });
+                ResourceAccounting.Record(seller.Stock, line.Good, ResourceFlow.Purchase, units);
+                caravan.Settled.Add(line with { Units = units, UnitPrice = pay / (double)units });
             }
         }
+        // Les marchands parlent de ce qu'ils savent faire : un peu du savoir de chacun passe chez l'autre.
+        Knowledge.Share(world, seller, host);
+        if (caravan.Settled.Count > 0)
+            Diplomacy.OnTrade(seller, host);
+
+        // Négocier fait progresser : chaque marchand de la caravane s'exerce au négoce.
+        foreach (Colonist trader in caravan.Traders)
+            trader.Skills.Practice(SkillType.Trading, 40f);
+        Remember(world, host, seller, caravan.OutboundOffers, caravan.DepartTicks, caravan.OutboundBudget);
+        caravan.ReturnOffers = Publish(host);
+        caravan.ReturnBudget = host.Stock.Available(ResourceType.Coins);
+        caravan.ReportTicks = world.Clock.Ticks;
         caravan.State = CaravanState.Returning;
 
         if (caravan.Settled.Count > 0)
@@ -398,18 +593,30 @@ public static class Trade
     /// <summary>Retour : les colons rentrent avec leurs marchandises et leurs pièces.</summary>
     private static void ComeHome(WorldState world, Caravan caravan)
     {
+        if (caravan.Purpose != TerritorialPurpose.Commerce) { TerritorialTravel.Return(world, caravan); return; }
         Colony colony = caravan.From;
-        foreach ((ResourceType good, int amount) in caravan.Cargo)
-            if (amount > 0)
-                colony.Stock.Add(good, amount);
+        if (caravan.Inventory.Amounts.Keys.Concat(caravan.Provisions.Amounts.Keys).Distinct()
+            .Any(good => (long)colony.Stock.Get(good) + caravan.Inventory.Get(good) + caravan.Provisions.Get(good) > int.MaxValue))
+        {
+            caravan.BlockedReason = "Le stock d'arrivée est plein : le chargement reste dans la caravane.";
+            return;
+        }
+        caravan.BlockedReason = null;
+        var outcome = Outcome(world, caravan);
+        ReceiveReport(world, caravan, outcome.Cost);
+        int net = caravan.Coins - caravan.CoinsAtDeparture;
+        foreach (Stockpile inventory in new[] { caravan.Inventory, caravan.Provisions })
+            foreach ((ResourceType good, int amount) in inventory.Amounts.ToArray())
+                if (amount > 0 && !inventory.TryTransferTo(colony.Stock, good, amount))
+                    throw new InvalidOperationException("Le stock ne peut pas recevoir le retour de caravane.");
 
         // Les colons reviennent, fatigués du voyage : on les voit arriver du bord de la carte et marcher jusqu'au camp.
         // (S'ils étaient encore en train de sortir, ils s'arrêtent là et rentrent aussitôt.)
         foreach (Colonist trader in caravan.Traders)
         {
             colony.Transients.Remove(trader);
-            trader.Needs.Food = Math.Min(trader.Needs.Food, 0.7f);
-            trader.Needs.Rest = Math.Min(trader.Needs.Rest, 0.6f);
+            trader.TravelId = 0;
+            trader.LocationSettlementId = caravan.FromSettlementId;
             trader.Activity = null;
             if (Migration.FindEdgePoint(world, colony, colony.CampX, colony.CampY) is { } entry)
             {
@@ -425,20 +632,21 @@ public static class Trade
                 trader.X = trader.PrevX = x + 0.5f;
                 trader.Y = trader.PrevY = y + 0.5f;
                 trader.Transit = TransitState.None;
-                colony.Members.Add(trader);
+                colony.PresentMembers.Add(trader);
             }
         }
         colony.FillVacancies();
         colony.AssignSectors();
 
         // Ce que le voyage a vraiment rapporté en pièces (les arrondis des lignes ne comptent pas).
-        int net = caravan.Coins - caravan.CoinsAtDeparture;
-        var record = new TradeRecord(world.Clock.Ticks, caravan.To.Name, caravan.Settled.ToList(), net, WeSent: true);
+        var record = new TradeRecord(world.Clock.Ticks, caravan.To.Name, caravan.Settled.ToList(), net, WeSent: true)
+        {
+            GainHours = outcome.Gain, CostHours = outcome.Cost, ExpectedGainHours = caravan.PlanGainHours,
+        };
         colony.Trades.Add(record);
         if (colony.Trades.Count > MaxRecords)
             colony.Trades.RemoveAt(0);
-        int plannedUnits = caravan.Plan.Sum(l => l.Units);
-        colony.LifetimeTradeGainHours += plannedUnits == 0 ? 0 : caravan.PlanGainHours * caravan.Settled.Sum(l => l.Units) / plannedUnits;
+        colony.LifetimeTradeGainHours += outcome.Gain ?? 0;
 
         string sold = Describe(caravan.Settled.Where(l => l.IsSale)), bought = Describe(caravan.Settled.Where(l => !l.IsSale));
         ColonyBrain.Say(colony, world.Clock,
@@ -446,7 +654,8 @@ public static class Trade
                 ? $"Notre caravane rentre de {caravan.To.Name} les mains vides."
                 : $"Notre caravane est rentrée de {caravan.To.Name} : " +
                   (sold.Length > 0 ? $"vendu {sold}" : "") + (sold.Length > 0 && bought.Length > 0 ? ", " : "") +
-                  (bought.Length > 0 ? $"acheté {bought}" : "") + $" ; solde {net:+0;-0;0} pièces.");
+                  (bought.Length > 0 ? $"acheté {bought}" : "") + $" ; solde {net:+0;-0;0} pièces."
+                  + (outcome.Gain is { } gain ? $" Bilan du voyage : {gain:+0;-0;0} h." : ""));
 
         // L'hôte garde aussi une trace de la visite.
         var hostRecord = new TradeRecord(world.Clock.Ticks, colony.Name, caravan.Settled.Select(l => l with { IsSale = !l.IsSale }).ToList(), -net, WeSent: false);

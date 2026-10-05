@@ -20,7 +20,7 @@ public class IronChainTests(ITestOutputHelper output)
 
     private static void Complete(WorldState world, Colony colony, BuildingType type)
     {
-        (int x, int y) = Urbanism.FindWorkshopSite(world.Map, colony)!.Value;
+        (int x, int y) = Urbanism.FindSite(world.Map, colony, type)!.Value;
         Urbanism.PlanBuilding(world.Map, colony, type, x, y).Progress = 1f;
     }
 
@@ -153,7 +153,8 @@ public class IronChainTests(ITestOutputHelper output)
         int maxTools = 0;
         long firstToolDay = -1;
 
-        for (int day = 1; day <= 60; day++)
+        // Les autres chantiers (moulin, four, enclos…) passent parfois avant la forge : on laisse quatre ans à la chaîne du fer.
+        for (int day = 1; day <= 80; day++)
         {
             for (long i = 0; i < TimeConstants.TicksPerDay; i++)
                 world.Step();

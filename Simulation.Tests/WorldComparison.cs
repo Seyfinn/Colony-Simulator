@@ -29,6 +29,9 @@ internal sealed class WorldComparison
             foreach (DictionaryEntry entry in left)
             {
                 object key = _references.GetValueOrDefault(entry.Key) ?? entry.Key;
+                // Une colonie pas encore parcourue (l'opinion d'une colonie sur les suivantes) se retrouve par son nom, qui est unique.
+                if (key is Colony colony && !right.Contains(key))
+                    key = right.Keys.OfType<Colony>().FirstOrDefault(c => c.Name == colony.Name) ?? key;
                 if (!right.Contains(key)) return path + $" : clé absente ({key})";
                 string? difference = Difference(entry.Value, right[key], path + $"[{key}]");
                 if (difference is not null) return difference;
@@ -51,7 +54,8 @@ internal sealed class WorldComparison
         foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).OrderBy(f => f.Name))
         {
             if (typeof(Delegate).IsAssignableFrom(field.FieldType) || field.FieldType == typeof(Pathfinder)
-                || (type == typeof(LocalMap) && field.Name == "_scratch")) continue;
+                || (type == typeof(LocalMap) && field.Name == "_scratch")
+                || field.GetCustomAttribute<NonSerializedAttribute>() is not null) continue;
             if (Difference(field.GetValue(expected), field.GetValue(actual), path + "." + field.Name) is { } difference) return difference;
         }
         return null;

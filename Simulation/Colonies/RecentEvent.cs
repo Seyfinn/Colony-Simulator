@@ -8,6 +8,6 @@ public sealed record RecentEvent(ColonyEventKind Kind, int X, int Y, long Ticks,
 /// <summary>Effets temporaires, exclus des sauvegardes pour préserver leur schéma et ne pas rejouer un feu à la reprise.</summary>
 internal static class RecentEventHistory
 {
-    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Colony, List<RecentEvent>> Reports = new();
-    internal static List<RecentEvent> For(Colony colony) => Reports.GetOrCreateValue(colony);
+    private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<Settlement, List<RecentEvent>> Reports = new();
+    internal static List<RecentEvent> For(Colony colony) => Reports.GetOrCreateValue(colony.LocalSettlement);
 }

@@ -26,6 +26,7 @@ public partial class WorldMapView : Control
     private const float Sqrt3 = 1.7320508f;
 
     public event Action<int>? ColonyClicked;
+    public event Action<int>? SettlementClicked;
     public event Action<int>? SiteClicked;
     public bool PickingSite { get; set; }
 
@@ -253,8 +254,10 @@ public partial class WorldMapView : Control
 
         if (PickingSite)
             DrawSuggestions(g, font);
+        DrawPacts(g);
         DrawColonies(g, font);
         DrawCaravans(g, font);
+        DrawWarParties(g, font);
 
         // Le titre et la ligne du bas passent par-dessus les cases qui débordent du cadre quand on zoome.
         g.DrawRect(new Rect2(0, 0, Size.X, Land.Position.Y), Panel);
@@ -375,9 +378,28 @@ public partial class WorldMapView : Control
     private void DrawCaravans(CanvasItem g, Font font)
     {
         long now = _world.Clock.Ticks;
+        foreach (int tile in _world.WorldMap.ClosedPassages)
+        {
+            Vector2 p = CenterOf(tile);
+            g.DrawLine(p + new Vector2(-6, -6), p + new Vector2(6, 6), ArtDirection.Brass, 2);
+            g.DrawLine(p + new Vector2(-6, 6), p + new Vector2(6, -6), ArtDirection.Brass, 2);
+        }
+        foreach (Settlement place in _world.Settlements.Where(s => s != s.Owner.PrimarySettlement))
+        {
+            Vector2 p = CenterOf(place.RegionTileIndex);
+            Color color = place.Status == SettlementStatus.Closed ? Muted : ArtDirection.Brass;
+            g.DrawColoredPolygon(new[] { p + new Vector2(-7,5), p + new Vector2(0,-7), p + new Vector2(7,5) }, color);
+            if (_zoom >= 1.6f) g.DrawString(font, p + new Vector2(10,4), $"{place.Name} · {place.Population.Count}", HorizontalAlignment.Left,-1,10,Ink);
+        }
+        if (Observed >= 0 && Observed < _world.Colonies.Count)
+            foreach (var group in _world.Colonies[Observed].DepositReports.GroupBy(k => k.Region))
+            {
+                Vector2 p = CenterOf(group.Key) + new Vector2(-12,-12);
+                g.DrawCircle(p,4,group.All(k => k.State == GodColony.Simulation.Map.DepositObservation.Depleted) ? Muted : ArtDirection.Sage);
+            }
         foreach (Caravan caravan in _world.Caravans)
         {
-            if (_world.WorldMap.Route(caravan.From, caravan.To) is not { } route)
+            if ((caravan.Route ?? _world.WorldMap.Route(caravan.From, caravan.To)) is not { } route)
                 continue;
             var path = route.Tiles.Select(CenterOf).ToArray();
             if (path.Length >= 2)
@@ -385,11 +407,85 @@ public partial class WorldMapView : Control
             (int a, int b, float t) = route.At(caravan.RoutePosition(now));
             Vector2 position = CenterOf(a).Lerp(CenterOf(b), t);
             bool outbound = caravan.State == CaravanState.Outbound;
-            bool left = (CenterOf(b).X - CenterOf(a).X) * (outbound ? 1 : -1) < 0;
+            bool left = (CenterOf(b).X - CenterOf(a).X) * (caravan.Route is null && !outbound ? -1 : 1) < 0;
             CaravanSprites.Draw(g, position, now / (double)GodColony.Simulation.Time.TimeConstants.TicksPerSecond, left);
-            g.DrawString(font, position + new Vector2(14, -8), $"{(outbound ? "→" : "←")} {caravan.To.Name}",
+            if (caravan.BlockedReason is not null)
+            {
+                g.DrawCircle(position, 13, ArtDirection.Brass, false, 2);
+                var badge = new Rect2(position + new Vector2(12, -35), new Vector2(72, 18));
+                g.DrawRect(badge, Panel);
+                g.DrawString(font, badge.Position + new Vector2(5, 13), "En attente", HorizontalAlignment.Left, -1, 10, ArtDirection.Brass);
+            }
+            string destination = caravan.Purpose == TerritorialPurpose.Commerce ? (outbound ? caravan.To.Name : caravan.From.Name)
+                : TerritorialTravel.Label(caravan.Purpose) + (outbound ? $" · région {caravan.TargetRegion}" : " · retour");
+            g.DrawString(font, position + new Vector2(14, -8), $"{(outbound ? "→" : "←")} {destination}",
                 HorizontalAlignment.Left, -1, 10, Ink);
         }
+    }
+
+    /// <summary>Les pactes entre colonies : un trait vert pour une alliance, rouge pour une guerre, pointillé clair pour une trêve.</summary>
+    private void DrawPacts(CanvasItem g)
+    {
+        foreach (Pact pact in _world.Pacts)
+        {
+            Vector2 a = CenterOf(_world.WorldMap.TileOf(pact.A)), b = CenterOf(_world.WorldMap.TileOf(pact.B));
+            // Un liseré sombre détache le trait des cases claires.
+            g.DrawLine(a, b, new Color(ArtDirection.Charcoal, 0.75f), pact.Kind == PactKind.Truce ? 3.5f : 6f, true);
+            switch (pact.Kind)
+            {
+                case PactKind.Alliance:
+                    g.DrawLine(a, b, ArtDirection.Sage, 3f, true);
+                    break;
+                case PactKind.War:
+                    g.DrawDashedLine(a, b, MenuStyle.Error, 3f, 8f);
+                    Vector2 middle = (a + b) / 2;
+                    g.DrawCircle(middle, 9, new Color(0.25f, 0.06f, 0.05f, 0.95f));
+                    g.DrawTexture(CivilizationArt.WarPact(), middle - new Vector2(8, 8));
+                    break;
+                default:
+                    g.DrawDashedLine(a, b, new Color(ArtDirection.Cream, 0.5f), 1.5f, 5f);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>Les bandes de guerriers suivent leur route réelle ; quatre poses et une étiquette qui évite les noms des colonies.</summary>
+    private void DrawWarParties(CanvasItem g, Font font)
+    {
+        long now = _world.Clock.Ticks;
+        foreach (WarParty party in _world.WarParties)
+        {
+            if (_world.WorldMap.Route(party.From, party.To) is not { } route)
+                continue;
+            (int a, int b, float t) = route.At(party.RoutePosition(now));
+            Vector2 position = CenterOf(a).Lerp(CenterOf(b), t);
+            bool outbound = party.State == WarPartyState.Outbound;
+            bool left = (CenterOf(b).X - CenterOf(a).X) * (outbound ? 1 : -1) < 0;
+            CivilizationArt.DrawWarband(g, position, now, left, !outbound);
+            // Chercher une place autour de la bande qui laisse lisibles les noms des colonies.
+            string label = $"⚔ {party.Warriors.Count} {(outbound ? "→" : "←")} {(outbound ? party.To.Name : party.From.Name)}";
+            Vector2 extent = font.GetStringSize(label, fontSize: 11);
+            Vector2 at = WarLabelPosition(position, extent);
+            g.DrawRect(new Rect2(at + new Vector2(-4, -extent.Y), extent + new Vector2(8, 4)), new Color(ArtDirection.Charcoal, 0.9f));
+            g.DrawString(font, at, label, HorizontalAlignment.Left, -1, 11, outbound ? MenuStyle.Error.Lightened(0.2f) : Ink);
+        }
+    }
+
+    private Vector2 WarLabelPosition(Vector2 position, Vector2 extent)
+    {
+        for (int ring = 0; ring < 12; ring++)
+        {
+            float gap = 18 + ring * 24;
+            Vector2[] offsets = [new(-extent.X / 2, -gap), new(gap, -18), new(-extent.X - gap, -18), new(-extent.X / 2, gap + extent.Y)];
+            foreach (Vector2 offset in offsets)
+            {
+                Vector2 at = position + offset;
+                Rect2 box = new(at + new Vector2(-4, -extent.Y), extent + new Vector2(8, 4));
+                if (Land.Encloses(box) && _world.Colonies.All(c => !box.Intersects(new Rect2(CenterOf(_world.WorldMap.TileOf(c)) + new Vector2(-100, -18), new Vector2(200, 62)))))
+                    return at;
+            }
+        }
+        return position + new Vector2(-extent.X / 2, -18);
     }
 
     private static readonly Biome[] LegendOrder =
@@ -425,7 +521,18 @@ public partial class WorldMapView : Control
             if (tile.Coastal) line += " · côte";
             if (tile.Habitable) line += $" · sol {tile.Info.SoilRichness * 100:0} %";
             if (_world.WorldMap.ColonyAt(_hovered) is { } colony)
-                line += $" · {colony.Name}";
+            {
+                line += $" · {colony.Name} ({Knowledge.AgeName(Knowledge.AgeOf(colony)).ToLowerInvariant()})";
+                if (Observed >= 0 && Observed < _world.Colonies.Count && _world.Colonies[Observed] is { } observed && observed != colony)
+                    line += $" · {observed.Name} la juge {Diplomacy.Attitude(observed.OpinionOf(colony)).ToLowerInvariant()} ({observed.OpinionOf(colony):+0;−0;0})"
+                        + Diplomacy.PactBetween(_world, observed, colony)?.Kind switch
+                        {
+                            PactKind.Alliance => ", alliée",
+                            PactKind.War => ", en guerre",
+                            PactKind.Truce => ", en trêve",
+                            _ => "",
+                        };
+            }
             else if (PickingSite)
             {
                 _world.WorldMap.CanSettle(_hovered, out string reason);
@@ -435,8 +542,16 @@ public partial class WorldMapView : Control
         }
         if (PickingSite)
             return _placementMessage;
-        return _world.Colonies.Count == 0 ? "Monde vierge · fondez votre première colonie."
-            : _world.Caravans.Count == 0 ? "Aucune caravane en route." : $"{_world.Caravans.Count} caravane(s) en route.";
+        if (_world.Colonies.Count == 0)
+            return "Monde vierge · fondez votre première colonie.";
+        int blocked = _world.Caravans.Count(c => c.BlockedReason is not null);
+        string status = _world.Caravans.Count == 0 ? "Aucune caravane en route." : $"{_world.Caravans.Count} caravane(s) en route · {blocked} en attente.";
+        if (_world.WorldMap.ClosedPassages.Count > 0) status += "   × Passage fermé";
+        int wars = _world.Pacts.Count(p => p.Kind == PactKind.War), alliances = _world.Pacts.Count(p => p.Kind == PactKind.Alliance);
+        if (wars > 0) status += $" · {wars} guerre{(wars > 1 ? "s" : "")}";
+        if (_world.WarParties.Count > 0) status += $" · {_world.WarParties.Count} bande{(_world.WarParties.Count > 1 ? "s" : "")} de guerriers en marche";
+        if (alliances > 0) status += $" · {alliances} alliance{(alliances > 1 ? "s" : "")}";
+        return status;
     }
 
     // ---------- Souris ----------
@@ -492,6 +607,8 @@ public partial class WorldMapView : Control
                 SiteClicked?.Invoke(tile);
             return;
         }
+        Settlement? place = _world.Settlements.FirstOrDefault(s => s.RegionTileIndex == tile && s != s.Owner.PrimarySettlement && s.Status != SettlementStatus.Closed);
+        if (place is not null) { SettlementClicked?.Invoke(place.Id); return; }
         for (int i = 0; i < _world.Colonies.Count; i++)
             if (CenterOf(_world.WorldMap.TileOf(_world.Colonies[i])).DistanceTo(position) <= Math.Max(DotRadius + 6, HexWidth * 0.6f))
             {

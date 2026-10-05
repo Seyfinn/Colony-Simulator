@@ -7,7 +7,7 @@ public sealed record Reservoir((int X, int Y) Dam, int Level, List<(int X, int Y
 
 /// <summary>
 /// L'eau retenue par les barrages. Un barrage posé sur une case de rivière relève l'eau d'un niveau : les terres
-/// plates de l'amont, au niveau de la rivière ou un niveau plus haut, sont noyées (jusqu'à une quarantaine de cases).
+/// plates de l'amont, au niveau de la rivière ou un niveau plus haut, sont noyées (jusqu'à 160 cases).
 /// En aval, la rivière coule moins fort. Rien de tout cela n'est une simulation de fluide : la retenue est
 /// calculée une fois, quand le barrage est achevé.
 /// </summary>
@@ -19,10 +19,28 @@ public static class Hydrology
     /// Taille maximale de la retenue. Dans une vaste plaine plate, l'eau pourrait s'étendre à l'infini : la retenue
     /// ne gagne que les cases les plus proches de la rivière, jusqu'à ce plafond.
     /// </summary>
-    public const int MaxReservoirTiles = 40;
+    public const int MaxReservoirTiles = 160;
 
-    /// <summary>Un barrage ne ferme qu'un ruisseau : sur un fleuve large (plus de cette largeur, en cases), il faudrait un ouvrage bien plus grand.</summary>
-    public const int MaxDamRiverWidth = 1;
+    /// <summary>Les deux culées encadrent jusqu'à trois cases de rivière.</summary>
+    public const int MaxDamRiverWidth = 3;
+
+    /// <summary>Ouvrage centré sur la rivière ; son grand côté traverse le courant.</summary>
+    public static Building DamAt(LocalMap map, int riverX, int riverY)
+    {
+        bool side = map.RiverDownstream(riverX, riverY) is { } next && Math.Abs(next.X - riverX) > Math.Abs(next.Y - riverY);
+        (int width, int height) = Building.FootprintOf(BuildingType.Dam);
+        if (side) (width, height) = (height, width);
+        return new Building(BuildingType.Dam, riverX - width / 2, riverY - height / 2) { Width = width, Height = height };
+    }
+
+    /// <summary>Les fondations restent dans la carte, sans condamner le camp, les champs, les accès ni les ouvrages existants.</summary>
+    private static bool DamFits(LocalMap map, Building dam)
+    {
+        foreach ((int x, int y) in dam.Tiles)
+            if (!map.InBounds(x, y) || map.IsWater(x, y) || map.IsMountain(x, y) || map.Scratch.IsBlocked(y * map.Width + x))
+                return false;
+        return true;
+    }
 
     /// <summary>Distance maximale (en cases) entre le camp et le barrage.</summary>
     public const int SearchRadius = 30;
@@ -48,16 +66,19 @@ public static class Hydrology
     /// <see cref="MaxReservoirTiles"/>. Renvoie null si le barrage ne retiendrait rien d'utile (trop peu de cases),
     /// si la rivière est trop large pour être barrée, ou si la retenue engloutirait un champ, un bâtiment, une tombe ou le camp.
     /// </summary>
-    public static Reservoir? FindReservoir(LocalMap map, Colony colony, int damX, int damY)
+    public static Reservoir? FindReservoir(LocalMap map, Colony colony, int damX, int damY, Building? existing = null)
     {
         MarkWhatToProtect(map, colony, map.Scratch);
-        return FindReservoirAround(map, damX, damY);
+        return FindReservoirAround(map, damX, damY, existing);
     }
 
     /// <summary>Comme <see cref="FindReservoir"/>, une fois marqué ce qu'il faut protéger (voir <see cref="MarkWhatToProtect"/>).</summary>
-    private static Reservoir? FindReservoirAround(LocalMap map, int damX, int damY)
+    private static Reservoir? FindReservoirAround(LocalMap map, int damX, int damY, Building? existing = null)
     {
         if (!map.InBounds(damX, damY) || !map.IsRiver(damX, damY) || map.IsFlooded(damX, damY) || map.RiverWidth(damX, damY) > MaxDamRiverWidth)
+            return null;
+        Building ouvrage = existing ?? DamAt(map, damX, damY);
+        if (!DamFits(map, ouvrage))
             return null;
         int baseLevel = map.GetElevation(damX, damY);
         int level = baseLevel + 1;
@@ -88,7 +109,9 @@ public static class Hydrology
             int x = queue[head] % width, y = queue[head] / width;
             if (scratch.IsBlocked(queue[head]))
                 return null;
-            tiles.Add(queue[head]);
+            // Les fondations ne deviennent pas un lac : le courant traverse la vanne au centre de l'ouvrage.
+            if (!ouvrage.Contains(x, y))
+                tiles.Add(queue[head]);
 
             foreach ((int dx, int dy) in Steps)
             {
@@ -137,6 +160,20 @@ public static class Hydrology
                 Protect(x, y);
         foreach (Grave grave in colony.Graves)
             Protect(grave.X, grave.Y);
+        // La retenue ne coupe pas les accès du village : place, tracés réservés, espaces publics et abords des parcelles.
+        if (colony.Map is not null) // une colonie bâtie à la main, sans carte, n'a pas encore de plan
+        {
+            SettlementLayout layout = colony.Layout;
+            foreach (int cell in layout.PlazaCells)
+                scratch.Block(cell);
+            foreach (RoadSegment segment in layout.RoadSegments)
+                foreach (int cell in segment.Cells)
+                    scratch.Block(cell);
+            foreach (PlotReservation parcel in layout.ActiveParcels)
+                if (parcel.Kind == ParcelKind.PublicSpace)
+                    foreach ((int x, int y) in parcel.Tiles)
+                        Protect(x, y);
+        }
     }
 
     /// <summary>
@@ -174,7 +211,7 @@ public static class Hydrology
     private static bool NearDam(Colony colony, int x, int y)
     {
         foreach (Building b in colony.Buildings)
-            if (b.IsDam && Math.Max(Math.Abs(b.X - x), Math.Abs(b.Y - y)) < 6)
+            if (b.IsDam && Math.Max(Math.Abs(b.RiverX - x), Math.Abs(b.RiverY - y)) < 6)
                 return true;
         return false;
     }
@@ -220,26 +257,31 @@ public static class Hydrology
     {
         // Le barrage lui-même ne doit pas compter comme un obstacle à protéger : on le met de côté le temps du calcul.
         colony.Buildings.Remove(dam);
-        Reservoir? reservoir = FindReservoir(map, colony, dam.X, dam.Y);
+        Reservoir? reservoir = FindReservoir(map, colony, dam.RiverX, dam.RiverY, dam);
         colony.Buildings.Add(dam);
         if (reservoir is null)
             return null;
 
         map.Flood(reservoir.Tiles, reservoir.Level);
 
-        (int X, int Y)? next = map.RiverDownstream(dam.X, dam.Y);
+        (int X, int Y)? next = map.RiverDownstream(dam.RiverX, dam.RiverY);
         for (int i = 0; i < DownstreamReach && next is { } tile && map.IsRiver(tile.X, tile.Y); i++)
         {
             map.ReduceFlow(tile.X, tile.Y, DownstreamFlowFactor);
             next = map.RiverDownstream(tile.X, tile.Y);
         }
 
-        // Plus bas sur le même fleuve, une autre colonie reçoit moins d'eau : elle s'en plaint.
-        if (colony.Downstream is { } neighbor)
+        // Plus bas sur le même fleuve, l'établissement suivant reçoit moins d'eau (de la même colonie ou d'une autre) : le calcul est territorial.
+        if (colony.LocalSettlement.Downstream is { Status: not SettlementStatus.Closed } lower)
         {
-            neighbor.Map.ScaleRiverFlows(NeighborFlowFactor);
-            neighbor.Grudges[colony] = Math.Min(MaxGrudge, neighbor.GrudgeAgainst(colony) + GrudgePerDam);
-            ColonyBrain.Say(neighbor, colony.Clock, $"Le barrage de {colony.Name} retient l'eau : notre rivière coule moins fort. On leur en veut.");
+            lower.Map.ScaleRiverFlows(NeighborFlowFactor);
+            if (lower.Owner != colony)
+            {
+                lower.Owner.Grudges[colony] = Math.Min(MaxGrudge, lower.Owner.GrudgeAgainst(colony) + GrudgePerDam);
+                ColonyBrain.Say(lower.Owner, colony.Clock, $"Le barrage de {colony.Name} retient l'eau : notre rivière coule moins fort. On leur en veut.");
+            }
+            else
+                ColonyBrain.Say(colony, colony.Clock, $"Le barrage retient l'eau : la rivière coule moins fort à {lower.Name}.");
         }
         return reservoir;
     }

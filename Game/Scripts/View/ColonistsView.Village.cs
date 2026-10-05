@@ -17,7 +17,8 @@ public partial class ColonistsView
     {
         var pens = colony.Buildings.Where(b => b.IsComplete && b.Type == BuildingType.Pen).ToArray();
         int index = Array.IndexOf(pens, pen);
-        return index < 0 ? 0 : Math.Clamp(Husbandry.Count(colony, species) - index * Husbandry.PerPen(species), 0, Husbandry.PerPen(species));
+        int placesAvant = pens.Take(Math.Max(0, index)).Sum(b => Husbandry.CapacityOf(b, species));
+        return index < 0 ? 0 : Math.Clamp(Husbandry.Count(colony, species) - placesAvant, 0, Husbandry.CapacityOf(pen, species));
     }
 
     private void AddPenAnimals(Building pen)
@@ -31,7 +32,7 @@ public partial class ColonistsView
             {
                 int ordinal = rank; string animal = kind;
                 int lane = species == ResourceType.Chickens ? 0 : species == ResourceType.Sheep ? 1 : 2;
-                Vector2 feet = origin + new Vector2(14 + (rank * 13 + lane * 7) % 36, 39 + lane * 6 + rank % 2 * 3);
+                Vector2 feet = origin + new Vector2(14 + (rank * 19 + lane * 23) % (pen.Width * Tile - 28), 51 + lane * 12 + rank % 2 * 3);
                 feet += new Vector2((float)Math.Sin(VillageTime * 0.7 + ordinal * 2 + lane) * 1.5f, 0);
                 Vector2 stableFeet = feet.Round();
                 _standing.Add((stableFeet.Y, () =>
@@ -44,14 +45,47 @@ public partial class ColonistsView
                 }));
             }
         }
-        Vector2 basePoint = origin + new Vector2(0, 64);
+        Vector2 basePoint = origin + new Vector2(0, pen.Height * Tile);
         _standing.Add((basePoint.Y - 5, () =>
         {
             // La clôture avant repasse devant les pattes, sans recouvrir les bêtes par le sol de l'enclos.
-            DrawTextureRectRegion(BuildingSprites.Get("Pen"), new Rect2(basePoint + new Vector2(0, -15), new Vector2(64, 15)), new Rect2(0, 65, 64, 15));
+            Texture2D sprite = BuildingSprites.For(pen, BiomeVisuals.At(_colony.Map, pen.X, pen.Y));
+            DrawTextureRectRegion(sprite, new Rect2(basePoint + new Vector2(0, -20), new Vector2(sprite.GetWidth(), 20)),
+                new Rect2(0, sprite.GetHeight() - 20, sprite.GetWidth(), 20));
+            DrawPenConnections(pen);
             if (_colony.EggsReady >= 1) DrawTextureRect(ResourceIcons.Get(ResourceType.Eggs), new Rect2(basePoint + new Vector2(40, -11), new Vector2(8, 8)), false);
             if (_colony.MilkReady >= 1) DrawTextureRect(ResourceIcons.Get(ResourceType.Milk), new Rect2(basePoint + new Vector2(50, -12), new Vector2(8, 8)), false);
         }));
+    }
+
+    /// <summary>Les parcelles accolées d'un même élevage communiquent par des passages ; un chantier garde sa clôture.</summary>
+    private void DrawPenConnections(Building pen)
+    {
+        int principal = pen.IsExtension ? pen.ExtensionOfId : pen.Id;
+        foreach (Building voisin in _colony.Buildings.Where(b => b != pen && b.Type == BuildingType.Pen && b.IsComplete
+            && (b.Id == principal || b.ExtensionOfId == principal)))
+        {
+            int haut = Math.Max(pen.Y, voisin.Y), bas = Math.Min(pen.Y + pen.Height, voisin.Y + voisin.Height);
+            int gauche = Math.Max(pen.X, voisin.X), droite = Math.Min(pen.X + pen.Width, voisin.X + voisin.Width);
+            Rect2 passage;
+            if (haut < bas && (pen.X + pen.Width == voisin.X || voisin.X + voisin.Width == pen.X))
+                passage = new Rect2(Math.Max(pen.X, voisin.X) * Tile - 7, (haut + bas) * Tile / 2f, 14, 15);
+            else if (gauche < droite && (pen.Y + pen.Height == voisin.Y || voisin.Y + voisin.Height == pen.Y))
+                passage = new Rect2((gauche + droite) * Tile / 2f - 7, Math.Max(pen.Y, voisin.Y) * Tile - 15, 14, 44);
+            else continue;
+            // Chaque parcelle ouvre sa moitié du passage : le raccord ne repeint jamais le toit ou le mobilier de sa voisine.
+            passage = passage.Intersection(new Rect2(new Vector2(pen.X, pen.Y) * Tile + new Vector2(0, 28),
+                new Vector2(pen.Width * Tile, pen.Height * Tile - 28)));
+            if (!passage.HasArea()) continue;
+            DrawRect(passage, Color.Color8(130, 132, 87));
+            for (float y = passage.Position.Y + 3; y < passage.End.Y - 1; y += 5)
+                DrawLine(new Vector2(passage.Position.X + 2, y), new Vector2(passage.End.X - 2, y), Color.Color8(121, 122, 80));
+            foreach (float x in new[] { passage.Position.X, passage.End.X - 2 })
+            {
+                DrawRect(new Rect2(new Vector2(x, passage.Position.Y), new Vector2(2, Math.Min(6, passage.Size.Y))), Color.Color8(111, 77, 49));
+                DrawRect(new Rect2(new Vector2(x, passage.Position.Y), new Vector2(2, 1)), Color.Color8(177, 126, 73));
+            }
+        }
     }
 
     private void DrawVillageStatus(Colonist colonist)
@@ -128,6 +162,7 @@ public partial class ColonistsView
 
     private void DrawSeasonGround(Node2D canvas)
     {
+        using var scope = _settlement.Observe();
         float snow = SnowStrength(_colony, _world.Clock.Season);
         bool drought = _colony.DroughtDaysLeft > 0;
         if (snow <= 0 && !drought && _world.Clock.Season != Season.Automne) return;

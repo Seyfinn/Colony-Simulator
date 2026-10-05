@@ -1,3 +1,4 @@
+using System.Linq;
 using System;
 using Godot;
 using GodColony.Simulation.Persistence;
@@ -15,7 +16,7 @@ public partial class Main
         try
         {
             var view = new SavedView(_observed, _camera.Position.X, _camera.Position.Y, _camera.Zoom.X,
-                _speed, _speedBeforePause, _selected?.Id);
+                _speed, _speedBeforePause, _selected?.Id, _world.Colonies.Count > 0 ? ObservedSettlement.Id : 0);
             WorldSave.Save(_saves.PathFor(slot), _world, view);
             string message = slot == SaveSlots.QuickSlot ? "Sauvegarde rapide enregistrée." : $"Partie sauvegardée dans l'emplacement {slot + 1}.";
             if (_menu.IsOpen) _menu.ShowSaveResult(message); else Notify(message);
@@ -41,12 +42,22 @@ public partial class Main
                 SavedView view = loaded.Info.View;
                 var options = new WorldCreationOptions(loaded.World.Seed, loaded.World.Map.Width, loaded.World.Colonies.Count,
                     8, true, true, true, view.Speed);
-                StartWorld(options, restored: loaded.World, observed: view.Observed);
-                _camera.Position = new Vector2(view.CameraX, view.CameraY);
-                _camera.Zoom = Vector2.One * view.Zoom;
+                // Connue avant la construction des vues : une partie en pause dans la vue chiffrée s'y recharge directement.
                 _speedBeforePause = view.SpeedBeforePause;
+                StartWorld(options, restored: loaded.World, observed: view.Observed);
+                if (_world!.SettlementById(view.SettlementId) is { } place && place.Status != GodColony.Simulation.Colonies.SettlementStatus.Closed)
+                {
+                    if (_statsShown)
+                    {
+                        _observed = _world.Colonies.IndexOf(place.Owner); _observedSettlementId = place.Id;
+                        _worldPanel.Observed = _observed; _worldPanel.ObservedSettlementId = place.Id;
+                    }
+                    else ObserveSettlement(place.Id);
+                }
+                _camera.Position = _cameraBeforeStats = new Vector2(view.CameraX, view.CameraY);
+                _camera.Zoom = Vector2.One * view.Zoom;
                 if (view.SelectedColonist is { } id && _world!.Colonies.Count > 0)
-                    Select(Observed.Members.Find(c => c.Id == id) ?? Observed.Transients.Find(c => c.Id == id));
+                    Select(ObservedSettlement.Population.FirstOrDefault(c => c.Id == id) ?? ObservedSettlement.Transients.Find(c => c.Id == id));
                 _hudCooldown = 0;
                 Notify(backup ? "Version précédente chargée." : "Partie chargée.");
             }

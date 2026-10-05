@@ -1,5 +1,6 @@
 using GodColony.Simulation.Colonies;
 using GodColony.Simulation.Time;
+using GodColony.Simulation.Map;
 using Xunit.Abstractions;
 
 namespace GodColony.Simulation.Tests;
@@ -37,7 +38,7 @@ public class FarmingTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Une_parcelle_semee_murit_en_sept_jours_et_le_gel_detruit_ce_qui_reste()
+    public void Une_parcelle_semee_murit_au_neuvieme_jour_et_le_gel_detruit_ce_qui_reste()
     {
         WorldState world = ClosedColony(6);
         Colony colony = world.Colonies[0];
@@ -45,7 +46,7 @@ public class FarmingTests(ITestOutputHelper output)
         plot.Stage = CropStage.Growing;
 
         var clock = new GameClock(0);
-        for (int day = 1; day <= 6; day++)
+        for (int day = 1; day <= 8; day++)
             Farming.DailyUpdate(colony, clock);
         Assert.Equal(CropStage.Growing, plot.Stage);
         Farming.DailyUpdate(colony, clock);
@@ -62,6 +63,31 @@ public class FarmingTests(ITestOutputHelper output)
         var midWinter = new GameClock(TimeConstants.TicksPerDay * 17L);
         Farming.DailyUpdate(colony, midWinter);
         Assert.Equal(0f, plot.Growth);
+    }
+
+    [Theory]
+    [InlineData(1f, false, false, 5)]
+    [InlineData(1f, true, false, 8)]
+    [InlineData(1f, true, true, 9)]
+    [InlineData(1.25f, false, false, 6)]
+    [InlineData(1.25f, true, true, 10)]
+    [InlineData(1.5f, false, false, 8)]
+    public void La_recolte_plus_abondante_applique_le_meme_facteur_aux_bonus(float richesse, bool irrigue, bool assolement, int attendu)
+    {
+        WorldState world = ClosedColony(6);
+        Colony colony = world.Colonies[0];
+        var map = new LocalMap(16, 16, 1) { SoilRichness = richesse };
+        if (irrigue)
+        {
+            map.DigCanal(8, 8);
+            map.FillCanal(8, 8);
+        }
+        if (assolement)
+            Knowledge.Discover(colony, Discovery.CropRotation, world.Clock);
+
+        Assert.Equal(attendu, Farming.YieldAt(colony, map, 8, 8));
+        if (!assolement)
+            Assert.Equal(attendu, Farming.YieldAt(map, 8, 8));
     }
 
     [Fact]

@@ -13,7 +13,9 @@ public class GrowthTests(ITestOutputHelper output)
     [Fact]
     public void Une_colonie_de_huit_fondateurs_double_en_trois_a_cinq_ans_puis_continue_de_croitre()
     {
-        int[] seeds = [12345, 2, 3, 4, 5];
+        // Neuf graines : la croissance d'une colonie est très chaotique (une même graine double en 1,2 ou en 4 ans selon le moindre
+        // changement), la médiane de cinq parties basculait d'un côté ou de l'autre de la cible au gré des nouveautés.
+        int[] seeds = [12345, 2, 3, 4, 5, 6, 7, 8, 9];
         var yearsToDouble = new List<double>();
         var populationAtSix = new List<int>();
 

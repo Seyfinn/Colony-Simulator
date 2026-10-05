@@ -136,6 +136,60 @@ public sealed class LocalMap
         _flow = new float[n];
         Array.Fill(_flow, 1f);
         _veins = new uint[n];
+        Roads = new RoadLayer(n);
+        _terrainStamp = new int[((width + LocalSpatialIndex.RegionSize - 1) / LocalSpatialIndex.RegionSize) * ((height + LocalSpatialIndex.RegionSize - 1) / LocalSpatialIndex.RegionSize)];
+    }
+
+    /// <summary>
+    /// La couche routière : surface réalisée, trafic et travaux d'aménagement de chaque cellule. Indépendante du type de sol.
+    /// </summary>
+    public RoadLayer Roads { get; internal set; }
+
+    /// <summary>Déclenché quand la surface d'une cellule change (un sentier apparaît ou s'efface, un chemin est aménagé).</summary>
+    public event Action<int, int>? RoadChanged;
+
+    internal void NotifyRoadChanged(int x, int y) => RoadChanged?.Invoke(x, y);
+
+    /// <summary>
+    /// Nombre de modifications du relief, de l'eau ou des canaux depuis la fondation, et la dernière révision de chaque région de 16 × 16 cases :
+    /// une proposition de site n'est périmée que si le terrain a changé dans la zone qu'elle utilise.
+    /// </summary>
+    public int TerrainRevision { get; private set; }
+
+    private int[] _terrainStamp = null!;
+
+    private int RegionCount => ((Width + LocalSpatialIndex.RegionSize - 1) / LocalSpatialIndex.RegionSize) * ((Height + LocalSpatialIndex.RegionSize - 1) / LocalSpatialIndex.RegionSize);
+
+    internal bool HasValidTerrainStamps => _terrainStamp is not null && _terrainStamp.Length == RegionCount;
+
+    /// <summary>Complète une carte lue au format v1 : la couche routière et les tampons de terrain n'existaient pas.</summary>
+    internal void EnsureV2Data()
+    {
+        Roads ??= new RoadLayer(Width * Height);
+        if (!HasValidTerrainStamps)
+            _terrainStamp = new int[RegionCount];
+    }
+
+    public int TerrainStampAt(int x, int y) =>
+        _terrainStamp[(y / LocalSpatialIndex.RegionSize) * ((Width + LocalSpatialIndex.RegionSize - 1) / LocalSpatialIndex.RegionSize) + x / LocalSpatialIndex.RegionSize];
+
+    private void Stamp(int x, int y)
+    {
+        TerrainRevision++;
+        _terrainStamp[(y / LocalSpatialIndex.RegionSize) * ((Width + LocalSpatialIndex.RegionSize - 1) / LocalSpatialIndex.RegionSize) + x / LocalSpatialIndex.RegionSize] = TerrainRevision;
+    }
+
+    /// <summary>
+    /// Vrai si aucune région touchée par le rectangle (cases incluses) n'a changé de relief ou d'eau depuis la révision donnée.
+    /// </summary>
+    public bool TerrainUnchangedSince(int revision, int x0, int y0, int x1, int y1)
+    {
+        int size = LocalSpatialIndex.RegionSize;
+        for (int ry = Math.Max(0, y0) / size; ry <= Math.Min(Height - 1, y1) / size; ry++)
+        for (int rx = Math.Max(0, x0) / size; rx <= Math.Min(Width - 1, x1) / size; rx++)
+            if (_terrainStamp[ry * ((Width + size - 1) / size) + rx] > revision)
+                return false;
+        return true;
     }
 
     /// <summary>Tableaux de travail des recherches sur cette carte (canaux, barrages).</summary>
@@ -192,6 +246,7 @@ public sealed class LocalMap
             _berries[i] = 0;
             _canal[i] = 0;
             _fish[i] = MaxFish;
+            Stamp(x, y);
             TileChanged?.Invoke(x, y);
         }
         ComputeBanks();
@@ -248,6 +303,7 @@ public sealed class LocalMap
         _canal[i] = 1;
         _flora[i] = FloraType.None;
         _berries[i] = 0;
+        Stamp(x, y);
         TileChanged?.Invoke(x, y);
     }
 
@@ -267,6 +323,7 @@ public sealed class LocalMap
             if (_irrigation[j] < byte.MaxValue)
                 _irrigation[j]++;
         }
+        Stamp(x, y);
         TileChanged?.Invoke(x, y);
     }
 
@@ -397,6 +454,41 @@ public sealed class LocalMap
     public bool CanStep(int fromX, int fromY, int toX, int toY, int maxStep = 1) =>
         IsWalkable(toX, toY) && Math.Abs(GetElevation(toX, toY) - GetElevation(fromX, fromY)) <= maxStep;
 
+    /// <summary>
+    /// L'irrégularité du sol, de 0,94 à 1,06 (moyenne 1) : un petit relief de quelques cases, fixé par la graine de la carte. Elle multiplie le coût d'un pas ; les sentiers
+    /// et les tracés d'accès épousent ainsi le terrain au lieu de tirer des lignes droites, et un même trajet reste le même d'une fois à l'autre.
+    /// </summary>
+    public float Ruggedness(int x, int y)
+    {
+        byte[] table = _ruggedness ??= BuildRuggedness();
+        return RuggednessMin + (RuggednessMax - RuggednessMin) * (table[y * Width + x] / 255f);
+    }
+
+    public const float RuggednessMin = 0.94f;
+    public const float RuggednessMax = 1.06f;
+
+    [NonSerialized] private byte[]? _ruggedness;
+
+    private byte[] BuildRuggedness()
+    {
+        const int scale = 4;
+        var table = new byte[Width * Height];
+        uint seed = unchecked((uint)Seed) ^ 0x6B8B4567u;
+        float Lattice(int gx, int gy) => (Colonies.SettlementRules.Mix(seed, gx, gy) >> 8) / (float)(1 << 24);
+        for (int y = 0; y < Height; y++)
+        for (int x = 0; x < Width; x++)
+        {
+            int gx = x / scale, gy = y / scale;
+            float fx = (x % scale) / (float)scale, fy = (y % scale) / (float)scale;
+            fx = fx * fx * (3f - 2f * fx);
+            fy = fy * fy * (3f - 2f * fy);
+            float a = Lattice(gx, gy), b = Lattice(gx + 1, gy), c = Lattice(gx, gy + 1), d = Lattice(gx + 1, gy + 1);
+            float top = a + (b - a) * fx, bottom = c + (d - c) * fx;
+            table[y * Width + x] = (byte)Math.Clamp((int)MathF.Round((top + (bottom - top) * fy) * 255f), 0, 255);
+        }
+        return table;
+    }
+
     /// <summary>Coût de traversée d'une case : on avance moins vite en forêt.</summary>
     public float MoveCost(int x, int y) =>
         GetFlora(x, y) == FloraType.Tree ? 1.6f : IsRiver(x, y) ? RiverMoveCost : IsCanalWet(x, y) ? CanalMoveCost : 1f;
@@ -479,6 +571,7 @@ public sealed class LocalMap
         int i = Index(x, y);
         _elevation[i]--;
         _flora[i] = FloraType.None;
+        Stamp(x, y);
         TileChanged?.Invoke(x, y);
         return extracted;
     }

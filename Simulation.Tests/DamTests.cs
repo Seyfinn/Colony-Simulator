@@ -36,7 +36,7 @@ public class DamTests(ITestOutputHelper output)
 
         Assert.NotNull(reservoir);
         Assert.Equal(6, reservoir!.Level);
-        Assert.Equal(30, reservoir.Tiles.Count); // 6 rangées (y de 14 à 19) de 5 cases
+        Assert.Equal(25, reservoir.Tiles.Count); // Les fondations prennent la rangée 19 ; cinq rangées restent noyées.
         Assert.All(reservoir.Tiles, t =>
         {
             Assert.True(t.Y < 20, "Seul l'amont est noyé.");
@@ -48,7 +48,8 @@ public class DamTests(ITestOutputHelper output)
     public void Achever_le_barrage_forme_un_lac_et_baisse_le_debit_en_aval()
     {
         (LocalMap map, Colony colony) = Valley();
-        var dam = new Building(BuildingType.Dam, 20, 20) { Progress = 1f };
+        Building dam = Hydrology.DamAt(map, 20, 20);
+        dam.Progress = 1f;
         colony.Buildings.Add(dam);
 
         Reservoir? lake = Hydrology.CompleteDam(map, colony, dam);
@@ -80,15 +81,15 @@ public class DamTests(ITestOutputHelper output)
     {
         // Une vaste plaine plate : la vallée n'est fermée que très loin, mais la retenue est plafonnée aux cases les plus proches.
         (LocalMap bigMap, Colony bigColony) = Valley(closedAt: 0);
-        Reservoir? capped = Hydrology.FindReservoir(bigMap, bigColony, 20, 30);
+        Reservoir? capped = Hydrology.FindReservoir(bigMap, bigColony, 20, 40);
         Assert.NotNull(capped);
         Assert.Equal(Hydrology.MaxReservoirTiles, capped!.Tiles.Count);
-        Assert.All(capped.Tiles, t => Assert.True(t.Y < 30));
+        Assert.All(capped.Tiles, t => Assert.True(t.Y < 39));
 
-        // Un fleuve large ne se barre pas : seul un ruisseau d'une case de large le permet.
+        // L'ouvrage ferme trois cases de rivière ; un fleuve de cinq cases dépasse ses capacités.
         (LocalMap wideMap, Colony wideColony) = Valley();
         for (int y = 14; y < 80; y++)
-            wideMap.SetRiver(20, y, 20, y + 1, width: 3);
+            wideMap.SetRiver(20, y, 20, y + 1, width: 5);
         Assert.Null(Hydrology.FindReservoir(wideMap, wideColony, 20, 20));
 
         // Trop petite : le barrage est collé à la paroi.
@@ -105,6 +106,17 @@ public class DamTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Un_grand_barrage_ferme_trois_cases_mais_ne_prend_pas_la_place_d_un_champ_sur_la_berge()
+    {
+        (LocalMap map, Colony colony) = Valley();
+        for (int y = 14; y < 80; y++) map.SetRiver(20, y, 20, y + 1, width: 3);
+        Assert.NotNull(Hydrology.FindReservoir(map, colony, 20, 20));
+        // Le champ est en aval, hors de la retenue, mais dans les fondations de la culée.
+        colony.Fields.Add(new Field(18, 21));
+        Assert.Null(Hydrology.FindReservoir(map, colony, 20, 20));
+    }
+
+    [Fact]
     public void Un_lac_peut_alimenter_un_canal_et_la_colonie_choisit_le_meilleur_site()
     {
         (LocalMap map, Colony colony) = Valley();
@@ -114,7 +126,8 @@ public class DamTests(ITestOutputHelper output)
         Assert.InRange(site.Value.Reservoir.Tiles.Count, Hydrology.MinReservoirTiles, Hydrology.MaxReservoirTiles);
 
         // Un champ plus bas que la retenue, au bord de la vallée : le lac devient une source d'eau pour un canal.
-        var dam = new Building(BuildingType.Dam, site.Value.X, site.Value.Y) { Progress = 1f };
+        Building dam = Hydrology.DamAt(map, site.Value.X, site.Value.Y);
+        dam.Progress = 1f;
         colony.Buildings.Add(dam);
         Hydrology.CompleteDam(map, colony, dam);
         Assert.True(map.IsFlooded(21, 18));
@@ -177,6 +190,7 @@ public class DamTests(ITestOutputHelper output)
         Colony upstream = world.Colonies[0], downstream = world.Colonies[1];
         // Les deux colonies ne sont pas forcément sur le même fleuve du monde : on place la seconde en aval pour l'étude.
         upstream.Downstream = downstream;
+        upstream.PrimarySettlement.Downstream = downstream.PrimarySettlement; // l'aval est territorial : d'établissement à établissement
 
         (int rx, int ry) = Enumerable.Range(0, downstream.Map.Width * downstream.Map.Height)
             .Select(i => (X: i % downstream.Map.Width, Y: i / downstream.Map.Width))
@@ -197,6 +211,7 @@ public class DamTests(ITestOutputHelper output)
         downstream.Stock.TryTake(ResourceType.Coins, downstream.Stock.Get(ResourceType.Coins));
         downstream.Stock.Add(ResourceType.Coins, 600);
         downstream.Grudges[upstream] = 0f;
+        Trade.ObserveMarket(world, upstream, downstream);
         Assert.NotNull(Trade.Plan(world, upstream, downstream));
         downstream.Grudges[upstream] = Hydrology.MaxGrudge;
         Assert.Null(Trade.Plan(world, upstream, downstream));

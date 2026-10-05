@@ -106,16 +106,19 @@ public static class ColonyBrain
         _ => 0.4f,
     };
 
+    /// <summary>Bois brûlé par colon et par nuit dans cette colonie : plus en pays froid, davantage encore pendant une vague de froid.</summary>
+    public static float FirewoodPerColonist(Colony colony, Season season) => FirewoodPerColonist(season) * Climate.WoodFactor(colony, season);
+
     /// <summary>
     /// Le bois qu'on garde pour se chauffer : une réserve de base plus trois nuits, et en automne tout l'hiver.
     /// Ce qui dépasse peut servir à autre chose (charbon de bois).
     /// </summary>
     public static float HeatingTarget(Colony colony, Season season)
     {
-        int population = Math.Max(1, colony.Members.Count);
-        float target = WoodBaseReserve + 3 * population * FirewoodPerColonist(season);
+        int population = Math.Max(1, colony.PresentMembers.Count);
+        float target = WoodBaseReserve + 3 * population * FirewoodPerColonist(colony, season);
         if (season == Season.Automne)
-            target += TimeConstants.DaysPerSeason * population * FirewoodPerColonist(Season.Hiver);
+            target += TimeConstants.DaysPerSeason * population * FirewoodPerColonist(colony, Season.Hiver);
         return target;
     }
 
@@ -123,7 +126,9 @@ public static class ColonyBrain
 
     public static void Think(Colony colony, LocalMap map, GameClock clock)
     {
+        SettlementPlanner.Sync(colony);
         RelocateQuarryIfExhausted(colony, map, clock);
+        Cuisine.TickCasks(colony, clock);
         if (!colony.IronSeen && WorkSites.OreVisibleNearQuarry(map, colony))
         {
             colony.IronSeen = true;
@@ -133,12 +138,23 @@ public static class ColonyBrain
         ColonySensors sensors = Sense(colony, clock);
         if (PlanConstruction(colony, map, sensors, clock) || PlanSpareRoom(colony, map, sensors, clock)
             || PlanWorkshop(colony, map, sensors, clock)
-            || PlanCanal(colony, map, sensors, clock))
+            || PlanCanal(colony, map, sensors, clock)
+            || PlanCivic(colony, map, sensors, clock))
             sensors = Sense(colony, clock);
         AskForDam(colony, map, sensors, clock);
         colony.Sensors = sensors;
 
         Dictionary<WorkSector, float> target = DecideShares(sensors);
+        Civic.ClaimIdleHands(colony, target);
+        if (sensors.SurvivalAssured && sensors.HousingPressure <= ComfortHousingLimit)
+        {
+            if (ExtendedIndustry.PickJob(colony) is not null || Offerings.PickSculptJob(colony) is not null) target[WorkSector.Craft] = Math.Max(target[WorkSector.Craft], .1f);
+            bool extraction = colony.DepositReports.Any(k => k.Region == colony.LocalSettlement.RegionTileIndex && k.State != DepositObservation.Depleted
+                && (ExtendedIndustry.Target(colony, k.Material) > colony.Stock.Get(k.Material) || colony.LocalSettlement.Kind == SettlementKind.Camp && colony.Stock.Get(k.Material) < 20));
+            if (extraction) target[WorkSector.Stone] = Math.Max(target[WorkSector.Stone], .15f);
+            float sum = target.Values.Sum();
+            if (sum > 1) foreach (WorkSector sector in WorkSectors.All) target[sector] /= sum;
+        }
         foreach (WorkSector sector in WorkSectors.All)
             colony.WorkShares[sector] += (target[sector] - colony.WorkShares[sector]) * ShareSmoothing;
         colony.AssignSectors();
@@ -153,14 +169,36 @@ public static class ColonyBrain
     private static void RelocateQuarryIfExhausted(Colony colony, LocalMap map, GameClock clock)
     {
         if (colony.Quarry is not { } quarry || clock.Hour != 12
-            || clock.Ticks - colony.LastQuarryMoveTicks < QuarryMoveCooldownDays * TimeConstants.TicksPerDay
-            || WorkSites.RocksLeft(map, quarry) >= WorkSites.ExhaustedQuarryRocks)
+            || clock.Ticks - colony.LastQuarryMoveTicks < QuarryMoveCooldownDays * TimeConstants.TicksPerDay)
+            return;
+
+        // Le fer manque, la pierre déborde et aucun filon n'est à portée de la carrière : les mineurs
+        // resteraient les bras croisés. On ouvre un front de taille là où le minerai se voit.
+        bool wantOre = colony.Sensors?.Chain is { Active: true, OreMissing: > 0 };
+        if (wantOre && !WorkSites.OreWithinReach(map, colony))
+        {
+            colony.LastQuarryMoveTicks = clock.Ticks;
+            if (colony.IsExhausted(SearchKind.OreQuarry))
+                return;
+            if (WorkSites.FindOreQuarry(map, colony.CampX, colony.CampY) is { } oreQuarry && oreQuarry != quarry)
+            {
+                colony.Quarry = oreQuarry;
+                colony.ForgetQuarrySearches();
+                Say(colony, clock, "Aucun filon près de la carrière : nous ouvrons un front de taille vers le minerai de fer.");
+            }
+            else
+                colony.MarkExhausted(SearchKind.OreQuarry); // aucun filon visible nulle part : on revérifiera dans un an
+            return;
+        }
+
+        if (WorkSites.RocksLeft(map, quarry) >= WorkSites.ExhaustedQuarryRocks)
             return;
         colony.LastQuarryMoveTicks = clock.Ticks;
         if (WorkSites.FindQuarry(map, colony.CampX, colony.CampY) is not { } next || next == quarry
             || WorkSites.RocksLeft(map, next) <= WorkSites.RocksLeft(map, quarry))
             return;
         colony.Quarry = next;
+        colony.ForgetQuarrySearches();
         Say(colony, clock, "La carrière est presque épuisée : nous ouvrons un nouveau front de taille.");
     }
 
@@ -174,20 +212,25 @@ public static class ColonyBrain
             return;
 
         // Des greniers qui débordent : inutile d'agrandir les champs.
-        float foodDays = colony.Stock.FoodUnits / (Math.Max(1, colony.Members.Count) * MealsPerColonistPerDay);
+        float foodDays = colony.Stock.FoodUnits / (Math.Max(1, colony.PresentMembers.Count) * MealsPerColonistPerDay);
         if (foodDays >= 2 * FoodTargetDays)
             return;
 
         int target = Farming.TargetPlots(colony);
+        if (colony.Fields.Count * Field.Size * Field.Size >= target)
+            return;
+
+        // Un champ est une demande persistante : le site se cherche par petits lots hors de la pensée, et la proposition prête s'admet ici (deux champs au plus par pensée).
+        PlanRequest request = SettlementPlanner.RequestFor(colony, DevelopmentKind.Field, null, DevelopmentPriority.Production);
         int opened = 0;
         while (opened < MaxFieldsPerThought && colony.Fields.Count * Field.Size * Field.Size < target
-               && Farming.FindFieldSite(map, colony) is { } site)
-        {
-            Farming.PlanField(map, colony, site.X, site.Y);
+               && SettlementPlanner.Poll(colony, request) == PlanningOutcome.Ready && SettlementPlanner.TryCommit(colony, request).Success)
             opened++;
-        }
         if (opened == 0)
+        {
+            AskForDepot(colony, request, clock);
             return;
+        }
 
         int plots = colony.Fields.Count * Field.Size * Field.Size;
         string fields = opened == 1 ? "un champ" : $"{opened} champs";
@@ -195,6 +238,25 @@ public static class ColonyBrain
             ? $"Baies et poisson nous coûtent {wildCost:0.0} h par unité : nous ouvrons {fields} ({plots} parcelles en tout)."
             : $"Pour assurer la nourriture de l'année, nous ouvrons {fields} ({plots} parcelles en tout).");
     }
+
+    /// <summary>
+    /// Les champs ne trouvent de place qu'à plus de six secondes aller-retour du dépôt : un entrepôt de proximité les rapprochera (jamais de dépôt circulaire : ses matériaux
+    /// viennent d'un point déjà opérationnel). Une seule demande à la fois.
+    /// </summary>
+    private static void AskForDepot(Colony colony, PlanRequest fields, GameClock clock)
+    {
+        if (fields is not { State: PlanningOutcome.WaitingForChange, Failure: PlacementFailureKind.TravelBudgetExceeded }
+            || !Knowledge.Allows(colony, BuildingType.Storehouse) || colony.Buildings.Any(b => b.Type == BuildingType.Storehouse && !b.IsComplete)
+            || !SensorsAllowComfort(colony))
+            return;
+        District? farm = colony.Layout.Districts.LastOrDefault(d => d.Kind == DistrictKind.Agricultural);
+        (int hx, int hy) = farm is null ? (colony.CampX, colony.CampY) : DistrictPlanner.CenterOf(colony, farm);
+        PlanRequest depot = SettlementPlanner.RequestFor(colony, DevelopmentKind.Logistics, BuildingType.Storehouse, DevelopmentPriority.Production, hintX: hx, hintY: hy);
+        if (SettlementPlanner.Poll(colony, depot) == PlanningOutcome.Ready && SettlementPlanner.TryCommit(colony, depot).Success)
+            Say(colony, clock, "Nos champs sont trop loin du dépôt : nous bâtissons un entrepôt de proximité.");
+    }
+
+    private static bool SensorsAllowComfort(Colony colony) => colony.Sensors is { SurvivalAssured: true } s && s.FoodDays >= SettlementRules.ComfortFoodDays;
 
     /// <summary>
     /// Une amitié ou une rivalité vient de naître : la colonie le remarque (mais pas plus d'une fois par demi-journée,
@@ -219,13 +281,20 @@ public static class ColonyBrain
     public static void OnDayStart(Colony colony, GameClock clock)
     {
         colony.UnreachableStands.Clear();
+        if (clock.DayOfSeason == 1)
+            SettlementPlanner.Notify(colony, RetryEvents.Season);
+        colony.AgeExhaustedSearches();
         foreach (Colony other in colony.Grudges.Keys.ToList())
         {
             colony.Grudges[other] = Math.Max(0f, colony.Grudges[other] - GrudgeFadePerDay);
             if (colony.Grudges[other] == 0f)
                 colony.Grudges.Remove(other);
         }
-        foreach (Colonist colonist in colony.Members)
+        Husbandry.Daily(colony, clock);
+        Civic.Daily(colony, clock);
+        Specialties.Daily(colony);
+        Milestones.Daily(colony, clock);
+        foreach (Colonist colonist in colony.PresentMembers)
         {
             // La foi revient doucement vers le tempérament du colon.
             float baseline = Needs.NeutralFaith + 0.2f * colonist.Personality[Axis.Piete];
@@ -252,10 +321,10 @@ public static class ColonyBrain
         int stillUnplanned = sensors.Homeless - sites * Building.HutCapacity;
         if (stillUnplanned <= 0 || sites >= MaxConstructionSites(sensors.Homeless))
             return false;
-        if (Urbanism.FindHutSite(map, colony) is not { } site)
+        PlanRequest request = SettlementPlanner.RequestFor(colony, DevelopmentKind.Housing, BuildingType.Hut, DevelopmentPriority.Housing,
+            urgent: sensors.Homeless >= Building.HutCapacity);
+        if (SettlementPlanner.Poll(colony, request) != PlanningOutcome.Ready || !SettlementPlanner.TryCommit(colony, request).Success)
             return false;
-
-        Urbanism.PlanHut(map, colony, site.X, site.Y);
         Say(colony, clock, colony.Buildings.Count(b => b.IsHut) == 1
             ? $"{sensors.Homeless} colons dorment à la belle étoile : nous décidons de bâtir notre première hutte."
             : $"Encore {sensors.Homeless} {(sensors.Homeless > 1 ? "colons sans toit" : "colon sans toit")} : nous ouvrons le chantier d'une nouvelle hutte.");
@@ -276,10 +345,12 @@ public static class ColonyBrain
             || sensors.FoodDays < Migration.MinFoodDaysToWelcome)
             return false;
         int beds = colony.Buildings.Count(b => b.IsHut) * Building.HutCapacity;
-        if (beds - colony.Members.Count >= SpareBedsWanted || Urbanism.FindHutSite(map, colony) is not { } site)
+        if (beds - colony.PresentMembers.Count >= SpareBedsWanted)
             return false;
 
-        Urbanism.PlanHut(map, colony, site.X, site.Y);
+        PlanRequest request = SettlementPlanner.RequestFor(colony, DevelopmentKind.Housing, BuildingType.Hut, DevelopmentPriority.Comfort);
+        if (SettlementPlanner.Poll(colony, request) != PlanningOutcome.Ready || !SettlementPlanner.TryCommit(colony, request).Success)
+            return false;
         Say(colony, clock, "La colonie grandit : nous préparons une hutte de plus avant d'être à l'étroit.");
         return true;
     }
@@ -294,22 +365,58 @@ public static class ColonyBrain
             return false;
         if (Crafting.NextWorkshopToBuild(colony, map) is not { } type)
             return false;
-        if ((type == BuildingType.Mill ? Urbanism.FindMillSite(map, colony) : Urbanism.FindWorkshopSite(map, colony)) is not { } site)
+        PlanRequest request = SettlementPlanner.RequestFor(colony, DevelopmentKind.Workshop, type, DevelopmentPriority.Production);
+        if (SettlementPlanner.Poll(colony, request) != PlanningOutcome.Ready || !SettlementPlanner.TryCommit(colony, request).Success)
             return false;
-
-        Urbanism.PlanBuilding(map, colony, type, site.X, site.Y);
         Say(colony, clock, type switch
         {
             BuildingType.Kiln => "Nous avons trouvé du fer, mais pas d'outils pour le travailler : il nous faut d'abord du charbon de bois. Nous bâtissons une charbonnière.",
             BuildingType.Bloomery => "Le charbon de bois est là : nous bâtissons un bas fourneau pour tirer le fer du minerai.",
             BuildingType.Forge => "Nous aurons du fer : nous bâtissons une forge pour en faire des outils.",
             BuildingType.Mill => "Nos greniers débordent de grain : nous bâtissons un moulin sur la rivière pour le moudre.",
+            BuildingType.MineDepot => "Nous aménageons une grande mine : chevalement, dépôts et aire de tri pour exploiter les métaux, le charbon et les pierres précieuses.",
             _ => "Nous avons de la farine : nous bâtissons un four pour en faire du pain.",
         });
         return true;
     }
 
     private const float ComfortHousingLimit = 25f;
+
+    /// <summary>
+    /// Une fois la survie et le logement assurés, la colonie bâtit ce qui rend la vie meilleure : enclos, puits, métier à tisser,
+    /// entrepôt, infirmerie, marché, taverne, école (un seul chantier à la fois, voir <see cref="Civic.NextToBuild"/>).
+    /// </summary>
+    private static bool PlanCivic(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
+    {
+        if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || sensors.WoodPressure > 70f || colony.ConstructionSites.Any())
+            return false;
+        // Les ateliers du fer et du blé passent d'abord : on n'occupe pas l'unique chantier avec un confort.
+        if (Crafting.NextWorkshopToBuild(colony, map) is not null)
+            return false;
+        BuildingType? next = Civic.NextToBuild(colony);
+        if ((next == BuildingType.Pen || next is null && Husbandry.WantsAnotherPen(colony)) && Civic.Has(colony, BuildingType.Pen)
+            && SettlementPlanner.PlanExtension(colony, BuildingType.Pen) is not null)
+        {
+            Say(colony, clock, "L'enclos déborde : nous ajoutons une parcelle clôturée pour accueillir les jeunes bêtes.");
+            return true;
+        }
+        if (next is null)
+        {
+            if (!SettlementPlanner.WantsMarketExtension(colony) || SettlementPlanner.PlanExtension(colony, BuildingType.Market) is null)
+                return false;
+            Say(colony, clock, "Le commerce grandit : nous ajoutons des étals au marché pour préparer davantage de marchandises par voyage.");
+            return true;
+        }
+        BuildingType type = next.Value;
+        PlanRequest request = SettlementPlanner.RequestFor(colony, Urbanism.KindOf(type), type,
+            type == BuildingType.Storehouse ? DevelopmentPriority.Production : DevelopmentPriority.Comfort);
+        if (SettlementPlanner.Poll(colony, request) != PlanningOutcome.Ready || !SettlementPlanner.TryCommit(colony, request).Success)
+            return false;
+        Say(colony, clock, type == BuildingType.Pen && colony.Buildings.Any(b => b.Type == BuildingType.Pen)
+            ? "Nos enclos sont pleins de bêtes qu'on ne peut loger : nous en bâtissons un de plus."
+            : Civic.Announcement(type));
+        return true;
+    }
 
     /// <summary>Jours sans reposer la question d'un barrage refusé : c'est un gros ouvrage, on n'insiste pas.</summary>
     private const int DamRefusalCooldownDays = 20;
@@ -322,7 +429,7 @@ public static class ColonyBrain
     {
         if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || clock.Season == Season.Hiver
             || colony.Fields.Count == 0 || colony.ConstructionSites.Any() || colony.Buildings.Any(b => b.IsDam)
-            || colony.Prayers.IsQuiet(DecisionKind.Dam, clock))
+            || colony.Prayers.IsQuiet(DecisionKind.Dam, clock) || !Knowledge.Allows(colony, BuildingType.Dam))
             return;
         if (!colony.Fields.Any(f => Irrigation.IrrigatedShare(map, f) < 0.5f))
             return;
@@ -331,10 +438,11 @@ public static class ColonyBrain
 
         int x = site.X, y = site.Y;
         int tiles = site.Reservoir.Tiles.Count;
+        Building ouvrage = Hydrology.DamAt(map, x, y);
         colony.Prayers.Ask(DecisionKind.Dam, $"{x},{y}",
             "Construire un barrage sur la rivière ?",
             $"Nos champs manquent d'eau. Un barrage en ({x}, {y}) formerait en amont un lac de {tiles} cases : des poissons, des berges fertiles et de l'eau à portée de nos champs. " +
-            "La rivière coulerait moins fort en aval.",
+            $"Ce grand ouvrage demande {ouvrage.WoodRequired} bois, {ouvrage.StoneRequired} pierres et {ouvrage.WorkSeconds:0} secondes de travail. La rivière coulerait moins fort en aval.",
             () => ApplyDamDecision(colony, map, clock, x, y),
             clock, DamRefusalCooldownDays);
     }
@@ -353,7 +461,7 @@ public static class ColonyBrain
     private static bool PlanCanal(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
     {
         if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || clock.Season == Season.Hiver
-            || colony.Fields.Count == 0 || colony.CanalsInProgress.Any())
+            || colony.Fields.Count == 0 || colony.CanalsInProgress.Any() || !Knowledge.Has(colony, Discovery.Irrigation))
             return false;
         if (Irrigation.PlanBest(map, colony) is not { } canal)
             return false;
@@ -382,12 +490,27 @@ public static class ColonyBrain
             ResourceType.Iron => "Un premier lingot de fer sort du bas fourneau !",
             ResourceType.Flour => "Le moulin tourne : notre première farine est moulue.",
             ResourceType.Bread => "Notre premier pain sort du four : il nourrit bien mieux que le grain cru.",
+            ResourceType.Clothes => "Notre premier vêtement de laine est tissé : l'hiver sera moins rude.",
+            ResourceType.Cake => "Un premier gâteau sort du four : une fête pour toute la colonie !",
+            ResourceType.Beer => "La taverne brasse sa première bière : de quoi garder le moral longtemps.",
+            ResourceType.Coins => "L'atelier de frappe sort ses premières pièces : l'or devient monnaie, dans la limite du quota annuel.",
+            ResourceType.Stew => "Un premier ragoût mijote : de quoi réchauffer le corps et le moral, et donner du cœur à l'ouvrage.",
+            ResourceType.Salt or ResourceType.Spices or ResourceType.Hardwood =>
+                $"Le marché troque sa première denrée de la région : {Specialties.Name(product)}.",
             _ => "Notre premier outil de fer est forgé : le travail ira plus vite.",
         });
 
     /// <summary>Un bâtiment vient d'être achevé : des colons s'installent dans une hutte, un atelier se met au travail.</summary>
     public static void OnBuildingComplete(Colony colony, Building building, LocalMap map, GameClock clock)
     {
+        SettlementPlanner.OnObjectCompleted(colony, building);
+        if (building.IsExtension)
+        {
+            Say(colony, clock, building.Type == BuildingType.Pen
+                ? $"L'enclos est agrandi : il peut accueillir {Husbandry.Capacity(colony)} poules ou moutons par espèce et {Husbandry.CapacityOf(colony, ResourceType.Cows)} vaches."
+                : "Le marché est agrandi : ses nouveaux étals permettent de préparer de plus grandes caravanes.");
+            return;
+        }
         if (building.IsDam)
         {
             Reservoir? lake = Hydrology.CompleteDam(map, colony, building);
@@ -396,12 +519,19 @@ public static class ColonyBrain
                 : $"Le barrage est achevé : un lac de {lake.Tiles.Count} cases se forme en amont.");
             return;
         }
-        if (building.IsWorkshop)
+        if (building.Type == BuildingType.MineDepot)
+        {
+            Say(colony, clock, "La mine est achevée : ses installations permettent d'exploiter les métaux, le charbon minéral et les pierres précieuses.");
+            return;
+        }
+        if (building.IsWorkshop || building.IsCivic)
         {
             string name = Building.NameOf(building.Type);
             Say(colony, clock, building.Type == BuildingType.Bloomery
                 ? "Le bas fourneau est achevé : on peut y fondre le minerai."
-                : $"{(Building.IsFeminine(building.Type) ? "La" : "Le")} {name} est {(Building.IsFeminine(building.Type) ? "achevée" : "achevé")} : on peut s'y mettre.");
+                : $"{char.ToUpper(Building.Definite(building.Type)[0])}{Building.Definite(building.Type)[1..]} est {(Building.IsFeminine(building.Type) ? "achevée" : "achevé")} : on peut s'y mettre.");
+            if (building.Type == BuildingType.Pen)
+                Husbandry.OnPenBuilt(colony, clock);
             return;
         }
         colony.Labor.RecordHut(LaborLedger.TicksToHours(building.LaborTicks));
@@ -415,7 +545,11 @@ public static class ColonyBrain
     /// <summary>Allume le feu à la tombée de la nuit, s'il reste assez de bois.</summary>
     public static void LightFire(Colony colony, GameClock clock)
     {
-        int needed = (int)MathF.Ceiling(colony.Members.Count * FirewoodPerColonist(clock.Season));
+        int needed = (int)MathF.Ceiling(colony.PresentMembers.Count * FirewoodPerColonist(colony, clock.Season));
+        // Le bois dur brûle longtemps : une bûche en vaut trois.
+        int hardwood = Math.Min(colony.Stock.Get(ResourceType.Hardwood), (needed + Specialties.WoodPerHardwood - 1) / Specialties.WoodPerHardwood);
+        colony.Stock.TryTake(ResourceType.Hardwood, hardwood);
+        needed = Math.Max(0, needed - hardwood * Specialties.WoodPerHardwood);
         colony.FireLit = colony.Stock.TryTake(ResourceType.Wood, needed);
         if (!colony.FireLit && IsColdSeason(clock.Season))
             Say(colony, clock, "Le feu s'est éteint faute de bois : la nuit sera froide et le sommeil mauvais.");
@@ -423,10 +557,10 @@ public static class ColonyBrain
 
     public static ColonySensors Sense(Colony colony, GameClock clock)
     {
-        int population = Math.Max(1, colony.Members.Count);
+        int population = Math.Max(1, colony.PresentMembers.Count);
 
         float dailyMeals = population * MealsPerColonistPerDay;
-        float foodDays = colony.Stock.FoodUnits / dailyMeals;
+        float foodDays = (float)(colony.Stock.AvailableNutrition / (population * (decimal)Trade.TravelerNutritionPerDay));
         float foodTarget = clock.Season == Season.Automne ? AutumnFoodTargetDays : FoodTargetDays;
         float foodPressure = Pressure(foodTarget - foodDays, foodTarget - FoodCrisisDays);
 
@@ -436,7 +570,9 @@ public static class ColonyBrain
         float heatingPressure = Pressure(heatingTarget - wood, heatingTarget);
 
         // Bois total : le chauffage, ce que les chantiers attendent encore, et celui que la charbonnière va brûler.
-        ChainDemand chain = ToolChain.Demand(colony);
+        // Sans la métallurgie, le fer ne sert à rien : on ne brûle pas de charbon et l'on ne cherche pas le minerai pour lui.
+        ChainDemand chain = Knowledge.Has(colony, Discovery.Metallurgy) ? ToolChain.Demand(colony)
+            : ChainDemand.None with { ToolsWanted = ToolChain.ToolsWanted(colony) };
         float woodTarget = heatingTarget + colony.ConstructionSites.Sum(b => b.WoodStillToBring) + chain.WoodForCharcoal;
         float woodPressure = Pressure(woodTarget - wood, woodTarget);
 
@@ -454,7 +590,7 @@ public static class ColonyBrain
 
         return new ColonySensors(foodDays, foodPressure, heatingPressure, woodTarget, woodPressure,
             homeless, housingPressure, hasSite, stonePressure, farmShare,
-            chain, colony.ConstructionSites.Any(b => !b.IsHut), colony.Buildings.Any(b => b.IsComplete && b.IsWorkshop && !FoodChain.IsFoodWorkshop(b.Type)), orePressure,
+            chain, colony.ConstructionSites.Any(b => !b.IsHut), colony.Buildings.Any(b => b.IsComplete && b.Type is BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge), orePressure,
             colony.CanalsInProgress.Any(), FoodChain.Demand(colony), colony.Buildings.Any(b => b.IsComplete && FoodChain.IsFoodWorkshop(b.Type)),
             !ToolChain.IronDiscovered(colony) && colony.Labor.TotalProduced(ResourceType.Stone) < ProspectBudget);
     }
@@ -579,7 +715,7 @@ public static class ColonyBrain
         }
 
         // Les couples et les enfants : en temps de crise, on renonce à agrandir la famille.
-        if (colony.Members.Any(m => m.Sex == Sex.Female && m.Partner is not null))
+        if (colony.PresentMembers.Any(m => m.Sex == Sex.Female && m.Partner is not null))
         {
             float prosperity = Lifecycle.Prosperity(colony, clock);
             string birthBand = prosperity < 0.25f ? "freinée" : prosperity > 0.5f ? "normale" : Announced(colony, "natalité");
@@ -666,6 +802,13 @@ public static class ColonyBrain
         Add(ResourceType.Tools, "outil");
         Add(ResourceType.Flour, "farine");
         Add(ResourceType.Bread, "pain");
+        Add(ResourceType.Eggs, "œufs");
+        Add(ResourceType.Meat, "viande");
+        Add(ResourceType.Wool, "laine");
+        Add(ResourceType.Clothes, "vêtement");
+        Add(ResourceType.Salt, "sel");
+        Add(ResourceType.Spices, "épices");
+        Add(ResourceType.Hardwood, "bois dur");
         if (labor.HoursPerHut is { } hut)
             parts.Add($"hutte {hut:0} h");
         if (labor.HoursPerCanalTile is { } canal)

@@ -46,7 +46,38 @@ public static class ColonyFounder
     private static Colony Create(LocalMap map, Random random, string name, int colonistCount,
         Func<int> nextId, GameClock clock, Species species, int campX, int campY)
     {
+        Colony colony = CreateCamp(map, name, clock, species, campX, campY);
+        colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount, ResourceFlow.Transfer);
+        colony.Stock.Add(ResourceType.Coins, StartingCoins, ResourceFlow.Transfer);
+        Knowledge.Grant(colony, Knowledge.StartingKnowledge(species), clock.Ticks);
 
+        for (int i = 0; i < colonistCount; i++)
+        {
+            Sex sex = i % 2 == 0 ? Sex.Female : Sex.Male;
+            (int x, int y) = colony.GatherSpots[random.Next(colony.GatherSpots.Count)];
+            string colonistName = Names.Pick(sex, random, colony.PresentMembers.Select(m => m.Name));
+            var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random, species), x + 0.5f, y + 0.5f)
+            {
+                Personality = Personality.Random(random, species),
+                Species = species,
+                // Tous des adultes, d'âges variés : la colonie ne vieillira pas d'un seul bloc.
+                BirthTicks = clock.Ticks - (long)((Colonist.AdultAge + 6f * random.NextSingle()) * species.LifespanScale * TimeConstants.TicksPerYear),
+                Surname = Names.PickSurname(random, colony.PresentMembers.Select(m => m.Surname)),
+            };
+            colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();
+            colonist.Needs.Rest = 0.6f + 0.35f * random.NextSingle();
+            colonist.Needs.Leisure = 0.6f + 0.35f * random.NextSingle();
+            colonist.Needs.Social = 0.6f + 0.35f * random.NextSingle();
+            colonist.Needs.Comfort = 0.5f;
+            colony.PresentMembers.Add(colonist);
+        }
+        colony.AssignSectors();
+        return colony;
+    }
+
+    /// <summary>Un camp vide : le feu, sa clairière, la carrière ; ni habitants, ni provisions, ni savoirs.</summary>
+    internal static Colony CreateCamp(LocalMap map, string name, GameClock clock, Species species, int campX, int campY)
+    {
         // On dégage la place autour du feu.
         for (int dy = -1; dy <= 1; dy++)
         for (int dx = -1; dx <= 1; dx++)
@@ -60,31 +91,8 @@ public static class ColonyFounder
         colony.Clock = clock;
         colony.Species = species;
         colony.Map = map;
-        colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map);
-        colony.Stock.Add(ResourceType.Food, StartingFoodPerColonist * colonistCount);
-        colony.Stock.Add(ResourceType.Coins, StartingCoins);
-
-        for (int i = 0; i < colonistCount; i++)
-        {
-            Sex sex = i % 2 == 0 ? Sex.Female : Sex.Male;
-            (int x, int y) = colony.GatherSpots[random.Next(colony.GatherSpots.Count)];
-            string colonistName = Names.Pick(sex, random, colony.Members.Select(m => m.Name));
-            var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random, species), x + 0.5f, y + 0.5f)
-            {
-                Personality = Personality.Random(random, species),
-                Species = species,
-                // Tous des adultes, d'âges variés : la colonie ne vieillira pas d'un seul bloc.
-                BirthTicks = clock.Ticks - (long)((Colonist.AdultAge + 6f * random.NextSingle()) * species.LifespanScale * TimeConstants.TicksPerYear),
-                Surname = Names.PickSurname(random, colony.Members.Select(m => m.Surname)),
-            };
-            colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();
-            colonist.Needs.Rest = 0.6f + 0.35f * random.NextSingle();
-            colonist.Needs.Leisure = 0.6f + 0.35f * random.NextSingle();
-            colonist.Needs.Social = 0.6f + 0.35f * random.NextSingle();
-            colonist.Needs.Comfort = 0.5f;
-            colony.Members.Add(colonist);
-        }
-        colony.AssignSectors();
+        colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map) { Owner = colony };
+        SettlementPlanner.InitializeLayout(colony, map);
         return colony;
     }
 
@@ -252,7 +260,7 @@ public static class ColonyFounder
     }
 
     /// <summary>Cases accessibles à pied autour du feu, par proximité croissante.</summary>
-    private static List<(int X, int Y)> FindGatherSpots(LocalMap map, int campX, int campY)
+    internal static List<(int X, int Y)> FindGatherSpots(LocalMap map, int campX, int campY)
     {
         var spots = new List<(int X, int Y)>();
         var visited = new HashSet<(int, int)> { (campX, campY) };

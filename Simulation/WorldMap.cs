@@ -39,6 +39,29 @@ public sealed class WorldMap
     public const int MinimumColonyDistance = 2;
 
     private readonly Dictionary<Colony, int> _tiles = [];
+    private WorldRoadNetwork? _roads;
+
+    /// <summary>Les routes aménagées entre régions et leur fréquentation.</summary>
+    public WorldRoadNetwork Roads => _roads ??= new();
+    private HashSet<int>? _closedPassages;
+    public int PassageRevision { get; private set; }
+
+    /// <summary>Ferme ou rouvre un passage mondial ; les voyages revalident à la prochaine étape.</summary>
+    public void SetPassageClosed(int tile, bool closed)
+    {
+        if (tile < 0 || tile >= Grid.Tiles.Length) throw new ArgumentOutOfRangeException(nameof(tile));
+        _closedPassages ??= [];
+        bool changed = closed ? _closedPassages.Add(tile) : _closedPassages.Remove(tile);
+        if (!changed) return;
+        PassageRevision++;
+        Routes.Clear();
+    }
+
+    public bool PassageClosed(int tile) => _closedPassages?.Contains(tile) == true;
+    public IReadOnlyCollection<int> ClosedPassages => (IReadOnlyCollection<int>?)_closedPassages ?? Array.Empty<int>();
+
+    /// <summary>Recherche depuis la position physique, en évitant les passages fermés et les territoires interdits.</summary>
+    internal WorldRoute? TravelRoute(int from, int to, IReadOnlySet<int> forbidden) => FindRoute(from, to, forbidden);
 
     /// <summary>
     /// Les chemins déjà calculés, rangés à part : ils se recalculent à volonté et ne font pas partie de l'état
@@ -111,6 +134,15 @@ public sealed class WorldMap
     /// La colonie située en aval sur le fleuve qui traverse la case de <paramref name="colony"/> : elle reçoit moins d'eau
     /// si l'on barre la rivière en amont. Null si la case n'a pas de rivière ou si aucune colonie n'est plus bas.
     /// </summary>
+    /// <summary>La première case en aval sur le fleuve qui traverse <paramref name="tile"/> et qui satisfait <paramref name="occupied"/> (null si aucune).</summary>
+    internal int? DownstreamTile(int tile, Func<int, bool> occupied)
+    {
+        if (Grid[tile].River == 0) return null;
+        for (int next = Grid[tile].FlowsTo, steps = 0; next >= 0 && steps < Grid.Tiles.Length; next = Grid[next].FlowsTo, steps++)
+            if (next != tile && occupied(next)) return next;
+        return null;
+    }
+
     public Colony? DownstreamOf(Colony colony)
     {
         int tile = _tiles[colony];
@@ -123,10 +155,23 @@ public sealed class WorldMap
     }
 
     /// <summary>Coût d'entrée dans une case : moyenne des deux cases traversées (on quitte l'une, on entre dans l'autre).</summary>
-    private float StepCost(int from, int to) => 0.5f * (Grid[from].TravelCost + Grid[to].TravelCost);
+    private float StepCost(int from, int to) => 0.5f * (Grid[from].TravelCost + Grid[to].TravelCost) * WorldRoadNetwork.CostFactor(Roads.LevelOf(from, to));
 
-    private WorldRoute? FindRoute(int from, int to)
+    /// <summary>Le coût de marche d'une arête sans aménagement (la route le réduit : voir <see cref="WorldRoadNetwork"/>).</summary>
+    internal float StepCostOf(int from, int to) => 0.5f * (Grid[from].TravelCost + Grid[to].TravelCost);
+
+    /// <summary>Aménage une arête d'un niveau : les itinéraires déjà calculés sont écartés et les voyages en cours revalident à leur prochaine étape.</summary>
+    internal bool ImproveRoad(int a, int b, int maxLevel)
     {
+        if (!Roads.Improve(a, b, maxLevel)) return false;
+        PassageRevision++;
+        Routes.Clear();
+        return true;
+    }
+
+    private WorldRoute? FindRoute(int from, int to, IReadOnlySet<int>? forbidden = null)
+    {
+        if (PassageClosed(to) || forbidden?.Contains(to) == true) return null;
         int n = Grid.Tiles.Length;
         var cost = new float[n];
         var previous = new int[n];
@@ -143,7 +188,8 @@ public sealed class WorldMap
             foreach (int next in Grid.Neighbors(current))
             {
                 // Les colonies elles-mêmes sont toujours accessibles, même au bord d'un sommet.
-                bool passable = next == to || float.IsFinite(Grid[next].TravelCost);
+                bool passable = !PassageClosed(next) && forbidden?.Contains(next) != true
+                    && (next == to || float.IsFinite(Grid[next].TravelCost));
                 if (!passable)
                     continue;
                 float step = next == to && !float.IsFinite(Grid[next].TravelCost) ? Grid[current].TravelCost : StepCost(current, next);

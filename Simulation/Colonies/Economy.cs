@@ -25,6 +25,12 @@ public static class Economy
     [
         ResourceType.Grain, ResourceType.Bread, ResourceType.Flour, ResourceType.Wood, ResourceType.Stone,
         ResourceType.IronOre, ResourceType.Charcoal, ResourceType.Iron, ResourceType.Tools,
+        ResourceType.Wool, ResourceType.Clothes, ResourceType.Salt, ResourceType.Spices, ResourceType.Hardwood,
+        ResourceType.Eggs, ResourceType.Milk, ResourceType.SaltedMeat, ResourceType.Beer,
+        ResourceType.Chickens, ResourceType.Sheep, ResourceType.Cows,
+        ResourceType.MineralCoal, ResourceType.Clay, ResourceType.Pottery, ResourceType.CopperOre, ResourceType.Copper, ResourceType.Copperware,
+        ResourceType.Flax, ResourceType.Linen, ResourceType.Hides, ResourceType.Leather, ResourceType.Shoes, ResourceType.Grapes, ResourceType.Wine,
+        ResourceType.GoldOre, ResourceType.Gold, ResourceType.Ruby, ResourceType.Sapphire, ResourceType.Emerald, ResourceType.Diamond, ResourceType.Jewelry,
     ];
 
     /// <summary>Un bien qu'on n'a jamais produit coûterait plus cher que la normale à qui s'y mettrait : on l'apprend sur le tas.</summary>
@@ -43,38 +49,71 @@ public static class Economy
     public static double BaselineCost(ResourceType good) => good switch
     {
         ResourceType.Grain => 1.5,
-        ResourceType.Bread => 4.5,
-        ResourceType.Flour => 3.4,
+        ResourceType.Bread => 6.7,
+        ResourceType.Flour => 4.6,
         ResourceType.Wood => 0.5,
         ResourceType.Stone => 3.5,
         ResourceType.IronOre => 5.5,
-        ResourceType.Charcoal => 3.2,
-        ResourceType.Iron => 30.0,
-        ResourceType.Tools => 70.0,
-        _ => 1.0,
+        ResourceType.Charcoal => 5.0,
+        ResourceType.Iron => 48.0,
+        ResourceType.Tools => 129.0,
+        ResourceType.Wool => 5.0,
+        ResourceType.Clothes => 25.0,
+        ResourceType.Eggs => 4.0,
+        ResourceType.SaltedMeat => 3.0,
+        // Une fournée : 50 céréales (50 × 1,5 h) et deux heures de travail, pour 40 chopes.
+        ResourceType.Beer => (Cuisine.BeerRecipe.Inputs[0].Amount * 1.5 + 2.0) / Cuisine.BeerRecipe.OutputAmount,
+        ResourceType.Milk => 5.0,
+        ResourceType.Salt => 4.0,
+        ResourceType.Spices => 6.0,
+        ResourceType.Hardwood => 5.0,
+        // Les bêtes valent une fortune : on échange leurs produits, pas elles (voir Husbandry.LivestockWealthFactor).
+        ResourceType.Chickens => 100.0,
+        ResourceType.Sheep => 250.0,
+        ResourceType.Cows => 600.0,
+        _ => (int)good >= 27 ? ResourceCatalog.ReferenceCost(good) : 1.0,
     };
 
     /// <summary>Heures de travail que coûte une unité à cette colonie : son registre, ou à défaut la référence majorée.</summary>
     public static double Cost(Colony colony, ResourceType good) =>
-        colony.Labor.HoursPerUnit(good) ?? BaselineCost(good) * UnprovenFactor;
+        // Une bête coûte plus ou moins cher selon que son espèce est rare ou répandue dans la région : le travail n'y est pour rien.
+        Husbandry.IsLivestock(good) ? BaselineCost(good) * Husbandry.CostFactor(colony.Map.Biome, good)
+        : colony.Labor.HoursPerUnit(good) ?? BaselineCost(good) * UnprovenFactor;
 
     /// <summary>La quantité que la colonie voudrait avoir en réserve pour ses propres besoins (0 si le bien ne lui sert à rien).</summary>
     public static float Need(Colony colony, ResourceType good)
     {
-        float daily = Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay;
+        if ((int)good >= 27) return ExtendedIndustry.Target(colony, good);
+        float daily = Math.Max(1, colony.PresentMembers.Count) * ColonyBrain.MealsPerColonistPerDay;
         ChainDemand iron = ToolChain.Demand(colony);
         return good switch
         {
             ResourceType.Grain => daily * GrainDays,
             ResourceType.Bread => colony.Buildings.Any(b => b.Type == BuildingType.Oven) ? FoodChain.Demand(colony).BreadTarget : 0f,
             ResourceType.Flour => colony.Buildings.Any(b => b.Type == BuildingType.Mill) ? FoodChain.Demand(colony).FlourTarget : 0f,
-            ResourceType.Wood => ColonyBrain.HeatingTarget(colony, colony.Clock.Season) + 10f,
-            ResourceType.Stone => ColonyBrain.StoneReserveTarget,
-            // Pour le minerai, le fer et le charbon : ce qu'il manque à la chaîne des outils, en plus de ce qu'on a déjà.
-            ResourceType.IronOre => iron.Active ? colony.Stock.Get(ResourceType.IronOre) + iron.OreMissing : 0f,
-            ResourceType.Charcoal => iron.Active ? iron.CharcoalTarget : 0f,
+            ResourceType.Wood => ColonyBrain.HeatingTarget(colony, colony.Clock.Season) + 10f + Offerings.Need(colony, ResourceType.Wood),
+            ResourceType.Stone => ColonyBrain.StoneReserveTarget + Offerings.Need(colony, ResourceType.Stone),
+            // Réserves de fabrication ; un surplus de minerai peut ravitailler les autres établissements.
+            ResourceType.IronOre => iron.Active ? Math.Max(0, iron.IronTarget - colony.Stock.Get(ResourceType.Iron)) * 3 : 0f,
+            ResourceType.Charcoal => Math.Max(iron.CharcoalTarget, ExtendedIndustry.FuelTarget(colony)),
             ResourceType.Iron => iron.Active ? iron.IronTarget : 0f,
             ResourceType.Tools => ToolChain.ToolsWanted(colony),
+            // Le textile : de la laine pour le métier à tisser, et un vêtement pour chacun.
+            ResourceType.Wool => colony.Buildings.Any(b => b.Type == BuildingType.Loom)
+                ? Math.Max(0, 2 * (Husbandry.ClothesTarget(colony) - colony.Stock.Get(ResourceType.Clothes))) : 0f,
+            ResourceType.Clothes => Husbandry.ClothesTarget(colony),
+            // Les produits de l'élevage : une petite réserve que la colonie aimerait avoir, le reste se vend.
+            ResourceType.Eggs or ResourceType.Milk => Math.Max(2f, colony.PresentMembers.Count * 0.6f),
+            // La viande salée : trois jours de repas en réserve, le reste se vend.
+            ResourceType.SaltedMeat => daily * 3f,
+            // La bière : une chope par habitant, mais seulement pour une colonie qui a une taverne.
+            ResourceType.Beer => colony.Buildings.Any(b => b.Type == BuildingType.Tavern) ? colony.PresentMembers.Count : 0f,
+            // Les bêtes : de quoi remplir l'enclos, mais seule une colonie très riche songe à en acheter.
+            ResourceType.Chickens or ResourceType.Sheep or ResourceType.Cows =>
+                Husbandry.CanAffordLivestock(colony, good) ? Math.Max(0, Husbandry.CapacityOf(colony, good) - Husbandry.Count(colony, good)) : 0f,
+            // Les denrées de négoce : la région produit la sienne et manque des deux autres.
+            ResourceType.Salt or ResourceType.Spices or ResourceType.Hardwood =>
+                Specialties.NativeOf(colony) == good ? 0f : Specialties.ImportNeed(colony),
             _ => 0f,
         };
     }
@@ -118,7 +157,7 @@ public static class Economy
 
     /// <summary>Ce que la colonie peut vendre sans se priver : le stock au-delà d'un quart de plus que ses besoins.</summary>
     public static int Surplus(Colony colony, ResourceType good) =>
-        (int)Math.Max(0f, colony.Stock.Get(good) - Need(colony, good) * 1.25f);
+        (int)Math.Max(0f, colony.Stock.Available(good) - Need(colony, good) * 1.25f);
 
     /// <summary>Ce qui lui manque pour ses besoins.</summary>
     public static int Shortage(Colony colony, ResourceType good) =>
@@ -130,7 +169,7 @@ public static class Economy
     /// </summary>
     public static Clearing Clear(Colony seller, Colony buyer, ResourceType good, int maxUnits)
     {
-        int held = seller.Stock.Get(good), owned = buyer.Stock.Get(good);
+        int held = seller.Stock.Available(good), owned = buyer.Stock.Available(good);
         int units = 0;
         double lastSeller = 0, lastBuyer = 0, gain = 0;
         for (int k = 0; k < maxUnits && held - k > 0; k++)
@@ -149,7 +188,7 @@ public static class Economy
     /// <summary>Combien d'unités à ce prix la colonie vendrait-elle, au plus ? (Jamais en dessous de ce que lui coûte chaque unité cédée.)</summary>
     public static int UnitsWillingToSell(Colony colony, ResourceType good, double price, int maxUnits)
     {
-        int held = colony.Stock.Get(good), units = 0;
+        int held = colony.Stock.Available(good), units = 0;
         while (units < maxUnits && held - units > 0 && KeepValue(colony, good, held - units) <= price + 0.01)
             units++;
         return units;

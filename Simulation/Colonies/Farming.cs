@@ -5,25 +5,43 @@ namespace GodColony.Simulation.Colonies;
 
 /// <summary>
 /// L'agriculture : on défriche des champs près du camp, on sème au printemps, les céréales poussent
-/// pendant sept jours, puis on moissonne. Ce qui n'est pas rentré avant l'hiver gèle sur pied.
+/// pendant 8,75 jours en climat doux, puis on moissonne. Ce qui n'est pas rentré avant l'hiver gèle sur pied.
 /// </summary>
 public static class Farming
 {
-    /// <summary>Céréales rapportées par une parcelle mûre.</summary>
+    /// <summary>Facteur commun à la durée de pousse et au rendement : une attente accrue de 25 % donne une récolte accrue de 25 %.</summary>
+    public const float CropCycleFactor = 1.25f;
+
+    /// <summary>Adaptation minimale d'une parcelle pour qu'on y plante de la vigne (voir <see cref="VineSuitability"/>).</summary>
+    public const float MinVineSuitability = 0.45f;
+
+    /// <summary>Rendement de référence d'une parcelle mûre, avant le facteur de durée du cycle.</summary>
     public const int PlotYield = 4;
 
-    /// <summary>Céréales de plus pour une parcelle sur une berge fertile (à moins de deux cases de l'eau).</summary>
+    /// <summary>Bonus de référence pour une berge fertile (à moins de deux cases de l'eau), avant le facteur de durée du cycle.</summary>
     public const int BankBonus = 1;
 
     /// <summary>Ce que rapporte la parcelle de cette case : plus sur les berges.</summary>
-    public static int YieldAt(LocalMap map, int x, int y) =>
-        (int)MathF.Round(PlotYield * map.SoilRichness) + (map.IsFertileBank(x, y) ? BankBonus : 0) + (map.IsIrrigated(x, y) ? IrrigationBonus : 0);
+    public static int YieldAt(LocalMap map, int x, int y) => YieldAt(map, x, y, 0);
 
-    /// <summary>Céréales de plus pour une parcelle qu'un canal irrigue.</summary>
+    /// <summary>Ce que rapporte la parcelle à cette colonie, assolement compris, avec le même facteur que la pousse.</summary>
+    public static int YieldAt(Colony colony, LocalMap map, int x, int y) =>
+        YieldAt(map, x, y, Knowledge.Has(colony, Discovery.CropRotation) ? Knowledge.CropRotationBonus : 0);
+
+    private static int YieldAt(LocalMap map, int x, int y, int cropRotationBonus)
+    {
+        int reference = (int)MathF.Round(PlotYield * map.SoilRichness)
+            + (map.IsFertileBank(x, y) ? BankBonus : 0)
+            + (map.IsIrrigated(x, y) ? IrrigationBonus : 0) + cropRotationBonus;
+        // Tous les bonus suivent le cycle ; un seul arrondi final conserve les récoltes en céréales entières.
+        return (int)MathF.Round(reference * CropCycleFactor);
+    }
+
+    /// <summary>Bonus de référence pour une parcelle irriguée, avant le facteur de durée du cycle.</summary>
     public const int IrrigationBonus = 2;
 
     /// <summary>Jours de pousse entre le semis et la maturité (la pousse s'arrête en hiver).</summary>
-    public const float GrowthDays = 7f;
+    public const float GrowthDays = 7f * CropCycleFactor;
 
     public const float SowSeconds = 1.5f;
     public const float HarvestSeconds = 2.5f;
@@ -42,6 +60,19 @@ public static class Farming
     /// <summary>Une berge fertile compte comme du défrichage en moins : on préfère cultiver près de l'eau.</summary>
     private const float BankPreference = 0.35f;
 
+    /// <summary>
+    /// L'adaptation d'une parcelle à la vigne, de 0 (impossible) à 1 (idéale) : elle craint le grand froid, la sécheresse non irriguée et l'humidité excessive.
+    /// Elle ne change aucune règle du blé : c'est un filtre de plantation et un facteur de récolte propres à la vigne.
+    /// </summary>
+    public static float VineSuitability(Map.LocalMap map, int x, int y)
+    {
+        float warmth = 1f - Math.Clamp((Climate.ColdSeverity(map.Biome) - 0.15f) / 0.5f, 0f, 1f);
+        float dryness = Math.Clamp((World.BiomeInfo.Of(map.Biome).DryShare - 0.2f) / 0.5f, 0f, 1f);
+        float drought = 1f - dryness * (map.IsIrrigated(x, y) ? 0.25f : 1f);
+        float damp = map.Biome is World.Biome.TropicalForest or World.Biome.Swamp ? 0.5f : 1f;
+        return Math.Clamp(warmth * drought * damp, 0f, 1f);
+    }
+
     public static IEnumerable<FieldPlot> Plots(Colony colony) => colony.Fields.SelectMany(f => f.Plots);
 
     public static FieldPlot? PlotAt(Colony colony, int x, int y) =>
@@ -55,75 +86,32 @@ public static class Farming
         float coverage = colony.Labor.HoursPerUnit(ResourceType.Food) is { } wildCost
             ? Math.Clamp((float)wildCost / WildFoodCostForFullCoverage, 0.4f, 1f)
             : DefaultCoverage;
-        return (int)MathF.Ceiling(colony.Members.Count * FullCoveragePlotsPerColonist * coverage);
+        return (int)MathF.Ceiling(colony.PresentMembers.Count * FullCoveragePlotsPerColonist * coverage);
     }
 
-    /// <summary>Place libre pour un champ de 4 × 4 : plat, de bonne terre, le moins boisé possible, près du camp.</summary>
+    /// <summary>
+    /// Place libre pour un champ de 4 × 4 : plat, de bonne terre (la fertilité des berges et l'irrigation comptent), le moins boisé possible, à portée d'un dépôt (le camp
+    /// ou un entrepôt achevé) : un aller-retour parcelle → dépôt de 4 secondes visé, 6 au plus. La recherche va de groupe de champs en groupe de champs. Sonde pure.
+    /// </summary>
     public static (int X, int Y)? FindFieldSite(LocalMap map, Colony colony)
     {
-        (int X, int Y)? best = null;
-        float bestScore = float.MaxValue;
-
-        for (int dy = -MaxDistanceFromFire; dy <= MaxDistanceFromFire; dy++)
-        for (int dx = -MaxDistanceFromFire; dx <= MaxDistanceFromFire; dx++)
-        {
-            int x = colony.CampX + dx, y = colony.CampY + dy;
-            float distance = MathF.Sqrt((dx + Field.Size / 2f) * (dx + Field.Size / 2f) + (dy + Field.Size / 2f) * (dy + Field.Size / 2f));
-            if (distance < MinDistanceFromFire || distance > MaxDistanceFromFire)
-                continue;
-            if (FieldCost(map, colony, x, y) is not { } clearing)
-                continue;
-
-            float score = distance + clearing;
-            if (score < bestScore)
-            {
-                bestScore = score;
-                best = (x, y);
-            }
-        }
-        return best;
-    }
-
-    /// <summary>Le coût de défrichage d'un emplacement (arbres et buissons à arracher), ou null s'il est inutilisable.</summary>
-    private static float? FieldCost(LocalMap map, Colony colony, int x, int y)
-    {
-        if (!map.InBounds(x, y) || !map.InBounds(x + Field.Size - 1, y + Field.Size - 1))
-            return null;
-        int elevation = map.GetElevation(x, y);
-        float clearing = 0f;
-        for (int ty = y; ty < y + Field.Size; ty++)
-        for (int tx = x; tx < x + Field.Size; tx++)
-        {
-            if (!map.IsWalkable(tx, ty) || map.IsWaterway(tx, ty) || colony.CanalTiles.Contains((tx, ty))
-                || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
-                return null;
-            if (map.GetSoil(tx, ty) == SoilType.Sand)
-                return null;
-            if (map.IsFertileBank(tx, ty))
-                clearing -= BankPreference;
-            clearing += map.GetFlora(tx, ty) switch
-            {
-                FloraType.Tree => TreePenalty,
-                FloraType.Bush => BushPenalty,
-                _ => 0f,
-            };
-        }
-
-        // Les champs touchent leurs voisins, mais laissent un passage autour des bâtiments.
-        foreach (Building other in colony.Buildings)
-            if (x < other.X + other.Width + 1 && x + Field.Size > other.X - 1 && y < other.Y + other.Height + 1 && y + Field.Size > other.Y - 1)
-                return null;
-        foreach (Grave grave in colony.Graves)
-            if (grave.X >= x && grave.X < x + Field.Size && grave.Y >= y && grave.Y < y + Field.Size)
-                return null;
-        foreach (Field other in colony.Fields)
-            if (x < other.X + Field.Size && x + Field.Size > other.X && y < other.Y + Field.Size && y + Field.Size > other.Y)
-                return null;
-        return clearing;
+        PlacementProposal? proposal = SettlementPlanner.Probe(colony, DevelopmentKind.Field, null, urgent: false, out _);
+        return proposal is null ? null : (proposal.X, proposal.Y);
     }
 
     /// <summary>Défriche l'emplacement (arbres, buissons et souches) et y trace un champ.</summary>
     public static Field PlanField(LocalMap map, Colony colony, int x, int y)
+    {
+        // L'emplacement est revalidé (terrain, accès, tracé) ; un outil qui insiste sur un site refusé obtient son champ, enregistré comme un écart historique.
+        if (SettlementPlanner.PlanAt(colony, DevelopmentKind.Field, null, x, y).Field is { } planned)
+            return planned;
+        Field field = OpenField(map, colony, x, y);
+        SettlementPlanner.Adopt(colony, field);
+        return field;
+    }
+
+    /// <summary>La création brute : défrichage des parcelles (arbres, buissons, souches) et ouverture du champ. Seule l'admission d'un projet (ou une migration) l'appelle.</summary>
+    internal static Field OpenField(LocalMap map, Colony colony, int x, int y)
     {
         var field = new Field(x, y);
         foreach (FieldPlot plot in field.Plots)
@@ -146,19 +134,36 @@ public static class Farming
             else if (plot.Stage == CropStage.Ripe) ripe++;
         }
 
+        // Le cycle complet compte les trajets : récolter une parcelle, la porter au dépôt le plus proche, revenir (la marche s'ajoute à la durée de la récolte).
+        float roundTrip = AverageDepotRoundTripSeconds(colony);
+
         float seconds = 0f;
         if (IsSowingSeason(clock.Season) && fallow > 0)
         {
             float daysLeft = Math.Max(1, TimeConstants.DaysPerSeason - clock.DayOfYear);
-            seconds += fallow * secondsPerPlotSowing / (daysLeft * workSecondsPerDay);
+            seconds += fallow * (secondsPerPlotSowing + roundTrip / Field.Size / Field.Size) / (daysLeft * workSecondsPerDay);
         }
         if (ripe > 0 && clock.Season != Season.Hiver)
         {
             // La moisson ne traîne pas : même s'il reste du temps avant le gel, on la boucle en quelques jours.
             float daysLeft = Math.Clamp(3 * TimeConstants.DaysPerSeason - clock.DayOfYear, 1, 3);
-            seconds += ripe * secondsPerPlotHarvesting / (daysLeft * workSecondsPerDay);
+            seconds += ripe * (secondsPerPlotHarvesting + roundTrip) / (daysLeft * workSecondsPerDay);
         }
         return (int)MathF.Ceiling(seconds);
+    }
+
+    /// <summary>L'aller-retour moyen d'un champ à son dépôt, en secondes de simulation (à vol d'oiseau, avec un détour) : 0 sans champ.</summary>
+    public static float AverageDepotRoundTripSeconds(Colony colony)
+    {
+        if (colony.Fields.Count == 0)
+            return 0f;
+        float total = 0f;
+        foreach (Field field in colony.Fields)
+        {
+            ServicePoint? depot = SettlementServices.Nearest(colony, ServiceUse.Stock, field.X + Field.Size / 2, field.Y + Field.Size / 2);
+            total += depot is null ? 0f : 2f * 1.2f * SettlementServices.DistanceTo(colony, depot, field.X + Field.Size / 2, field.Y + Field.Size / 2) / SettlementRules.WalkTilesPerSecond;
+        }
+        return total / colony.Fields.Count;
     }
 
     /// <summary>
@@ -168,9 +173,20 @@ public static class Farming
     public static int DailyUpdate(Colony colony, GameClock clock)
     {
         int lost = 0;
+        // Sécheresse : les parcelles non irriguées ne poussent plus (à moitié seulement si la colonie a un puits).
+        float drought = colony.DroughtDaysLeft > 0 ? (Civic.Has(colony, BuildingType.Well) ? 0.5f : 0f) : 1f;
+        // Les régions froides ont une saison de culture plus courte : la pousse y est plus lente.
+        float cold = 1f - 0.3f * Math.Clamp(Climate.ColdSeverity(colony.Map.Biome) - 0.3f, 0f, 0.7f) / 0.7f;
         bool winterStarts = clock.Season == Season.Hiver && clock.DayOfSeason == 1;
         foreach (FieldPlot plot in Plots(colony))
         {
+            if (plot.Crop == CropKind.Grapes)
+            {
+                long since = clock.Ticks - Math.Max(plot.PlantedTicks, plot.LastHarvestTicks);
+                plot.Growth = Math.Clamp(since / (float)TimeConstants.TicksPerYear, 0, 1);
+                if (plot.Stage == CropStage.Growing && plot.Growth >= 1 && clock.Season == Season.Automne) plot.Stage = CropStage.Ripe;
+                continue;
+            }
             if (plot.Stage == CropStage.Fallow)
                 continue;
             if (winterStarts)
@@ -181,7 +197,8 @@ public static class Farming
             }
             else if (plot.Stage == CropStage.Growing && clock.Season != Season.Hiver)
             {
-                plot.Growth = MathF.Min(1f, plot.Growth + 1f / GrowthDays);
+                float dryFactor = colony.Map.IsIrrigated(plot.X, plot.Y) ? 1f : drought;
+                plot.Growth = MathF.Min(1f, plot.Growth + dryFactor * cold / GrowthDays);
                 if (plot.Growth >= 1f)
                     plot.Stage = CropStage.Ripe;
             }

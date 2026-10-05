@@ -51,7 +51,7 @@ public class FoodChainTests(ITestOutputHelper output)
 
     private static void Complete(WorldState world, Colony colony, BuildingType type)
     {
-        (int x, int y) = (type == BuildingType.Mill ? Urbanism.FindMillSite(world.Map, colony) : Urbanism.FindWorkshopSite(world.Map, colony))!.Value;
+        (int x, int y) = Urbanism.FindSite(world.Map, colony, type)!.Value;
         Urbanism.PlanBuilding(world.Map, colony, type, x, y).Progress = 1f;
     }
 

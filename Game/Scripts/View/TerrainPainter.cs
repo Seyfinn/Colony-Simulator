@@ -284,6 +284,7 @@ public static partial class TerrainPainter
         if (lakeTile is not null) RiverTiles.Blend(lakeTile, pixels, stride, ox, oy);
         if (canalTile is not null) RiverTiles.Blend(canalTile, pixels, stride, ox, oy);
         PaintRiverbank(map, x, y, pixels, stride, ox, oy, wide, riverMask, riverCorners);
+        PaintRoad(map,x,y,pixels,stride,ox,oy);
     }
 
     private static Rgb GroundPixel(ref PixelNoise noise, Surface surface, int x, int y, int elevation, WoodlandBiome biome, GrassPalette grass,

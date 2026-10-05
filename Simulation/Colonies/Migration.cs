@@ -17,7 +17,7 @@ public static class Migration
     /// Chance maximale, par jour, qu'un voyageur (ou un petit groupe) se présente : celle d'une colonie
     /// au sommet de son attrait. Une colonie ordinaire en reçoit bien moins, une colonie pauvre presque aucun.
     /// </summary>
-    public const float MaxTravelerChancePerDay = 0.16f;
+    public const float MaxTravelerChancePerDay = 0.11f;
     private const float PairChance = 0.30f;
 
     /// <summary>On voyage peu en hiver.</summary>
@@ -59,7 +59,7 @@ public static class Migration
     public static float Attractiveness(Colony colony, GameClock clock)
     {
         ColonySensors sensors = ColonyBrain.Sense(colony, clock);
-        int population = Math.Max(1, colony.Members.Count);
+        int population = Math.Max(1, colony.PresentMembers.Count);
 
         float mood = Math.Clamp((colony.AverageMood - MinMoodToAttract) / 0.4f, 0f, 1f);
         float food = Math.Clamp((sensors.FoodDays - MinFoodDaysToWelcome) / (PlentifulFoodDays - MinFoodDaysToWelcome), 0f, 1f);
@@ -119,7 +119,7 @@ public static class Migration
         if (FindEdgePoint(world, colony, colony.CampX, colony.CampY) is not { } entry)
             return 0;
 
-        var taken = colony.Members.Concat(colony.Transients).Select(m => m.Name).ToList();
+        var taken = colony.PresentMembers.Concat(colony.Transients).Select(m => m.Name).ToList();
         SkillType specialty = Skills.All[world.Random.Next(Skills.All.Length)];
         for (int i = 0; i < size; i++)
         {
@@ -134,7 +134,7 @@ public static class Migration
                 Personality = Personality.Random(world.Random, colony.Species),
                 Species = colony.Species,
                 BirthTicks = world.Clock.Ticks - (long)((Colonist.AdultAge + 6f * world.Random.NextSingle()) * colony.Species.LifespanScale * TimeConstants.TicksPerYear),
-                Surname = Names.PickSurname(world.Random, colony.Members.Concat(colony.Transients).Select(t => t.Surname)),
+                Surname = Names.PickSurname(world.Random, colony.PresentMembers.Concat(colony.Transients).Select(t => t.Surname)),
             };
             // Il arrive après une longue marche : fatigué et un peu affamé.
             traveler.Needs.Food = 0.5f + 0.15f * world.Random.NextSingle();
@@ -154,7 +154,7 @@ public static class Migration
         colony.Transients.Remove(colonist);
         colonist.Transit = TransitState.None;
         colonist.Activity = null;
-        colony.Members.Add(colonist);
+        colony.PresentMembers.Add(colonist);
         colony.FillVacancies();
         colony.AssignSectors();
 
@@ -167,13 +167,13 @@ public static class Migration
         SkillType best = Skills.All.OrderByDescending(colonist.Skills.Level).First();
         string experienced = colonist.Sex == Sex.Female ? "expérimentée" : "expérimenté";
         ColonyBrain.Say(colony, world.Clock,
-            $"{colonist.Name}, {Skills.TradeName(best, colonist.Sex)} {experienced}, rejoint la colonie ({colony.Members.Count} colons).");
+            $"{colonist.Name}, {Skills.TradeName(best, colonist.Sex)} {experienced}, rejoint la colonie ({colony.PresentMembers.Count} colons).");
     }
 
     /// <summary>Chaque heure : on mesure la déprime de chacun, et un colon qui n'en peut plus s'en va.</summary>
     public static void Hourly(WorldState world, Colony colony)
     {
-        foreach (Colonist colonist in colony.Members)
+        foreach (Colonist colonist in colony.PresentMembers)
         {
             if (colonist.Needs.Mood < UnhappyMood)
                 colonist.UnhappyHours++;
@@ -181,10 +181,10 @@ public static class Migration
                 colonist.UnhappyHours = Math.Max(0, colonist.UnhappyHours - 3);
         }
 
-        if (colony.Members.Count <= MinPopulationToLeave)
+        if (colony.PresentMembers.Count <= MinPopulationToLeave)
             return;
         // Les enracinés tiennent plus longtemps, les nomades partent plus vite.
-        Colonist? leaver = colony.Members.FirstOrDefault(m => m.Stage is LifeStage.Adult or LifeStage.Elder
+        Colonist? leaver = colony.PresentMembers.FirstOrDefault(m => m.Stage is LifeStage.Adult or LifeStage.Elder
             && m.UnhappyHours >= UnhappyHoursBeforeLeaving * m.Personality.PatienceFactor);
         if (leaver is null)
             return;

@@ -28,6 +28,7 @@ public partial class PrayerPanel : CanvasLayer
     private Button _badge = null!;
     private string _stamp = "";
     private double _time;
+    private bool _stocksVisible = true;
 
     /// <summary>Le détail des prières est-il déplié ?</summary>
     public bool Open
@@ -83,8 +84,16 @@ public partial class PrayerPanel : CanvasLayer
 
     private void ResizePanels()
     {
-        _stack.OffsetTop = InterfaceLayout.For(_root.Size).NavigationTop;
+        _stack.OffsetTop = InterfaceLayout.For(_root.Size, _stocksVisible).NavigationTop;
         _stack.OffsetLeft = -16 - InterfaceLayout.SideWidth(_root.Size);
+    }
+
+    /// <summary>Sans la rangée des stocks (vue chiffrée, fondation), la pastille remonte avec la navigation.</summary>
+    public void SetStocksVisible(bool visible)
+    {
+        if (_stocksVisible == visible) return;
+        _stocksVisible = visible;
+        if (_root is not null) ResizePanels();
     }
 
     public void SetMapOverlay(bool open) => _stack.Visible = !open;
@@ -156,7 +165,9 @@ public partial class PrayerPanel : CanvasLayer
         var auto = new CheckBox { Text = "Toujours accorder ce type de décision", ButtonPressed = prayer.Colony.Prayers.AutoApprove.Contains(prayer.Kind) };
         auto.AddThemeColorOverride("font_color", Muted);
         auto.AddThemeFontSizeOverride("font_size", 12);
-        column.AddChild(auto);
+        // Un souhait divin n'est jamais accordé d'office : la case n'a pas de sens pour lui.
+        if (prayer.Kind != DecisionKind.Wish)
+            column.AddChild(auto);
 
         var buttons = new HBoxContainer();
         buttons.AddThemeConstantOverride("separation", 8);
