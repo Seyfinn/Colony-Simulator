@@ -30,7 +30,7 @@ public partial class Main
     private Label? _notification;
     private PanelContainer? _notificationCard;
     private double _notificationTime;
-    private LocalMap ActiveMap => _foundingMap ?? (_world.Colonies.Count == 0 ? _world.Map : Observed.Map);
+    private LocalMap ActiveMap => _foundingMap ?? (_world.Colonies.Count == 0 ? _world.Map : ObservedSettlement.Map);
 
     private void InitMenus()
     {
@@ -274,11 +274,11 @@ public partial class Main
 
     private void RestoreObservedMap()
     {
+        using var scope = _world.Colonies.Count == 0 ? null : ObservedSettlement.Observe();
         _foundingMap = null;
         Colony? colony = _world.Colonies.Count == 0 ? null : Observed;
         DisplayMap(colony?.Map ?? _world.Map, colony);
-        _camera.Position = new Vector2((colony?.CampX ?? _world.Map.Width / 2) + 0.5f,
-            (colony?.CampY ?? _world.Map.Height / 2) + 0.5f) * TerrainPainter.TileSize;
+        _camera.Position = colony is null ? new Vector2(_world.Map.Width/2f,_world.Map.Height/2f)*TerrainPainter.TileSize : VillageCenter(colony);
     }
 
     private void DisplayMap(LocalMap map, Colony? colony)

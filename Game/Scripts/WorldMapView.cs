@@ -26,6 +26,7 @@ public partial class WorldMapView : Control
     private const float Sqrt3 = 1.7320508f;
 
     public event Action<int>? ColonyClicked;
+    public event Action<int>? SettlementClicked;
     public event Action<int>? SiteClicked;
     public bool PickingSite { get; set; }
 
@@ -377,9 +378,28 @@ public partial class WorldMapView : Control
     private void DrawCaravans(CanvasItem g, Font font)
     {
         long now = _world.Clock.Ticks;
+        foreach (int tile in _world.WorldMap.ClosedPassages)
+        {
+            Vector2 p = CenterOf(tile);
+            g.DrawLine(p + new Vector2(-6, -6), p + new Vector2(6, 6), ArtDirection.Brass, 2);
+            g.DrawLine(p + new Vector2(-6, 6), p + new Vector2(6, -6), ArtDirection.Brass, 2);
+        }
+        foreach (Settlement place in _world.Settlements.Where(s => s != s.Owner.PrimarySettlement))
+        {
+            Vector2 p = CenterOf(place.RegionTileIndex);
+            Color color = place.Status == SettlementStatus.Closed ? Muted : ArtDirection.Brass;
+            g.DrawColoredPolygon(new[] { p + new Vector2(-7,5), p + new Vector2(0,-7), p + new Vector2(7,5) }, color);
+            if (_zoom >= 1.6f) g.DrawString(font, p + new Vector2(10,4), $"{place.Name} · {place.Population.Count}", HorizontalAlignment.Left,-1,10,Ink);
+        }
+        if (Observed >= 0 && Observed < _world.Colonies.Count)
+            foreach (var group in _world.Colonies[Observed].DepositReports.GroupBy(k => k.Region))
+            {
+                Vector2 p = CenterOf(group.Key) + new Vector2(-12,-12);
+                g.DrawCircle(p,4,group.All(k => k.State == GodColony.Simulation.Map.DepositObservation.Depleted) ? Muted : ArtDirection.Sage);
+            }
         foreach (Caravan caravan in _world.Caravans)
         {
-            if (_world.WorldMap.Route(caravan.From, caravan.To) is not { } route)
+            if ((caravan.Route ?? _world.WorldMap.Route(caravan.From, caravan.To)) is not { } route)
                 continue;
             var path = route.Tiles.Select(CenterOf).ToArray();
             if (path.Length >= 2)
@@ -387,9 +407,18 @@ public partial class WorldMapView : Control
             (int a, int b, float t) = route.At(caravan.RoutePosition(now));
             Vector2 position = CenterOf(a).Lerp(CenterOf(b), t);
             bool outbound = caravan.State == CaravanState.Outbound;
-            bool left = (CenterOf(b).X - CenterOf(a).X) * (outbound ? 1 : -1) < 0;
+            bool left = (CenterOf(b).X - CenterOf(a).X) * (caravan.Route is null && !outbound ? -1 : 1) < 0;
             CaravanSprites.Draw(g, position, now / (double)GodColony.Simulation.Time.TimeConstants.TicksPerSecond, left);
-            g.DrawString(font, position + new Vector2(14, -8), $"{(outbound ? "→" : "←")} {caravan.To.Name}",
+            if (caravan.BlockedReason is not null)
+            {
+                g.DrawCircle(position, 13, ArtDirection.Brass, false, 2);
+                var badge = new Rect2(position + new Vector2(12, -35), new Vector2(72, 18));
+                g.DrawRect(badge, Panel);
+                g.DrawString(font, badge.Position + new Vector2(5, 13), "En attente", HorizontalAlignment.Left, -1, 10, ArtDirection.Brass);
+            }
+            string destination = caravan.Purpose == TerritorialPurpose.Commerce ? (outbound ? caravan.To.Name : caravan.From.Name)
+                : TerritorialTravel.Label(caravan.Purpose) + (outbound ? $" · région {caravan.TargetRegion}" : " · retour");
+            g.DrawString(font, position + new Vector2(14, -8), $"{(outbound ? "→" : "←")} {destination}",
                 HorizontalAlignment.Left, -1, 10, Ink);
         }
     }
@@ -515,7 +544,9 @@ public partial class WorldMapView : Control
             return _placementMessage;
         if (_world.Colonies.Count == 0)
             return "Monde vierge · fondez votre première colonie.";
-        string status = _world.Caravans.Count == 0 ? "Aucune caravane en route." : $"{_world.Caravans.Count} caravane(s) en route.";
+        int blocked = _world.Caravans.Count(c => c.BlockedReason is not null);
+        string status = _world.Caravans.Count == 0 ? "Aucune caravane en route." : $"{_world.Caravans.Count} caravane(s) en route · {blocked} en attente.";
+        if (_world.WorldMap.ClosedPassages.Count > 0) status += "   × Passage fermé";
         int wars = _world.Pacts.Count(p => p.Kind == PactKind.War), alliances = _world.Pacts.Count(p => p.Kind == PactKind.Alliance);
         if (wars > 0) status += $" · {wars} guerre{(wars > 1 ? "s" : "")}";
         if (_world.WarParties.Count > 0) status += $" · {_world.WarParties.Count} bande{(_world.WarParties.Count > 1 ? "s" : "")} de guerriers en marche";
@@ -576,6 +607,8 @@ public partial class WorldMapView : Control
                 SiteClicked?.Invoke(tile);
             return;
         }
+        Settlement? place = _world.Settlements.FirstOrDefault(s => s.RegionTileIndex == tile && s != s.Owner.PrimarySettlement && s.Status != SettlementStatus.Closed);
+        if (place is not null) { SettlementClicked?.Invoke(place.Id); return; }
         for (int i = 0; i < _world.Colonies.Count; i++)
             if (CenterOf(_world.WorldMap.TileOf(_world.Colonies[i])).DistanceTo(position) <= Math.Max(DotRadius + 6, HexWidth * 0.6f))
             {

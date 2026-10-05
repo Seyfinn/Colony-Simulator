@@ -8,7 +8,8 @@ namespace GodColony.Simulation.Colonies;
 /// </summary>
 public static class Crafting
 {
-    public static Recipe RecipeFor(BuildingType workshop) => workshop == BuildingType.Loom ? Husbandry.Weaving
+    public static Recipe RecipeFor(BuildingType workshop) => workshop is BuildingType.PotteryKiln or BuildingType.Tannery or BuildingType.Goldsmith or BuildingType.Mint
+        ? ExtendedIndustry.Recipes.First(r => r.Workshop == workshop) : workshop == BuildingType.Loom ? Husbandry.Weaving
         : FoodChain.IsFoodWorkshop(workshop) ? FoodChain.RecipeFor(workshop) : ToolChain.RecipeFor(workshop);
 
     /// <summary>La recette d'un atelier de cette colonie : celle du marché dépend de la denrée que produit sa région.</summary>
@@ -17,7 +18,7 @@ public static class Crafting
 
     /// <summary>La recette suivie : celle du produit visé s'il y en a un (les plats de fête), sinon la recette habituelle de l'atelier.</summary>
     public static Recipe RecipeFor(Colony colony, BuildingType workshop, ResourceType? product) =>
-        Cuisine.RecipeFor(product) ?? RecipeFor(colony, workshop);
+        (product is null ? null : ExtendedIndustry.RecipeFor(colony, workshop, product)) ?? Cuisine.RecipeFor(product) ?? RecipeFor(colony, workshop);
 
     /// <summary>La compétence qu'on exerce dans cet atelier : la boulangerie pour le moulin et le four, le tissage, le négoce, la forge pour le reste.</summary>
     public static SkillType SkillFor(BuildingType workshop) => workshop switch
@@ -30,7 +31,7 @@ public static class Crafting
 
     /// <summary>Ce qui est déjà en train d'être fabriqué (les fabricants ont pris les matières mais n'ont pas fini).</summary>
     public static int Pending(Colony colony, ResourceType output) =>
-        colony.Members.Count(m => m.Activity is { Kind: ActivityKind.Craft, Building: { } site } a && (a.Product ?? RecipeFor(colony, site.Type).Output) == output);
+        colony.PresentMembers.Count(m => m.Activity is { Kind: ActivityKind.Craft, Building: { } site } a && (a.Product ?? RecipeFor(colony, site.Type).Output) == output);
 
     /// <summary>
     /// Le prochain atelier à bâtir. Le pain passe avant le fer : manger mieux libère des bras pour tout le reste.
@@ -40,7 +41,7 @@ public static class Crafting
     {
         if (FoodChain.NextWorkshopToBuild(colony, map) is { } food && Knowledge.Allows(colony, food))
             return food;
-        return ToolChain.NextWorkshopToBuild(colony) is { } iron && Knowledge.Allows(colony, iron) ? iron : null;
+        return ToolChain.NextWorkshopToBuild(colony) is { } iron && Knowledge.Allows(colony, iron) ? iron : ExtendedIndustry.NextWorkshop(colony);
     }
 
     /// <summary>Où travailler maintenant, s'il y a quelque chose d'utile à fabriquer.</summary>

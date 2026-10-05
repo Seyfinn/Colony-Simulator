@@ -38,6 +38,7 @@ public enum WarPartyState { Outbound, Returning }
 /// </summary>
 public sealed class WarParty
 {
+    public int Id { get; internal set; }
     internal WarParty(Colony from, Colony to, List<Colonist> warriors, int weapons, long departTicks, long arriveTicks)
     {
         From = from;
@@ -139,6 +140,14 @@ public static class Diplomacy
     public static Pact? PactBetween(WorldState world, Colony a, Colony b) => world.Pacts.FirstOrDefault(p => p.Between(a, b));
 
     public static bool AreAllied(WorldState world, Colony a, Colony b) => PactBetween(world, a, b) is { Kind: PactKind.Alliance };
+    /// <summary>
+    /// Le droit de passage d'un voyageur chez un hôte : toujours chez soi et chez ses alliés, jamais en guerre, et refusé à ceux dont l'hôte pense du mal
+    /// (opinion au plus égale au seuil du monde). Le droit ne crée pas de marchandise ni ne permet d'installer un camp (propriété distincte).
+    /// </summary>
+    public static bool PassageAllowed(WorldState world, Colony traveler, Colony host) =>
+        traveler == host || AreAllied(world, traveler, host)
+        || !AtWar(world, traveler, host) && host.OpinionOf(traveler) > world.Territory.PassageRefusalOpinion;
+
     public static bool AtWar(WorldState world, Colony a, Colony b) => PactBetween(world, a, b) is { Kind: PactKind.War };
 
     public static IEnumerable<Colony> Allies(WorldState world, Colony colony) =>
@@ -183,7 +192,7 @@ public static class Diplomacy
     {
         float sum = 0f;
         int count = 0;
-        foreach (Colonist member in colony.Members)
+        foreach (Colonist member in colony.PresentMembers)
             if (member.Stage is LifeStage.Adult or LifeStage.Elder)
             {
                 sum += member.Personality[axis];
@@ -255,7 +264,7 @@ public static class Diplomacy
     public static void Daily(WorldState world)
     {
         CleanUp(world);
-        List<Colony> living = world.Colonies.Where(c => c.Members.Count > 0).ToList();
+        List<Colony> living = world.Colonies.Where(c => c.PresentMembers.Count > 0).ToList();
         if (living.Count < 2)
             return;
 
@@ -292,7 +301,7 @@ public static class Diplomacy
         long now = world.Clock.Ticks;
         foreach (Pact pact in world.Pacts.ToList())
         {
-            bool extinct = pact.A.Members.Count == 0 || pact.B.Members.Count == 0;
+            bool extinct = pact.A.PresentMembers.Count == 0 || pact.B.PresentMembers.Count == 0;
             if (extinct || now >= pact.UntilTicks)
             {
                 world.Pacts.Remove(pact);
@@ -362,8 +371,8 @@ public static class Diplomacy
             if (world.Politics.NextSingle() >= GiftChancePerDay)
                 continue;
             int gift = Math.Min(60, coins / 8);
-            colony.Stock.TryTake(ResourceType.Coins, gift, ResourceFlow.Transfer);
-            other.Stock.Add(ResourceType.Coins, gift, ResourceFlow.Transfer);
+            if (!colony.Stock.TryTransferTo(other.Stock, ResourceType.Coins, gift))
+                continue;
             colony.LastGiftTicks[other] = now;
             Shift(other, colony, GiftOpinion);
             ColonyBrain.Say(colony, world.Clock, $"Nous envoyons un présent de {gift} pièces à {other.Name}, pour apaiser nos rapports.");
@@ -376,10 +385,10 @@ public static class Diplomacy
 
     private static void ProposeAlliance(WorldState world, Colony colony, List<Colony> living)
     {
-        if (colony.Members.Count < 6 || Allies(world, colony).Count() >= MaxAlliances || colony.Prayers.IsQuiet(DecisionKind.Alliance, world.Clock))
+        if (colony.PresentMembers.Count < 6 || Allies(world, colony).Count() >= MaxAlliances || colony.Prayers.IsQuiet(DecisionKind.Alliance, world.Clock))
             return;
         Colony? partner = living
-            .Where(o => o != colony && o.Members.Count >= 6 && PactBetween(world, colony, o) is null
+            .Where(o => o != colony && o.PresentMembers.Count >= 6 && PactBetween(world, colony, o) is null
                 && colony.OpinionOf(o) >= AllianceOpinion && o.OpinionOf(colony) >= AllianceOpinion - 10f
                 && (Knowledge.Has(colony, Discovery.Diplomacy) || Knowledge.Has(o, Discovery.Diplomacy))
                 && Allies(world, o).Count() < MaxAlliances && world.WorldMap.Connected(colony, o))
@@ -394,7 +403,7 @@ public static class Diplomacy
 
     public static void SealAlliance(WorldState world, Colony a, Colony b)
     {
-        if (PactBetween(world, a, b) is not null || a.Members.Count == 0 || b.Members.Count == 0)
+        if (PactBetween(world, a, b) is not null || a.PresentMembers.Count == 0 || b.PresentMembers.Count == 0)
             return;
         world.Pacts.Add(new Pact(a, b, PactKind.Alliance, world.Clock.Ticks));
         ColonyBrain.Say(a, world.Clock, $"Nous scellons une alliance avec {b.Name} !");
@@ -409,7 +418,7 @@ public static class Diplomacy
     /// </summary>
     private static void ConsiderWar(WorldState world, Colony colony, List<Colony> living)
     {
-        if (colony.Members.Count < MinPopulationForWar || AtWarWithAnyone(world, colony)
+        if (colony.PresentMembers.Count < MinPopulationForWar || AtWarWithAnyone(world, colony)
             || !(colony.Sensors?.SurvivalAssured ?? false) || Warfare.HealthyAdults(colony) < MinHealthyAdultsForWar
             || colony.Prayers.IsQuiet(DecisionKind.War, world.Clock))
             return;
@@ -431,7 +440,7 @@ public static class Diplomacy
 
     public static void DeclareWar(WorldState world, Colony aggressor, Colony target)
     {
-        if (PactBetween(world, aggressor, target) is not null || aggressor.Members.Count == 0 || target.Members.Count == 0)
+        if (PactBetween(world, aggressor, target) is not null || aggressor.PresentMembers.Count == 0 || target.PresentMembers.Count == 0)
             return;
         world.Pacts.Add(new Pact(aggressor, target, PactKind.War, world.Clock.Ticks));
         aggressor.BattlesWon = aggressor.BattlesLost = target.BattlesWon = target.BattlesLost = 0;

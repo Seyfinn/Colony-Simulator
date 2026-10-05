@@ -17,7 +17,7 @@ public static class Warfare
     private const float DefenderToolStrength = 0.5f;
 
     public static int HealthyAdults(Colony colony) =>
-        colony.Members.Count(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None);
+        colony.PresentMembers.Count(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None);
 
     /// <summary>Combien de guerriers la colonie peut envoyer : un adulte valide sur trois, de 2 à 8.</summary>
     public static int WarriorCount(Colony colony) =>
@@ -66,7 +66,7 @@ public static class Warfare
     }
 
     private static List<Colonist> PickWarriors(Colony colony) =>
-        colony.Members
+        colony.PresentMembers
             .Where(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None && m.PregnantUntilTicks is null && m.Transit == TransitState.None)
             .OrderByDescending(m => m.Personality[Axis.Audace] + m.Personality[Axis.Temperament])
             .ThenBy(m => m.Id)
@@ -78,11 +78,12 @@ public static class Warfare
         List<Colonist> warriors = PickWarriors(from);
         if (warriors.Count < Diplomacy.MinWarriors)
             return null;
-        int weapons = Math.Min(warriors.Count, from.Stock.Get(ResourceType.Tools));
+        int weapons = Math.Min(warriors.Count, from.Stock.Available(ResourceType.Tools));
         from.Stock.TryTake(ResourceType.Tools, weapons, ResourceFlow.Transfer);
         long now = world.Clock.Ticks;
         long oneWay = Math.Max((long)TimeConstants.TicksPerHour, (long)(world.WorldMap.TravelDays(from, to) * TimeConstants.TicksPerDay));
         var party = new WarParty(from, to, warriors, weapons, now, now + oneWay);
+        world.RegisterWarTrip(party);
         foreach (Colonist warrior in warriors)
         {
             ColonistAI.DetachFromColony(warrior);
@@ -108,7 +109,7 @@ public static class Warfare
         {
             if (party.State == WarPartyState.Outbound && now >= party.ArriveTicks)
             {
-                if (Diplomacy.AtWar(world, party.From, party.To) && party.To.Members.Count > 0)
+                if (Diplomacy.AtWar(world, party.From, party.To) && party.To.PresentMembers.Count > 0)
                     Battle(world, party);
                 else
                     ColonyBrain.Say(party.From, world.Clock, $"Nos guerriers arrivent devant {party.To.Name}, mais la guerre est finie : ils font demi-tour.");
@@ -137,7 +138,7 @@ public static class Warfare
             float margin = (attack - defense) / Math.Max(1f, defense);
             int killed = Math.Min(3, (int)(margin * 3f + luck.NextSingle()));
             List<string> loot = Pillage(world, party);
-            var victims = defender.Members.Where(m => m.Stage is LifeStage.Adult or LifeStage.Teen && m.Ailment == Ailment.None)
+            var victims = defender.PresentMembers.Where(m => m.Stage is LifeStage.Adult or LifeStage.Teen && m.Ailment == Ailment.None)
                 .OrderBy(_ => luck.Next()).ToList();
             int dead = 0, wounded = 0;
             foreach (Colonist victim in victims.Take(killed))
@@ -183,7 +184,7 @@ public static class Warfare
             if (luck.NextSingle() < 0.5f)
                 Health.Fall(attacker, warrior, Ailment.Injured, 72 + luck.Next(0, 48), clock, "");
         int hurt = 0;
-        foreach (Colonist defenderHurt in defender.Members.Where(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None)
+        foreach (Colonist defenderHurt in defender.PresentMembers.Where(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None)
                      .OrderBy(_ => luck.Next()).Take(luck.Next(2)).ToList())
         {
             Health.Fall(defender, defenderHurt, Ailment.Injured, 48 + luck.Next(0, 48), clock, "");
@@ -237,6 +238,8 @@ public static class Warfare
         foreach (Colonist warrior in party.Warriors)
         {
             colony.Transients.Remove(warrior);
+            warrior.TravelId = 0;
+            warrior.LocationSettlementId = colony.PrimarySettlementId;
             warrior.Activity = null;
             warrior.Needs.Food = Math.Min(warrior.Needs.Food, 0.6f);
             warrior.Needs.Rest = Math.Min(warrior.Needs.Rest, 0.5f);
@@ -254,7 +257,7 @@ public static class Warfare
                 warrior.X = warrior.PrevX = x + 0.5f;
                 warrior.Y = warrior.PrevY = y + 0.5f;
                 warrior.Transit = TransitState.None;
-                colony.Members.Add(warrior);
+                colony.PresentMembers.Add(warrior);
             }
         }
         colony.FillVacancies();

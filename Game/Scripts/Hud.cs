@@ -32,7 +32,7 @@ public partial class Hud : CanvasLayer
     private readonly Dictionary<ResourceType, Label> _foodDetails = [];
     private PanelContainer _foodDropdown = null!;
     private static readonly ResourceType[] FoodResources = [ResourceType.Food, ResourceType.Fish, ResourceType.Eggs, ResourceType.Milk, ResourceType.Meat, ResourceType.SaltedMeat,
-        ResourceType.Cake, ResourceType.Stew, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour];
+        ResourceType.Cake, ResourceType.Stew, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour, ResourceType.Grapes];
 
     /// <summary>Marchandises de l'élevage et du négoce : elles ont leur place dans l'écran Économie plutôt que dans le bandeau des stocks.</summary>
     private static readonly ResourceType[] TradeGoods = [ResourceType.Wool, ResourceType.Clothes, ResourceType.Salt, ResourceType.Spices, ResourceType.Hardwood,
@@ -47,6 +47,7 @@ public partial class Hud : CanvasLayer
     private readonly List<(Label Date, Label Message)> _thoughtRows = [];
 
     private ProductionDashboard _productionDashboard = null!;
+    private long _shownTicks;
     private string _thoughtStamp = "";
 
     private TextureRect _portrait = null!;
@@ -155,7 +156,7 @@ public partial class Hud : CanvasLayer
         row.AddThemeConstantOverride("v_separation", 6);
         foreach (ResourceType type in Enum.GetValues<ResourceType>())
         {
-            if ((type != ResourceType.Food && FoodResources.Contains(type)) || TradeGoods.Contains(type)) continue;
+            if ((int)type >= 27 || (type != ResourceType.Food && FoodResources.Contains(type)) || TradeGoods.Contains(type)) continue;
             var card = Panel();
             card.Name = $"Resource{type}";
             card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -244,7 +245,7 @@ public partial class Hud : CanvasLayer
     }
 
     internal static int ResourceCardCount => Enum.GetValues<ResourceType>().Count(type =>
-        (type == ResourceType.Food || !FoodResources.Contains(type)) && !TradeGoods.Contains(type));
+        (int)type < 27 && (type == ResourceType.Food || !FoodResources.Contains(type)) && !TradeGoods.Contains(type));
 
     private void PositionFoodDetails()
     {
@@ -392,7 +393,7 @@ public partial class Hud : CanvasLayer
         _help.Visible = false;
         var commands = Column(_help, 8);
         Section(commands, "COMMANDES");
-        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit ou molette maintenue   Glisser   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nC   Recentrer sur le camp ou l'habitant sélectionné\nTab   Observer la colonie suivante\nM   Carte du monde   ·   E   Économie   ·   R   Savoirs et relations   ·   P   Prières\nJ   Journal   ·   H   Afficher / fermer les commandes\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   4   Vue chiffrée (×200)\nF5   Sauvegarde rapide   ·   F9   Chargement rapide\nÉchap   Fermer un panneau / menu", 13, Ink);
+        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit ou molette maintenue   Glisser   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nC   Recentrer sur le village ou l'habitant sélectionné\nTab   Observer la colonie suivante\nM   Carte du monde   ·   E   Économie   ·   R   Savoirs et relations   ·   P   Prières\nJ   Journal   ·   H   Afficher / fermer les commandes\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   4   Vue chiffrée (×200)\nF5   Sauvegarde rapide   ·   F9   Chargement rapide\nÉchap   Fermer un panneau / menu", 13, Ink);
     }
 
     private void ResizePanels()
@@ -455,15 +456,16 @@ public partial class Hud : CanvasLayer
 
     public void ShowColony(Colony colony, GameClock clock)
     {
+        _shownTicks = clock.Ticks;
         _resourceRow.Show(); _tray.Visible = !_mapOverlay && !_economyOverlay && !HelpOpen;
-        _colonyName.Text = colony.Name;
+        _colonyName.Text = colony.CurrentSettlement.Name;
         int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
-        string population = $"{colony.Members.Count} habitants" + (colony.Children > 0 ? $" · {colony.Children} enfants" : "");
+        string population = $"{colony.Members.Count} citoyens · {colony.PresentMembers.Count} présents" + (colony.Children > 0 ? $" · {colony.Children} enfants" : "");
         if (arriving > 0) population += $" · {arriving} en route";
         if (colony.Graves.Count > 0) population += $" · {colony.Graves.Count} tombes";
         int sick = Health.PatientCount(colony);
         if (sick > 0) population += $" · {sick} malade{(sick > 1 ? "s" : "")}";
-        float days = colony.Stock.FoodUnits / (Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay);
+        float days = colony.Stock.FoodUnits / (Math.Max(1, colony.PresentMembers.Count) * ColonyBrain.MealsPerColonistPerDay);
         _colonyMeta.Text = $"{population}   ·   Humeur {colony.AverageMood * 100:0} %   ·   Réserves {days:0.0} j";
         _colonyMeta.TooltipText = $"{population}\nRéserves de repas : {days:0.0} jours (nourriture, céréales et pain)\nHumeur : {colony.AverageMood * 100:0} % · Attrait : {Migration.Attractiveness(colony, clock) * 100:0} %";
         foreach (var (resource, value) in _stocks)
@@ -504,7 +506,7 @@ public partial class Hud : CanvasLayer
     public void ShowShares(Colony colony)
     {
         if (!_workBody.Visible) return;
-        _productionDashboard.Refresh(colony);
+        _productionDashboard.Refresh(colony, _shownTicks);
     }
     public void ShowThoughts(Colony colony)
     {

@@ -21,7 +21,7 @@ public static class Schism
     public const int MaxDistance = 8;
 
     /// <summary>Le meneur possible : un adulte ambitieux et peu enraciné (null s'il n'y en a pas).</summary>
-    public static Colonist? Leader(Colony colony) => colony.Members
+    public static Colonist? Leader(Colony colony) => colony.PresentMembers
         .Where(m => m.Stage == LifeStage.Adult && m.Transit == TransitState.None
             && m.Personality[Axis.Ambition] >= 0.35f && m.Personality[Axis.Attachement] <= 0.3f)
         .OrderByDescending(m => m.Personality[Axis.Ambition] - m.Personality[Axis.Attachement]).ThenBy(m => m.Id)
@@ -33,11 +33,11 @@ public static class Schism
     /// </summary>
     public static List<Colonist> Followers(Colony colony, Colonist leader)
     {
-        int cap = colony.Members.Count / 3;
+        int cap = colony.PresentMembers.Count / 3;
         var group = new List<Colonist> { leader };
         void Join(Colonist colonist)
         {
-            if (group.Count >= cap || group.Contains(colonist) || colonist.Transit != TransitState.None || !colony.Members.Contains(colonist))
+            if (group.Count >= cap || group.Contains(colonist) || colonist.Transit != TransitState.None || !colony.PresentMembers.Contains(colonist))
                 return;
             group.Add(colonist);
             if (colonist.Partner is { } partner)
@@ -51,16 +51,103 @@ public static class Schism
             Join(child);
         foreach (Colonist friend in leader.FriendsIn(colony).OrderBy(m => m.Id).ToList())
             Join(friend);
-        foreach (Colonist restless in colony.Members.Where(m => m.Stage == LifeStage.Adult && m.Personality[Axis.Attachement] < 0f)
+        foreach (Colonist restless in colony.PresentMembers.Where(m => m.Stage == LifeStage.Adult && m.Personality[Axis.Attachement] < 0f)
                      .OrderBy(m => m.Personality[Axis.Attachement]).ThenBy(m => m.Id).ToList())
             Join(restless);
         return group;
     }
 
+    /// <summary>Habitants qu'il faut à un établissement pour faire sécession avec ses voisins.</summary>
+    public const int MinSecessionPopulation = 10;
+
+    /// <summary>Le meneur d'un établissement secondaire : un adulte présent, ambitieux et peu attaché.</summary>
+    private static Colonist? LeaderOf(Settlement place) => place.Population
+        .Where(m => m.Stage == LifeStage.Adult && m.Personality[Axis.Ambition] >= 0.35f && m.Personality[Axis.Attachement] <= 0.3f)
+        .OrderByDescending(m => m.Personality[Axis.Ambition] - m.Personality[Axis.Attachement]).ThenBy(m => m.Id).FirstOrDefault();
+
+    /// <summary>Un établissement secondaire peut-il se détacher (tous ses habitants chez eux, aucune mission en cours qui le concerne) ?</summary>
+    public static bool CanSecede(WorldState world, Colony mother, Settlement place) =>
+        place != mother.PrimarySettlement && place.Status == SettlementStatus.Active && world.Colonies.Count < WorldState.MaxPlayerColonies
+        && place.Residents.Count() >= MinSecessionPopulation && place.Residents.All(c => c.TravelId == 0 && c.LocationSettlementId == place.Id)
+        && !world.Caravans.Any(t => t.From == mother && (t.FromSettlementId == place.Id || t.ToSettlementId == place.Id))
+        && !world.WarParties.Any(w => w.From == mother && w.Warriors.Any(x => x.HomeSettlementId == place.Id));
+
+    /// <summary>
+    /// Un établissement secondaire malheureux, mené par un ambitieux, voudrait se détacher de sa colonie : la colonie en prie le joueur.
+    /// Accordé, l'établissement entier — stocks, ouvrages, champs, habitants et leurs projets — devient la colonie sœur.
+    /// </summary>
+    private static void SecessionDaily(WorldState world, Colony colony)
+    {
+        foreach (Settlement place in colony.Settlements.Where(s => CanSecede(world, colony, s)).OrderBy(s => s.Id))
+        {
+            if (place.Residents.Average(c => c.Needs.Mood) >= 0.45f || LeaderOf(place) is not { } leader
+                || colony.Prayers.IsQuiet(DecisionKind.Schism, world.Clock) || Diplomacy.AtWarWithAnyone(world, colony)
+                || world.Politics.NextSingle() >= ChancePerDay) continue;
+            bool female = leader.Sex == Sex.Female;
+            colony.Prayers.Ask(DecisionKind.Schism, $"village:{place.Id}:{leader.Id}",
+                $"Laisser {place.Name} se détacher de {colony.Name} sous la conduite de {leader.Name} ?",
+                $"Les {place.Residents.Count()} habitants de {place.Name} s'y sentent à l'étroit sous notre autorité ; {leader.Name}, {(female ? "ambitieuse" : "ambitieux")}, les mène. "
+                + "Ils garderaient leurs stocks, leurs ouvrages et leurs champs, et resteraient nos proches parents.",
+                () => Secede(world, colony, place.Id, leader.Id), world.Clock, RefusalCooldownDays);
+            return;
+        }
+    }
+
+    /// <summary>La sécession accordée : l'établissement devient une colonie sœur, avec ses habitants, ses biens et ses affaires en cours.</summary>
+    internal static Colony? Secede(WorldState world, Colony mother, int settlementId, int leaderId)
+    {
+        Settlement? place = mother.Settlements.FirstOrDefault(s => s.Id == settlementId);
+        if (place is null || !CanSecede(world, mother, place) || place.Population.FirstOrDefault(c => c.Id == leaderId) is not { } leader) return null;
+        List<Colonist> people = place.Residents.ToList();
+        var daughter = new Colony(UniqueName(world, leader, world.WorldMap.Grid[place.RegionTileIndex]), place.CampX, place.CampY, place.GatherSpots.ToList())
+            { Species = mother.Species, Clock = world.Clock, Parent = mother };
+        foreach ((Discovery discovery, long ticks) in mother.Known) daughter.Known[discovery] = ticks;
+        // Ce que les habitants savent du terrain les suit : leurs renseignements sur les gîtes et les régions sondées.
+        foreach (DepositKnowledge report in mother.DepositReports)
+            daughter.DepositReports.Add(new DepositKnowledge { SiteId = report.SiteId, Region = report.Region, Material = report.Material, State = report.State,
+                EstimateMin = report.EstimateMin, EstimateMax = report.EstimateMax, Confidence = report.Confidence, SurveyedDepth = report.SurveyedDepth,
+                ObservedTicks = report.ObservedTicks, Source = report.Source, Alerted = report.Alerted });
+        daughter.VisitedRegions.AddRange(mother.VisitedRegions);
+        foreach ((int region, int reach) in mother.RegionReach) daughter.RegionReach[region] = reach;
+        float share = people.Count / (float)Math.Max(1, mother.Members.Count);
+        daughter.Settlements.Clear();
+        mother.Settlements.Remove(place);
+        daughter.Settlements.Add(place);
+        place.AdoptBy(daughter);
+        foreach (Colonist person in people)
+        {
+            mother.Members.Remove(person);
+            person.Colony = daughter;
+            daughter.Members.Add(person);
+        }
+        // Les couples séparés par la sécession se défont, comme pour un départ ordinaire.
+        foreach (Colonist person in people)
+            if (person.Partner is { } partner && partner.Colony != daughter)
+            {
+                partner.Partner = null; person.Partner = null;
+                partner.Needs.Grief = Math.Max(partner.Needs.Grief, 0.5f);
+                person.Needs.Grief = Math.Max(person.Needs.Grief, 0.5f);
+            }
+        world.AdoptColony(daughter, place);
+        // Projets d'offrande, monuments et souhaits de l'établissement, et prières qui le concernaient.
+        var projects = mother.Offerings.Where(p => p.SettlementId == place.Id).ToList();
+        var monuments = mother.Monuments.Where(m => m.SettlementId == place.Id).ToList();
+        var wishes = mother.Wishes.Where(w => w.SettlementId == place.Id).ToList();
+        mother.Offerings.RemoveAll(projects.Contains); mother.Monuments.RemoveAll(monuments.Contains); mother.Wishes.RemoveAll(wishes.Contains);
+        daughter.AdoptOfferings(projects, monuments, wishes);
+        mother.Prayers.WithdrawFor(place.Id);
+        world.Money.Split(mother, daughter, share);
+        mother.Opinions[daughter] = 40f; daughter.Opinions[mother] = 40f;
+        ColonyBrain.Say(mother, world.Clock, $"{place.Name} se détache : {leader.Name} et {people.Count - 1} habitants forment {daughter.Name}. Nous leur souhaitons bonne fortune.");
+        ColonyBrain.Say(daughter, world.Clock, $"Menés par {leader.Name}, les {people.Count} habitants de {place.Name} fondent {daughter.Name}.");
+        return daughter;
+    }
+
     /// <summary>Chaque matin : un grand village où couve un schisme prie le joueur de laisser partir les dissidents.</summary>
     public static void Daily(WorldState world, Colony colony)
     {
-        int people = colony.Members.Count;
+        SecessionDaily(world, colony);
+        int people = colony.PresentMembers.Count;
         bool cramped = people >= MinCrampedPopulation && (colony.AverageMood < 0.5f || colony.Homeless >= 4);
         if ((people < MinPopulation && !cramped) || world.Colonies.Count >= WorldState.MaxPlayerColonies
             || Diplomacy.AtWarWithAnyone(world, colony) || colony.Prayers.IsQuiet(DecisionKind.Schism, world.Clock))
@@ -92,7 +179,7 @@ public static class Schism
     /// <summary>Le schisme accordé : le meneur et ses fidèles fondent une colonie sœur. Renvoie la nouvelle colonie (null si c'est devenu impossible).</summary>
     internal static Colony? Split(WorldState world, Colony mother, int leaderId)
     {
-        if (mother.Members.FirstOrDefault(m => m.Id == leaderId) is not { } leader || world.Colonies.Count >= WorldState.MaxPlayerColonies)
+        if (mother.PresentMembers.FirstOrDefault(m => m.Id == leaderId) is not { } leader || world.Colonies.Count >= WorldState.MaxPlayerColonies)
             return null;
         List<Colonist> group = Followers(mother, leader);
         int tile = FindRegion(world, mother);
@@ -107,7 +194,7 @@ public static class Schism
             daughter.Known[discovery] = ticks;
 
         // Chacun emporte sa part des réserves.
-        float share = group.Count / (float)mother.Members.Count;
+        float share = group.Count / (float)mother.PresentMembers.Count;
         foreach (ResourceType good in new[] { ResourceType.Food, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour, ResourceType.SaltedMeat,
                      ResourceType.Wood, ResourceType.Stone, ResourceType.Tools, ResourceType.Clothes, ResourceType.Coins })
         {
@@ -127,7 +214,7 @@ public static class Schism
             colonist.Path = [];
             colonist.PathIndex = 0;
             colonist.UnhappyHours = 0;
-            daughter.Members.Add(colonist);
+            daughter.PresentMembers.Add(colonist);
         }
         // Les couples séparés par le départ se défont.
         foreach (Colonist colonist in group)
@@ -141,6 +228,7 @@ public static class Schism
         daughter.AssignSectors();
 
         world.AddColony(daughter, tile);
+        world.Money.Split(mother, daughter, share);
         mother.Opinions[daughter] = 40f;
         daughter.Opinions[mother] = 40f;
         ColonyBrain.Say(mother, world.Clock, $"{leader.Name} et {group.Count - 1} fidèles nous quittent pour fonder {daughter.Name}. Nous leur souhaitons bonne fortune.");

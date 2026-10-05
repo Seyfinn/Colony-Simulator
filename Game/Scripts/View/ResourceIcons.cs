@@ -244,6 +244,7 @@ public static class ResourceIcons
                 for (int i = 0; i < 8; i++) image.SetPixel(4 + i, 6 + i, Color.Color8(109, 87, 57));
                 break;
         }
+        if (System.Enum.TryParse<ResourceType>(resource, out var good) && (int)good >= 27) DrawNewResource(image, good);
         texture = ImageTexture.CreateFromImage(image);
         Cache[resource] = texture;
         return texture;
@@ -255,8 +256,51 @@ public static class ResourceIcons
         "IronOre" => "Minerai de fer", "Charcoal" => "Charbon", "Iron" => "Fer", "Tools" => "Outils",
         "Flour" => "Farine", "Bread" => "Pain", "Coins" => "Pièces",
         "Eggs" => "Œufs", "Milk" => "Lait", "Meat" => "Viande", "SaltedMeat" => "Viande salée", "Cake" => "Gâteau", "Beer" => "Bière", "Stew" => "Ragoût", "Chickens" => "Poules", "Sheep" => "Moutons", "Cows" => "Vaches", "Wool" => "Laine", "Clothes" => "Vêtements", "Salt" => "Sel", "Spices" => "Épices", "Hardwood" => "Bois dur",
-        _ => resource.ToString(),
+        _ => (int)resource >= 27 ? ResourceCatalog.Name(resource) : resource.ToString(),
     };
+
+    private static void DrawNewResource(Image image, ResourceType good)
+    {
+        image.Fill(Colors.Transparent);
+        Color ink = Color.Color8(48,52,45), gold = Color.Color8(225,181,79), copper = Color.Color8(184,104,65);
+        switch (good)
+        {
+            case ResourceType.Gold: case ResourceType.Copper:
+                Box(image,2,7,12,6,ink); Box(image,3,7,10,4,good == ResourceType.Gold ? gold : copper);
+                Box(image,4,6,8,2,good == ResourceType.Gold ? gold.Lightened(.3f) : copper.Lightened(.3f)); break;
+            case ResourceType.Ruby: case ResourceType.Sapphire: case ResourceType.Emerald: case ResourceType.Diamond:
+                Color gem = good switch { ResourceType.Ruby => Color.Color8(185,64,84), ResourceType.Sapphire => Color.Color8(80,130,191),
+                    ResourceType.Emerald => Color.Color8(70,159,120), _ => Color.Color8(177,219,217) };
+                for(int y=2;y<14;y++) for(int x=2;x<14;x++) if(Mathf.Abs(x-8)+Mathf.Abs(y-8)<=6) image.SetPixel(x,y,gem);
+                Box(image,6,4,3,2,gem.Lightened(.5f)); Box(image,8,10,3,2,gem.Darkened(.25f)); break;
+            case ResourceType.Jewelry:
+                Oval16(image,8,9,6,5,gold); Oval16(image,8,9,3,2,new Color(0,0,0,0));
+                Box(image,6,3,5,4,Color.Color8(185,64,84)); Box(image,7,3,2,1,Color.Color8(247,158,165)); break;
+            case ResourceType.Grapes:
+                foreach(var p in new[]{(5,5),(9,5),(3,8),(7,8),(11,8),(5,11),(9,11),(7,13)}) Oval16(image,p.Item1,p.Item2,2,2,Color.Color8(116,77,142));
+                Box(image,7,1,2,4,Color.Color8(126,156,86)); break;
+            case ResourceType.Wine: case ResourceType.Pottery: case ResourceType.Copperware:
+                Color vessel = good == ResourceType.Wine ? Color.Color8(104,67,118) : good == ResourceType.Pottery ? Color.Color8(195,130,82) : copper;
+                Oval16(image,8,10,5,5,ink); Oval16(image,8,9,4,4,vessel); Box(image,5,3,6,4,vessel);
+                Box(image,6,3,4,1,ink); Box(image,5,8,2,4,vessel.Lightened(.35f)); break;
+            case ResourceType.Shoes:
+                Box(image,2,7,5,6,ink); Box(image,8,4,5,7,ink); Box(image,3,8,3,4,copper);
+                Box(image,9,5,3,5,copper); Box(image,1,12,7,2,Color.Color8(96,70,48)); Box(image,7,10,7,2,Color.Color8(96,70,48)); break;
+            case ResourceType.Flax:
+                for(int x=4;x<=12;x+=4) { Box(image,x,5,1,9,Color.Color8(112,157,91)); Oval16(image,x,4,2,2,Color.Color8(123,165,209)); }
+                break;
+            case ResourceType.Linen: case ResourceType.Hides: case ResourceType.Leather:
+                Color cloth = good == ResourceType.Linen ? Color.Color8(229,211,165) : good == ResourceType.Leather ? Color.Color8(136,89,58) : Color.Color8(196,158,107);
+                Box(image,3,3,10,11,ink); Box(image,4,3,8,10,cloth); Box(image,6,5,1,7,cloth.Darkened(.2f));
+                Box(image,3,5,2,6,cloth); Box(image,11,7,3,5,cloth.Lightened(.15f)); break;
+            default:
+                Color rock = good == ResourceType.MineralCoal ? Color.Color8(65,72,72) : good == ResourceType.Clay ? Color.Color8(173,116,76)
+                    : good == ResourceType.GoldOre ? gold.Darkened(.2f) : copper.Darkened(.2f);
+                Oval16(image,8,9,6,5,ink); Oval16(image,8,8,5,4,rock); Box(image,5,5,3,2,rock.Lightened(.35f));
+                if(good is ResourceType.GoldOre or ResourceType.CopperOre) Box(image,10,8,2,2,good == ResourceType.GoldOre ? gold : copper);
+                break;
+        }
+    }
 
     private static void Oval16(Image image, int cx, int cy, int rx, int ry, Color color)
     {

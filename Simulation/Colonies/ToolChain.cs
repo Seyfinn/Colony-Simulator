@@ -108,7 +108,7 @@ public static class ToolChain
         int ironTarget = batch * IronPerTool;
         int ironMissing = Math.Max(0, ironTarget - colony.Stock.Get(ResourceType.Iron));
         int charcoalTarget = batch * CharcoalPerTool + ironMissing * CharcoalPerIron;
-        int charcoalMissing = Math.Max(0, charcoalTarget - colony.Stock.Get(ResourceType.Charcoal));
+        int charcoalMissing = Math.Max(0, charcoalTarget - colony.Stock.Get(ResourceType.Charcoal) - colony.Stock.Get(ResourceType.MineralCoal));
         int oreMissing = Math.Max(0, ironMissing * OrePerIron - colony.Stock.Get(ResourceType.IronOre));
         int woodForCharcoal = (int)MathF.Ceiling(charcoalMissing / (float)CharcoalPerBatch) * WoodPerBatch;
         return new ChainDemand(wanted, shortfall, ironTarget, charcoalTarget, oreMissing, woodForCharcoal, true);
@@ -136,13 +136,13 @@ public static class ToolChain
             return null;
         Stockpile stock = colony.Stock;
 
-        bool Has((ResourceType Type, int Amount)[] inputs) => inputs.All(i => stock.Get(i.Type) >= i.Amount);
+        bool Has(Recipe recipe) => MissingInputs(colony, recipe).Count == 0;
 
         if (colony.Workshops(BuildingType.Forge).FirstOrDefault() is { } forge
-            && Has(Forging.Inputs) && demand.ToolShortfall > Crafting.Pending(colony, ResourceType.Tools))
+            && Has(Forging) && demand.ToolShortfall > Crafting.Pending(colony, ResourceType.Tools))
             return forge;
         if (colony.Workshops(BuildingType.Bloomery).FirstOrDefault() is { } bloomery
-            && Has(Smelting.Inputs) && stock.Get(ResourceType.Iron) + Crafting.Pending(colony, ResourceType.Iron) < demand.IronTarget)
+            && Has(Smelting) && stock.Get(ResourceType.Iron) + Crafting.Pending(colony, ResourceType.Iron) < demand.IronTarget)
             return bloomery;
         if (colony.Workshops(BuildingType.Kiln).FirstOrDefault() is { } kiln
             && stock.Get(ResourceType.Wood) >= WoodPerBatch + heatingReserve
@@ -154,21 +154,63 @@ public static class ToolChain
     /// <summary>Prend au stock les matières de la recette. Renvoie le coût en heures de travail de ce qu'on a pris.</summary>
     internal static bool TryTakeInputs(Colony colony, Recipe recipe, out double inputHours)
     {
-        inputHours = 0;
-        if (!recipe.Inputs.All(i => colony.Stock.Get(Source(colony, i.Type, i.Amount)) >= i.Amount))
+        if (!TryTakeInputs(colony, recipe, out inputHours, out Stockpile inventory))
             return false;
-        foreach ((ResourceType type, int amount) in recipe.Inputs)
+        ConsumeInputs(colony, inventory);
+        return true;
+    }
+
+    internal static bool TryTakeInputs(Colony colony, Recipe recipe, out double inputHours, out Stockpile inventory)
+    {
+        inputHours = 0;
+        inventory = new Stockpile();
+        var inputs = ResolveInputs(colony, recipe);
+        if (!inputs.All(i => colony.Stock.Available(i.Type) >= i.Amount))
+            return false;
+        foreach ((ResourceType type, int amount) in inputs)
         {
-            colony.Stock.TryTake(Source(colony, type, amount), amount);
+            colony.Stock.TryTransferTo(inventory, type, amount);
             inputHours += amount * (colony.Labor.HoursPerUnit(type) ?? 0.0);
         }
         return true;
     }
 
+    private static (ResourceType Type, int Amount)[] ResolveInputs(Colony colony, Recipe recipe) =>
+        recipe.Inputs.Select(i => (Type: Source(colony, i.Type, i.Amount), i.Amount))
+            .GroupBy(i => i.Type).Select(g => (Type: g.Key, Amount: g.Sum(i => i.Amount))).ToArray();
+
+    /// <summary>Les intrants réellement manquants, avec les substitutions autorisées par la recette.</summary>
+    public static IReadOnlyList<(ResourceType Type, int Amount)> MissingInputs(Colony colony, Recipe recipe) =>
+        ResolveInputs(colony, recipe).Where(i => colony.Stock.Available(i.Type) < i.Amount).ToArray();
+
     /// <summary>La viande salée remplace la viande fraîche dans une recette quand celle-ci manque.</summary>
     private static ResourceType Source(Colony colony, ResourceType type, int amount) =>
-        type == ResourceType.Meat && colony.Stock.Get(ResourceType.Meat) < amount ? ResourceType.SaltedMeat : type;
+        type == ResourceType.Meat && colony.Stock.Available(ResourceType.Meat) < amount ? ResourceType.SaltedMeat
+        : type == ResourceType.Charcoal && colony.Stock.Available(ResourceType.Charcoal) < amount
+            && colony.Stock.Available(ResourceType.MineralCoal) >= amount ? ResourceType.MineralCoal : type;
 
+    /// <summary>Les intrants deviennent le produit seulement à l'achèvement du travail.</summary>
+    internal static void ConsumeInputs(Colony colony, Stockpile inventory)
+    {
+        foreach (var input in inventory.Amounts.ToArray())
+        {
+            inventory.TryTake(input.Key, input.Value);
+            ResourceAccounting.Record(colony.Stock, input.Key, ResourceFlow.Usage, input.Value);
+        }
+    }
+
+    /// <summary>Restitue les intrants réels ; prépare tous les plafonds avant le premier transfert.</summary>
+    internal static void Refund(Colony colony, Stockpile inventory)
+    {
+        var inputs = inventory.Amounts.Where(p => p.Value > 0).ToArray();
+        if (inputs.Any(p => colony.Stock.Get(p.Key) > int.MaxValue - p.Value))
+            throw new OverflowException("Le stock ne peut pas recevoir les intrants restitués.");
+        foreach (var input in inputs)
+            if (!inventory.TryTransferTo(colony.Stock, input.Key, input.Value))
+                throw new InvalidOperationException("Les intrants engagés ne peuvent pas être restitués.");
+    }
+
+    // Compatibilité des activités anciennes dont les intrants physiques n'étaient pas sauvegardés.
     internal static void Refund(Colony colony, Recipe recipe)
     {
         foreach ((ResourceType type, int amount) in recipe.Inputs)

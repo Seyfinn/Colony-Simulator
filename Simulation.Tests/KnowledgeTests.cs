@@ -133,7 +133,11 @@ public class KnowledgeTests(ITestOutputHelper output)
         foreach (Discovery discovery in new[] { Discovery.CropRotation, Discovery.Herbalism, Discovery.Fortification })
             Knowledge.Discover(colony, discovery, world.Clock);
 
-        Assert.Equal(before + Knowledge.CropRotationBonus, Farming.YieldAt(colony, colony.Map, x, y));
+        int reference = (int)MathF.Round(Farming.PlotYield * colony.Map.SoilRichness)
+            + (colony.Map.IsFertileBank(x, y) ? Farming.BankBonus : 0)
+            + (colony.Map.IsIrrigated(x, y) ? Farming.IrrigationBonus : 0);
+        Assert.Equal((int)MathF.Round((reference + Knowledge.CropRotationBonus) * Farming.CropCycleFactor), Farming.YieldAt(colony, colony.Map, x, y));
+        Assert.True(Farming.YieldAt(colony, colony.Map, x, y) > before);
         Assert.Equal(sickness * Knowledge.HerbalismFactor, Health.SicknessChancePerDay(colony, someone, world.Clock), 5);
         Assert.Equal(Age.Town, Knowledge.AgeOf(colony));
     }

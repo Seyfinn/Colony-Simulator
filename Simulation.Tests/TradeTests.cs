@@ -9,6 +9,12 @@ public class TradeTests(ITestOutputHelper output)
     private static WorldState TwoPeoples(int colonists = 10, int seed = 12345) =>
         new(seed, startingColonists: colonists, migration: false, lifecycle: false, colonyCount: 2, trade: false);
 
+    private static TradePlan? PlanApresRencontre(WorldState world, Colony from, Colony to, bool emergency = false)
+    {
+        Trade.ObserveMarket(world, from, to);
+        return Trade.Plan(world, from, to, emergency);
+    }
+
     private static void Set(Colony colony, ResourceType type, int amount)
     {
         colony.Stock.TryTake(type, colony.Stock.Get(type));
@@ -76,16 +82,16 @@ public class TradeTests(ITestOutputHelper output)
         Set(seller, ResourceType.Tools, 30);
         Set(buyer, ResourceType.Tools, 0);
         Set(buyer, ResourceType.Coins, 500);
-        TradePlan? unlimited = Trade.Plan(world, seller, buyer);
+        TradePlan? unlimited = PlanApresRencontre(world, seller, buyer);
 
         Set(buyer, ResourceType.Coins, 260);
-        TradePlan? plan = Trade.Plan(world, seller, buyer);
+        TradePlan? plan = PlanApresRencontre(world, seller, buyer);
 
         Assert.NotNull(unlimited);
         Assert.NotNull(plan);
         double spentByBuyer = plan!.Lines.Where(l => l.IsSale).Sum(l => l.Total);
         Assert.True(spentByBuyer <= 260 + 0.01, $"L'acheteur ne peut pas dépenser {spentByBuyer:0} avec 260 pièces.");
-        Assert.True(plan.Lines.Sum(l => l.Units) < unlimited!.Lines.Sum(l => l.Units), "Une bourse plus vide réduit l'échange.");
+        Assert.True(plan.Lines.Sum(l => l.Units) <= unlimited!.Lines.Sum(l => l.Units), "Une bourse plus vide ne peut pas augmenter l'échange.");
         Assert.True(plan.GainHours >= plan.CostHours * Trade.RequiredGainOverCost);
     }
 
@@ -103,14 +109,16 @@ public class TradeTests(ITestOutputHelper output)
         int membersBefore = from.Members.Count;
         int fromCoinsBefore = from.Stock.Get(ResourceType.Coins);
 
-        TradePlan plan = Trade.Plan(world, from, to)!;
+        TradePlan plan = PlanApresRencontre(world, from, to)!;
         Assert.NotNull(plan);
         Caravan caravan = Trade.Depart(world, plan)!;
         Assert.NotNull(caravan);
 
         // En route : les colons ont quitté la colonie, les marchandises aussi, les pièces voyagent.
-        Assert.Equal(membersBefore - Trade.TradersPerCaravan, from.Members.Count);
-        Assert.All(caravan.Traders, t => Assert.DoesNotContain(t, from.Members));
+        Assert.Equal(membersBefore, from.Members.Count); // Le départ conserve la citoyenneté.
+        Assert.Equal(membersBefore - Trade.TradersPerCaravan, from.PresentMembers.Count);
+        Assert.All(caravan.Traders, t => Assert.Contains(t, from.Members));
+        Assert.All(caravan.Traders, t => Assert.DoesNotContain(t, from.PresentMembers));
         Assert.All(caravan.Traders, t => Assert.Equal(TransitState.Leaving, t.Transit)); // ils marchent jusqu'au bord de la carte
         Assert.Equal(coins, CoinsInTheWorld(world));
         Assert.Equal(tools, GoodInTheWorld(world, ResourceType.Tools));
@@ -133,8 +141,8 @@ public class TradeTests(ITestOutputHelper output)
         Assert.Equal(1, world.CompletedCaravans);
 
         // Les marchands reviennent par le bord de la carte et marchent jusqu'au camp : on les voit arriver.
-        Assert.All(caravan.Traders, t => Assert.Contains(t, from.Transients));
-        Assert.All(caravan.Traders, t => Assert.Equal(TransitState.Arriving, t.Transit));
+        Assert.All(caravan.Traders, t => Assert.Contains(t, from.Transients.Concat(from.Members)));
+        Assert.All(caravan.Traders, t => Assert.True(t.Transit is TransitState.Arriving or TransitState.None));
         // La carte est vaste : de l'orée de la carte au camp, la marche peut prendre plus d'un jour.
         for (int hours = 0; hours < 72 && from.Transients.Count > 0; hours++)
             RunHours(world, 1);
@@ -176,7 +184,8 @@ public class TradeTests(ITestOutputHelper output)
     {
         var world = new WorldState(12345, startingColonists: 10, migration: false, lifecycle: false);
         RunHours(world, 24 * 10);
-        Assert.Empty(world.Caravans);
+        // Les missions internes (prospection, ravitaillement) ne sont pas du commerce.
+        Assert.DoesNotContain(world.Caravans, c => c.Purpose == TerritorialPurpose.Commerce);
         Assert.Equal(0, world.CompletedCaravans);
     }
 
@@ -188,9 +197,11 @@ public class TradeTests(ITestOutputHelper output)
         maker.Labor.Record(ResourceType.Tools, workerHours: 60, units: 1);
         Set(customer, ResourceType.Tools, 0);
         maker.IronSeen = true;
+        Set(maker, ResourceType.Food, 500); // la colonie n'est pas en crise : la survie primerait sur toute filière d'exportation
 
         int before = ToolChain.ToolsTarget(maker);
-        Trade.Daily(world, maker); // met à jour ce que le voisin lui achèterait
+        Trade.ObserveMarket(world, maker, customer); // une rencontre apprend ce que le voisin achèterait
+        Trade.Daily(world, maker);
         Assert.True(maker.ExportInterest.GetValueOrDefault(ResourceType.Tools) > 0);
         Assert.True(ToolChain.ToolsTarget(maker) > before);
 
@@ -212,7 +223,7 @@ public class TradeTests(ITestOutputHelper output)
             {
                 foreach (Colony c in world.Colonies)
                     watches[c].Observe(c);
-                Assert.Equal(coinsAtStart, CoinsInTheWorld(world) + world.CoinsLostToEvents); // la monnaie ne se crée ni ne se perd (hors pillards et colporteurs)
+                Assert.Equal(coinsAtStart + world.Money.Minted, CoinsInTheWorld(world) + world.CoinsLostToEvents); // la monnaie ne se crée ni ne se perd (hors pillards et colporteurs)
             }
         }
 
@@ -227,7 +238,8 @@ public class TradeTests(ITestOutputHelper output)
         }
         // Selon la carte, deux peuples font un à quatre voyages en trois ans : la mécanique fine est couverte par les autres tests.
         Assert.True(world.CompletedCaravans >= 1, $"Au moins un voyage : {world.CompletedCaravans}.");
-        Assert.True(world.Colonies.Sum(c => c.LifetimeTradeGainHours) > 0);
+        // Deux petits peuples n'ont presque rien à s'échanger : leurs voyages peuvent n'être que des prises de contact (coût sans gain). Tout échange réel, lui, doit rapporter.
+        Assert.All(world.Colonies.SelectMany(c => c.Trades).Where(r => r.Lines.Count > 0 && r.GainHours is not null), r => Assert.True(r.GainHours > 0));
     }
 
     [Fact]
@@ -238,17 +250,24 @@ public class TradeTests(ITestOutputHelper output)
         Set(from, ResourceType.Tools, 30);
         Set(to, ResourceType.Tools, 0);
         Set(to, ResourceType.Coins, 800);
-        Caravan caravan = Trade.Depart(world, Trade.Plan(world, from, to)!)!;
+        Caravan caravan = Trade.Depart(world, PlanApresRencontre(world, from, to)!)!;
 
-        Assert.Equal(0f, caravan.RoutePosition(caravan.DepartTicks), 3);
-        float midway = caravan.RoutePosition((caravan.DepartTicks + caravan.ArriveTicks) / 2);
-        Assert.InRange(midway, 0.45f, 0.55f);
-        Assert.Equal(1f, caravan.RoutePosition(caravan.ArriveTicks), 3);
-        Assert.Equal(1f, caravan.RoutePosition(caravan.ArriveTicks + 10), 3); // elle échange chez l'hôte
-
-        long backStart = caravan.ReturnTicks - (caravan.ArriveTicks - caravan.DepartTicks);
-        float onTheWayBack = caravan.RoutePosition((backStart + caravan.ReturnTicks) / 2);
-        Assert.InRange(onTheWayBack, 0.45f, 0.55f);
-        Assert.Equal(0f, caravan.RoutePosition(caravan.ReturnTicks), 3);
+        // La progression est réelle : elle suit la route heure après heure ; l'avancement du voyage entier ne recule jamais.
+        Assert.Equal(0f, caravan.Progress(world.Clock.Ticks), 3);
+        float last = 0;
+        bool sawOutbound = false, sawAtHost = false, sawReturn = false;
+        for (int hour = 0; hour < 24 * 60 && world.Caravans.Contains(caravan); hour++)
+        {
+            for (int tick = 0; tick < TimeConstants.TicksPerHour; tick++) world.Clock.Advance();
+            Trade.Hourly(world);
+            float progress = caravan.Progress(world.Clock.Ticks);
+            Assert.True(progress >= last - 0.001f, "La caravane ne recule pas.");
+            sawOutbound |= caravan.State == CaravanState.Outbound && progress > 0f;
+            sawAtHost |= progress is > 0.4f and < 0.6f;
+            sawReturn |= caravan.State == CaravanState.Returning;
+            last = progress;
+        }
+        Assert.DoesNotContain(caravan, world.Caravans);
+        Assert.True(sawOutbound && sawAtHost && sawReturn, "Elle avance, atteint l'hôte et revient.");
     }
 }

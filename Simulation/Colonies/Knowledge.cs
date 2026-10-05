@@ -52,7 +52,7 @@ public static class Knowledge
     /// <summary>Part du coût d'un savoir apprise d'une caravane venue d'une colonie qui le connaît (le double entre alliés).</summary>
     public const float TradeShare = 0.15f;
 
-    /// <summary>Céréales de plus par parcelle avec l'assolement.</summary>
+    /// <summary>Bonus de référence de l'assolement, avant le facteur de durée du cycle agricole.</summary>
     public const int CropRotationBonus = 1;
 
     public const float FortificationFactor = 1.5f;
@@ -78,11 +78,11 @@ public static class Knowledge
         new(Discovery.Hydraulics, "Hydraulique", "Barrer une rivière pour former un lac.", 2, [Discovery.Irrigation, Discovery.Masonry]),
         new(Discovery.Writing, "Écriture", "École : les enfants s'instruisent et le savoir progresse plus vite.", 2, [Discovery.Commerce]),
         new(Discovery.Diplomacy, "Diplomatie", "Sceller des alliances ; les voisins sont mieux disposés, les trêves plus longues.", 2, [Discovery.Commerce]),
-        new(Discovery.CropRotation, "Assolement", "Une céréale de plus par parcelle moissonnée.", 3, [Discovery.Irrigation, Discovery.Husbandry]),
+        new(Discovery.CropRotation, "Assolement", "Une à deux céréales de plus par parcelle moissonnée, selon le rendement.", 3, [Discovery.Irrigation, Discovery.Husbandry]),
         new(Discovery.Fortification, "Fortifications", "Les défenseurs comptent moitié plus contre pillards et ennemis.", 3, [Discovery.Masonry, Discovery.Metallurgy]),
         new(Discovery.Warfare, "Art de la guerre", "Les guerriers comptent 40 % de plus à l'attaque.", 3, [Discovery.Metallurgy]),
         new(Discovery.Herbalism, "Pharmacopée", "Les fièvres sont moins fréquentes (−40 %).", 3, [Discovery.Medicine]),
-        new(Discovery.Coinage, "Monnaie frappée", "Caravanes plus chargées (+25 %) et voyages moins coûteux.", 3, [Discovery.Commerce, Discovery.Metallurgy]),
+        new(Discovery.Coinage, "Monnaie frappée", "Caravanes plus chargées (+25 %), voyages moins coûteux et atelier de frappe (quota annuel partagé).", 3, [Discovery.Commerce, Discovery.Metallurgy]),
         new(Discovery.Philosophy, "Philosophie", "Le savoir progresse 30 % plus vite.", 3, [Discovery.Writing]),
     ];
 
@@ -128,6 +128,11 @@ public static class Knowledge
         BuildingType.Loom => Discovery.Weaving,
         BuildingType.Infirmary => Discovery.Medicine,
         BuildingType.Tavern or BuildingType.Cask => Discovery.Brewing,
+        BuildingType.PotteryKiln => Discovery.Masonry,
+        BuildingType.Tannery => Discovery.Husbandry,
+        BuildingType.Goldsmith => Discovery.Metallurgy,
+        BuildingType.Mint => Discovery.Coinage,
+        BuildingType.Shrine => Discovery.Masonry,
         BuildingType.Market => Discovery.Commerce,
         BuildingType.School => Discovery.Writing,
         BuildingType.Dam => Discovery.Hydraulics,
@@ -154,7 +159,7 @@ public static class Knowledge
     public static float DailyPoints(Colony colony)
     {
         float points = 0f;
-        foreach (Colonist member in colony.Members)
+        foreach (Colonist member in colony.PresentMembers)
             points += member.Stage switch
             {
                 LifeStage.Adult => AdultPoints * (1f + 0.4f * member.Personality[Axis.Curiosite]),
@@ -225,12 +230,15 @@ public static class Knowledge
     /// <summary>Chaque matin : la colonie accumule du savoir et l'applique au savoir qu'elle étudie.</summary>
     public static void Daily(WorldState world, Colony colony)
     {
-        if (colony.Members.Count == 0)
+        if (colony.PresentMembers.Count == 0)
             return;
         colony.Researching = ChooseResearch(world, colony);
         if (colony.Researching is not { } target)
             return;
-        AddProgress(colony, target, DailyPoints(colony), world.Clock, source: null);
+        float points = 0;
+        foreach (Settlement place in colony.Settlements.Where(s => s.Status == SettlementStatus.Active))
+        { using var scope = colony.UseSettlement(place); points += DailyPoints(colony); }
+        AddProgress(colony, target, points, world.Clock, source: null);
     }
 
     /// <summary>Ajoute des points à un savoir ; à son coût, il est découvert et annoncé.</summary>
@@ -255,7 +263,7 @@ public static class Knowledge
         colony.ResearchProgress.Remove(discovery);
         if (colony.Researching == discovery)
             colony.Researching = null;
-        foreach (Colonist colonist in colony.Members)
+        foreach (Colonist colonist in colony.PresentMembers)
             colonist.Needs.Faith = Math.Min(1f, colonist.Needs.Faith + DiscoveryFaithGain);
         DiscoveryInfo info = Info(discovery);
         ColonyBrain.Say(colony, clock, source is null

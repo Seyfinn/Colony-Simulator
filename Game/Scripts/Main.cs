@@ -48,6 +48,8 @@ public partial class Main : Node2D
 
     /// <summary>La colonie qu'on observe : sa carte est affichée, son HUD est montré.</summary>
     private Colony Observed => _world.Colonies[_observed];
+    private int _observedSettlementId;
+    private Settlement ObservedSettlement => _world.SettlementById(_observedSettlementId) is { } place && place.Owner == Observed ? place : Observed.PrimarySettlement;
     private CanvasModulate _daylight = null!;
     private PrayerPanel _prayerPanel = null!;
     private DayNightAmbience _ambience = null!;
@@ -93,6 +95,7 @@ public partial class Main : Node2D
             startingColonists: development ? null : options.Founders, migration: options.Migration,
             lifecycle: options.Lifecycle, colonyCount: options.Colonies, trade: options.Trade);
         _observed = Math.Clamp(observed, 0, Math.Max(0, _world.Colonies.Count - 1));
+        _observedSettlementId = 0;
         Colony? colony = _world.Colonies.Count > 0 ? Observed : null;
         LocalMap map = colony?.Map ?? _world.Map;
         _history.Observe(_world);
@@ -118,7 +121,7 @@ public partial class Main : Node2D
 
         var camera = new CameraController
         {
-            Position = new Vector2((colony?.CampX ?? map.Width / 2) + 0.5f, (colony?.CampY ?? map.Height / 2) + 0.5f) * TerrainPainter.TileSize,
+            Position = colony is null ? new Vector2(map.Width/2f,map.Height/2f)*TerrainPainter.TileSize : VillageCenter(colony),
             Zoom = new Vector2(1.25f, 1.25f),
             WorldBounds = new Rect2(Vector2.Zero, new Vector2(map.Width, map.Height) * TerrainPainter.TileSize),
         };
@@ -144,6 +147,7 @@ public partial class Main : Node2D
         _worldPanel.ResourceHistory = _history.Resources;
         _worldPanel.Observed = _observed;
         _worldPanel.ColonyRequested += ObserveColony;
+        _worldPanel.SettlementRequested += ObserveSettlement;
         _worldPanel.FoundingRequested += BeginFounding;
         _worldPanel.SiteRequested += PreviewRegion;
 
@@ -176,12 +180,23 @@ public partial class Main : Node2D
     }
 
     /// <summary>Passe à l'observation d'une autre colonie : on reconstruit sa carte et sa vue, et la caméra la rejoint.</summary>
-    private void ObserveColony(int index)
+    private void ObserveColony(int index) => ObserveLocation(index, null);
+
+    private void ObserveSettlement(int id)
     {
-        if (_foundingPanel.IsOpen || index < 0 || index >= _world.Colonies.Count || index == _observed && _colonistsView is not null)
+        if (_world.SettlementById(id) is { } place && place.Status != SettlementStatus.Closed)
+            ObserveLocation(_world.Colonies.IndexOf(place.Owner), place);
+    }
+
+    private void ObserveLocation(int index, Settlement? place)
+    {
+        if (_foundingPanel.IsOpen || index < 0 || index >= _world.Colonies.Count || index == _observed && _colonistsView is not null && ObservedSettlement == (place ?? Observed.PrimarySettlement))
             return;
         _observed = index;
+        _observedSettlementId = place?.Id ?? 0;
         _worldPanel.Observed = index;
+        _worldPanel.ObservedSettlementId = _observedSettlementId;
+        using var scope = ObservedSettlement.Observe();
         if (_statsShown)
         {
             // Depuis la vue chiffrée, observer une colonie, c'est retrouver sa carte.
@@ -205,7 +220,7 @@ public partial class Main : Node2D
         _hud.ResetColony();
 
         _ambience.Init(colony.Map);
-        _camera.Position = new Vector2(colony.CampX + 0.5f, colony.CampY + 0.5f) * TerrainPainter.TileSize;
+        _camera.Position = VillageCenter(colony);
         _camera.WorldBounds = new Rect2(Vector2.Zero, new Vector2(colony.Map.Width, colony.Map.Height) * TerrainPainter.TileSize);
         _hudCooldown = 0;
     }
@@ -291,12 +306,12 @@ public partial class Main : Node2D
                 camera.Position = new Vector2(widest.X + 0.5f, widest.Y + 0.5f) * TerrainPainter.TileSize;
             }
             else if (arg == "--select-first")
-                Select(Observed.Members[0]);
+                Select(Observed.PresentMembers.FirstOrDefault());
             else if (arg == "--focus-quarry" && Observed.Quarry is { } quarry)
             {
                 // Centre la caméra sur la carrière et suit un mineur.
                 camera.Position = new Vector2(quarry.X + 0.5f, quarry.Y + 0.5f) * TerrainPainter.TileSize;
-                Select(Observed.Members.Find(m => m.Sector == WorkSector.Stone));
+                Select(Observed.PresentMembers.FirstOrDefault(m => m.Sector == WorkSector.Stone));
             }
             else if (arg == "--focus-fields" && Observed.Fields.Count > 0)
             {
@@ -385,6 +400,7 @@ public partial class Main : Node2D
     /// <summary>Un clic sélectionne le colon le plus proche ; sinon, sur la roche, il mine (outil de test).</summary>
     private void OnLeftClick()
     {
+        using var scope = _world.Colonies.Count == 0 ? null : ObservedSettlement.Observe();
         if (_foundingPanel.IsOpen)
         {
             if (_foundingMap is not null)
@@ -399,7 +415,7 @@ public partial class Main : Node2D
         Colonist? nearest = null;
         float bestDistance = SelectRadius * TerrainPainter.TileSize;
         foreach (Colony colony in new[] { Observed })
-        foreach (Colonist colonist in colony.Members.Concat(colony.Transients))
+        foreach (Colonist colonist in colony.PresentMembers.Concat(colony.Transients).Distinct())
         {
             // On vise le corps du colon, un peu au-dessus de ses pieds.
             Vector2 body = _colonistsView.DisplayPosition(colonist) - new Vector2(0, 12);
@@ -461,6 +477,8 @@ public partial class Main : Node2D
             case Key.Tab when _statsShown && _world.Colonies.Count > 0:
                 // En vue chiffrée, Tab désigne seulement la colonie à retrouver (et celle de l'écran Économie).
                 _observed = (_observed + 1) % _world.Colonies.Count;
+                _observedSettlementId = 0;
+                _worldPanel.ObservedSettlementId = 0;
                 _worldPanel.Observed = _observed;
                 _hudCooldown = 0;
                 break;
@@ -477,8 +495,13 @@ public partial class Main : Node2D
         _hud.SetOverlayState(false, false); _hud.ToggleHelp();
     }
 
+    private static Vector2 VillageCenter(Colony colony) => VillageMeasures.ActiveEnvelope(colony) is { } envelope
+        ? new Vector2((envelope.MinX+envelope.MaxX+1)/2f,(envelope.MinY+envelope.MaxY+1)/2f)*TerrainPainter.TileSize
+        : new Vector2(colony.CampX+.5f,colony.CampY+.5f)*TerrainPainter.TileSize;
+
     private void RecenterCamera()
     {
+        using var scope = _world.Colonies.Count == 0 ? null : ObservedSettlement.Observe();
         if (_statsShown) return;
         if (_foundingPanel.IsOpen)
         {
@@ -489,7 +512,7 @@ public partial class Main : Node2D
         Vector2 target = _selected is not null && _colonistsView is not null
             ? _colonistsView.DisplayPosition(_selected)
             : _world.Colonies.Count > 0
-                ? new Vector2(Observed.CampX + 0.5f, Observed.CampY + 0.5f) * TerrainPainter.TileSize
+                ? VillageCenter(Observed)
                 : new Vector2(_world.Map.Width / 2f, _world.Map.Height / 2f) * TerrainPainter.TileSize;
         _camera.Position = target;
     }
@@ -524,6 +547,7 @@ public partial class Main : Node2D
 
     private void UpdateHud()
     {
+        using var scope = _world.Colonies.Count == 0 ? null : ObservedSettlement.Observe();
         bool mapOverlay = _worldPanel.MapOpen || _foundingPanel.IsOpen;
         bool stocksVisible = _world.Colonies.Count > 0 && !_foundingPanel.IsOpen && _foundingMap is null && !_statsShown;
         _worldPanel.SetStocksVisible(stocksVisible);
@@ -562,7 +586,8 @@ public partial class Main : Node2D
         _hud.ShowThoughts(colony);
 
         // Un colon sélectionné qui a quitté la colonie n'a plus de fiche.
-        if (_selected is not null && _selected.Transit == TransitState.None && !_selected.Colony.Members.Contains(_selected))
+        if (_selected is not null && _selected.Transit == TransitState.None
+            && (_selected.TravelId != 0 || _selected.LocationSettlementId != ObservedSettlement.Id || !_selected.Colony.Members.Contains(_selected)))
             Select(null);
         _hud.ShowColonist(_selected, _selected is null ? WoodlandBiome.TemperatePlain
             : BiomeVisuals.At(Observed.Map, _selected.TileX, _selected.TileY));

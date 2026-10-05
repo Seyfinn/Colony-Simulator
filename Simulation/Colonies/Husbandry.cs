@@ -143,9 +143,13 @@ public static class Husbandry
     public static int PerPen(ResourceType species) => species == ResourceType.Cows ? CowsPerPen : PenCapacity;
 
     /// <summary>Capacité des enclos pour les poules et les moutons (voir <see cref="CapacityOf"/> pour une espèce donnée).</summary>
-    public static int Capacity(Colony colony) => Pens(colony) * PenCapacity;
+    public static int Capacity(Colony colony) => CapacityOf(colony, ResourceType.Chickens);
 
-    public static int CapacityOf(Colony colony, ResourceType species) => Pens(colony) * PerPen(species);
+    public static int CapacityOf(Colony colony, ResourceType species) => colony.Buildings
+        .Where(b => b.Type == BuildingType.Pen && b.IsComplete).Sum(b => CapacityOf(b, species));
+
+    /// <summary>Une parcelle ajoutée de six cases accueille la moitié des bêtes d'un enclos de douze cases.</summary>
+    public static int CapacityOf(Building pen, ResourceType species) => PerPen(species) * pen.Width * pen.Height / 12;
 
     public static int Count(Colony colony, ResourceType species) => species switch
     {
@@ -236,11 +240,11 @@ public static class Husbandry
             }
         }
 
-        int penChickens = Pens(colony) * PenCapacity;
+        int penChickens = Capacity(colony);
         float laying = season == Season.Hiver ? 0.3f : 1f;
         colony.EggsReady = Math.Min(colony.EggsReady + colony.Chickens * 0.5f * laying, penChickens * 1.5f);
         colony.WoolReady = Math.Min(colony.WoolReady + colony.Sheep * 0.2f, penChickens * 0.75f);
-        colony.MilkReady = Math.Min(colony.MilkReady + colony.Cows * 0.8f * (season == Season.Hiver ? 0.4f : 1f), Pens(colony) * CowsPerPen * 2f);
+        colony.MilkReady = Math.Min(colony.MilkReady + colony.Cows * 0.8f * (season == Season.Hiver ? 0.4f : 1f), CapacityOf(colony, ResourceType.Cows) * 2f);
 
         PlanSlaughter(colony, clock);
     }
@@ -337,13 +341,13 @@ public static class Husbandry
         Pens(colony) > 0 && Species.Any(s => Count(colony, s) >= CapacityOf(colony, s) && colony.Stock.Get(s) >= MaxSpareAnimals);
 
     /// <summary>
-    /// La colonie bâtit un enclos de plus quand les premiers débordent, qu'elle est assez grande pour s'en occuper (un enclos pour huit habitants, six au plus),
+    /// La colonie agrandit ses enclos quand ils débordent et qu'elle est assez grande pour s'en occuper (la capacité d'un enclos pour huit habitants, six au plus),
     /// que les vivres sont confortables et que son grain suffit à nourrir un troupeau plus grand l'hiver. Un seul chantier à la fois.
     /// </summary>
     public static bool WantsAnotherPen(Colony colony)
     {
-        int pens = colony.Buildings.Count(b => b.Type == BuildingType.Pen);
-        return pens > 0 && pens == Pens(colony) && pens < Math.Clamp(colony.Members.Count / MembersPerPen, 1, MaxPens)
+        return Pens(colony) > 0 && !colony.Buildings.Any(b => b.Type == BuildingType.Pen && !b.IsComplete)
+            && Capacity(colony) < Math.Clamp(colony.PresentMembers.Count / MembersPerPen, 1, MaxPens) * PenCapacity
             && Saturated(colony) && colony.Stock.Get(ResourceType.Grain) >= Mouths(colony) * 2 && (colony.Sensors?.FoodDays ?? 9f) >= 4f;
     }
 
@@ -368,7 +372,7 @@ public static class Husbandry
     {
         foreach ((ResourceType species, int orders) in colony.SlaughterOrders)
         {
-            int busy = colony.Members.Count(m => m.Activity is { Kind: ActivityKind.Slaughter } activity && activity.Species == species);
+            int busy = colony.PresentMembers.Count(m => m.Activity is { Kind: ActivityKind.Slaughter } activity && activity.Species == species);
             if (orders - busy > 0 && CanSlaughter(colony, species))
                 return species;
         }
@@ -391,6 +395,7 @@ public static class Husbandry
             else
                 colony.SlaughterOrders[species] = orders - 1;
         }
+        if (species is ResourceType.Sheep or ResourceType.Cows) colony.Stock.Add(ResourceType.Hides, species == ResourceType.Cows ? 2 : 1);
         return MeatYield(species);
     }
 
@@ -420,7 +425,7 @@ public static class Husbandry
         colony.SlaughterOrders.Clear();
         if (Pens(colony) == 0)
             return;
-        float dailyMeals = Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay;
+        float dailyMeals = Math.Max(1, colony.PresentMembers.Count) * ColonyBrain.MealsPerColonistPerDay;
         float foodDays = colony.Stock.FoodUnits / dailyMeals;
 
         // La viande utile : ce que la colonie mangera pendant le délai où la viande fraîche se garde (3 jours, 7 avec un entrepôt),
@@ -482,12 +487,12 @@ public static class Husbandry
     // --- Le textile ---
 
     /// <summary>Un vêtement pour chacun, plus ceux que les voisines achèteraient.</summary>
-    public static int ClothesTarget(Colony colony) => colony.Members.Count + colony.ExportInterest.GetValueOrDefault(ResourceType.Clothes);
+    public static int ClothesTarget(Colony colony) => colony.PresentMembers.Count + colony.ExportInterest.GetValueOrDefault(ResourceType.Clothes);
 
     /// <summary>La part de la colonie qui a de quoi s'habiller chaudement, de 0 à 1.</summary>
     public static float ClothesCoverage(Colony colony)
     {
-        int people = colony.Members.Count;
+        int people = colony.PresentMembers.Count;
         return people == 0 ? 0f : Math.Min(1f, colony.Stock.Get(ResourceType.Clothes) / (float)people);
     }
 

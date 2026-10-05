@@ -1,18 +1,19 @@
+using GodColony.Simulation.Colonies;
 using GodColony.Simulation.Map;
 
 namespace GodColony.Simulation.Pathfinding;
 
 /// <summary>
 /// Recherche de chemin A* sur la carte locale, en 8 directions.
-/// Respecte le relief : on ne franchit qu'un niveau à la fois, et monter coûte plus que descendre.
+/// Respecte le relief : on ne franchit qu'un niveau à la fois, et monter coûte plus que descendre. Le coût d'un pas est la durée réelle de son
+/// parcours (<see cref="TraversalCost"/>) : les sentiers et chemins de terre le raccourcissent, exactement comme pour le mouvement des colons.
+/// Quand il est rattaché à une colonie, les emprises de ses bâtiments sont des obstacles (on les contourne ; on y entre par leur porte, voir
+/// <see cref="LocalNavigation"/>) ; la case de départ est toujours permise, pour qu'on puisse ressortir d'un bâtiment.
 /// </summary>
 public sealed class Pathfinder
 {
     private static readonly (int Dx, int Dy)[] Directions =
         [(1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (1, -1), (-1, 1), (-1, -1)];
-
-    private const float Diagonal = 1.41421356f;
-    private const float UphillPenalty = 0.5f;
 
     /// <summary>
     /// Au-delà de ce nombre de cases explorées sans arriver, on vérifie que le but est seulement atteignable :
@@ -39,6 +40,9 @@ public sealed class Pathfinder
     private readonly int[] _backQueue = new int[MaxIsolatedTiles];
     private int _backGeneration;
 
+    /// <summary>La colonie dont les bâtiments sont des obstacles (null : le terrain nu, comme pour les tests du pathfinder seul).</summary>
+    internal Colony? Owner { get; set; }
+
     public Pathfinder(LocalMap map)
     {
         _map = map;
@@ -59,15 +63,20 @@ public sealed class Pathfinder
             return null;
         if (startX == goalX && startY == goalY)
             return [];
+        LocalSpatialIndex? index = Owner?.Spatial;
+        // Un but à l'intérieur d'une emprise ne s'atteint pas par l'extérieur : c'est à la navigation d'ajouter la porte.
+        if (index is not null && index.BlocksWalking(goalX, goalY))
+            return null;
 
         _generation++;
         _open.Clear();
         int width = _map.Width;
         int start = startY * width + startX, goal = goalY * width + goalX;
+        float minStep = _map.Roads.MinFactor * LocalMap.RuggednessMin / SettlementRules.WalkTilesPerSecond;
         _cost[start] = 0;
         _seen[start] = _generation;
         _parent[start] = -1;
-        _open.Enqueue(start, Heuristic(startX, startY, goalX, goalY));
+        _open.Enqueue(start, Heuristic(startX, startY, goalX, goalY, minStep));
 
         int expanded = 0;
         while (_open.TryDequeue(out int current, out _))
@@ -79,7 +88,7 @@ public sealed class Pathfinder
                 return BuildPath(goal, width);
             if (++expanded > maxExpanded)
                 return null;
-            if (expanded == ExpandedBeforeCheck && IsCutOff(startX, startY, goalX, goalY, maxStep))
+            if (expanded == ExpandedBeforeCheck && IsCutOff(startX, startY, goalX, goalY, maxStep, index))
                 return null;
 
             int cx = current % width, cy = current / width;
@@ -96,18 +105,17 @@ public sealed class Pathfinder
                 int next = ny * width + nx;
                 if (_closed[next] == _generation)
                     continue;
+                if (index is not null && index.BlocksWalking(next) && next != goal)
+                    continue;
 
-                float step = (diagonal ? Diagonal : 1f) * _map.MoveCost(nx, ny);
-                if (_map.GetElevation(nx, ny) > _map.GetElevation(cx, cy))
-                    step += UphillPenalty;
-                float cost = _cost[current] + step;
+                float cost = _cost[current] + TraversalCost.StepSeconds(_map, cx, cy, nx, ny);
                 if (_seen[next] == _generation && cost >= _cost[next])
                     continue;
 
                 _seen[next] = _generation;
                 _cost[next] = cost;
                 _parent[next] = current;
-                _open.Enqueue(next, cost + Heuristic(nx, ny, goalX, goalY));
+                _open.Enqueue(next, cost + Heuristic(nx, ny, goalX, goalY, minStep));
             }
         }
         return null;
@@ -118,7 +126,7 @@ public sealed class Pathfinder
     /// puis celles d'où un pas mène à celles-là, et ainsi de suite, sans jamais croiser le départ. Faux si on croise
     /// le départ ou si l'on recense trop de cases pour conclure vite : la recherche continue alors comme si de rien n'était.
     /// </summary>
-    private bool IsCutOff(int startX, int startY, int goalX, int goalY, int maxStep)
+    private bool IsCutOff(int startX, int startY, int goalX, int goalY, int maxStep, LocalSpatialIndex? index)
     {
         _backGeneration++;
         int width = _map.Width;
@@ -143,8 +151,8 @@ public sealed class Pathfinder
                 if (previous == start)
                     return false;
                 _backSeen[previous] = _backGeneration;
-                // On ne passe jamais par l'eau : seul le départ peut s'y trouver.
-                if (!_map.IsWalkable(px, py))
+                // On ne passe jamais par l'eau ni par l'intérieur d'un bâtiment : seul le départ peut s'y trouver.
+                if (!_map.IsWalkable(px, py) || (index is not null && index.BlocksWalking(previous)))
                     continue;
                 if (tail == MaxIsolatedTiles)
                     return false;
@@ -163,10 +171,10 @@ public sealed class Pathfinder
         return path;
     }
 
-    /// <summary>Distance « octile » : la plus courte possible en 8 directions sur terrain plat.</summary>
-    private static float Heuristic(int x, int y, int goalX, int goalY)
-    {
-        int dx = Math.Abs(x - goalX), dy = Math.Abs(y - goalY);
-        return dx + dy + (Diagonal - 2f) * Math.Min(dx, dy);
-    }
+    /// <summary>
+    /// Distance « octile » (la plus courte possible en 8 directions sur terrain plat) multipliée par la durée minimale d'un pas : celle de la meilleure
+    /// route de la carte. Garder une heuristique non réduite avec des routes moins coûteuses surestimerait les distances et perdrait le meilleur chemin.
+    /// </summary>
+    private static float Heuristic(int x, int y, int goalX, int goalY, float minStepSeconds) =>
+        TraversalCost.Octile(x - goalX, y - goalY) * minStepSeconds;
 }

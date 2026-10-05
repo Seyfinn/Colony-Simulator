@@ -78,14 +78,14 @@ public class RiverTests(ITestOutputHelper output)
         }
         Assert.True(bank.X >= 0);
         Assert.True(map.IsFertileBank(bank.X, bank.Y));
-        Assert.Equal(Farming.PlotYield + Farming.BankBonus, Farming.YieldAt(map, bank.X, bank.Y));
+        Assert.Equal(6, Farming.YieldAt(map, bank.X, bank.Y));
 
         // Loin de toute eau : rendement normal.
         (int X, int Y) far = (-1, -1);
         for (int y = 0; y < map.Height && far.X < 0; y++)
         for (int x = 0; x < map.Width; x++)
             if (!map.HasWater(x, y) && !map.IsFertileBank(x, y)) { far = (x, y); break; }
-        Assert.Equal(Farming.PlotYield, Farming.YieldAt(map, far.X, far.Y));
+        Assert.Equal(5, Farming.YieldAt(map, far.X, far.Y));
     }
 
     [Fact]

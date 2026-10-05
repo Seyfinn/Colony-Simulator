@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using GodColony.Simulation;
 using GodColony.Simulation.Colonies;
 using GodColony.Simulation.Time;
@@ -76,11 +77,11 @@ public sealed class ColonyHistory
     }
 
     public static Sample Measure(Colony colony, long day) =>
-        new(day, colony.Members.Count, FoodDays(colony), colony.AverageMood, colony.Stock.Get(ResourceType.Coins));
+        new(day, colony.Members.Count, FoodDays(colony), colony.AverageMood, colony.Settlements.Sum(s => s.Stock.Get(ResourceType.Coins)));
 
-    /// <summary>Jours de repas en réserve, comme dans le bandeau de la colonie.</summary>
+    /// <summary>Réserves cumulées du peuple ; les écrans locaux montrent séparément chaque établissement.</summary>
     public static float FoodDays(Colony colony) =>
-        colony.Stock.FoodUnits / (Math.Max(1, colony.Members.Count) * ColonyBrain.MealsPerColonistPerDay);
+        (float)(colony.Settlements.Sum(s => s.Stock.AvailableNutrition) / (Math.Max(1, colony.Members.Count) * (decimal)Trade.TravelerNutritionPerDay));
 
     /// <summary>La valeur relevée il y a un an, ou le premier relevé si la colonie est plus jeune (avec son jour).</summary>
     public static Sample? YearAgo(IReadOnlyList<Sample> samples)

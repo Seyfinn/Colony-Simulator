@@ -55,21 +55,21 @@ public static class ColonyFounder
         {
             Sex sex = i % 2 == 0 ? Sex.Female : Sex.Male;
             (int x, int y) = colony.GatherSpots[random.Next(colony.GatherSpots.Count)];
-            string colonistName = Names.Pick(sex, random, colony.Members.Select(m => m.Name));
+            string colonistName = Names.Pick(sex, random, colony.PresentMembers.Select(m => m.Name));
             var colonist = new Colonist(nextId(), colonistName, sex, colony, Skills.Random(random, species), x + 0.5f, y + 0.5f)
             {
                 Personality = Personality.Random(random, species),
                 Species = species,
                 // Tous des adultes, d'âges variés : la colonie ne vieillira pas d'un seul bloc.
                 BirthTicks = clock.Ticks - (long)((Colonist.AdultAge + 6f * random.NextSingle()) * species.LifespanScale * TimeConstants.TicksPerYear),
-                Surname = Names.PickSurname(random, colony.Members.Select(m => m.Surname)),
+                Surname = Names.PickSurname(random, colony.PresentMembers.Select(m => m.Surname)),
             };
             colonist.Needs.Food = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Rest = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Leisure = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Social = 0.6f + 0.35f * random.NextSingle();
             colonist.Needs.Comfort = 0.5f;
-            colony.Members.Add(colonist);
+            colony.PresentMembers.Add(colonist);
         }
         colony.AssignSectors();
         return colony;
@@ -91,7 +91,8 @@ public static class ColonyFounder
         colony.Clock = clock;
         colony.Species = species;
         colony.Map = map;
-        colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map);
+        colony.Pathfinder = new GodColony.Simulation.Pathfinding.Pathfinder(map) { Owner = colony };
+        SettlementPlanner.InitializeLayout(colony, map);
         return colony;
     }
 
@@ -259,7 +260,7 @@ public static class ColonyFounder
     }
 
     /// <summary>Cases accessibles à pied autour du feu, par proximité croissante.</summary>
-    private static List<(int X, int Y)> FindGatherSpots(LocalMap map, int campX, int campY)
+    internal static List<(int X, int Y)> FindGatherSpots(LocalMap map, int campX, int campY)
     {
         var spots = new List<(int X, int Y)>();
         var visited = new HashSet<(int, int)> { (campX, campY) };

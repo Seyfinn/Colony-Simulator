@@ -11,7 +11,7 @@ public class IrrigationTests(ITestOutputHelper output)
         new(seed, startingColonists: colonists, migration: false, lifecycle: false);
 
     [Fact]
-    public void Un_canal_creuse_irrigue_les_terres_autour_et_donne_deux_cereales_de_plus()
+    public void Un_canal_creuse_irrigue_les_terres_autour_et_augmente_la_recolte()
     {
         WorldState world = Closed(8);
         LocalMap map = world.Map;
@@ -29,7 +29,7 @@ public class IrrigationTests(ITestOutputHelper output)
         Assert.Equal(Surface.River, map.GetSurface(x, y));
         Assert.True(map.IsIrrigated(x + LocalMap.IrrigationReach, y));
         Assert.False(map.IsIrrigated(x + LocalMap.IrrigationReach + 1, y));
-        Assert.Equal(Farming.PlotYield + Farming.IrrigationBonus + (map.IsFertileBank(x, y) ? Farming.BankBonus : 0),
+        Assert.Equal((int)MathF.Round((Farming.PlotYield + Farming.IrrigationBonus + (map.IsFertileBank(x, y) ? Farming.BankBonus : 0)) * Farming.CropCycleFactor),
             Farming.YieldAt(map, x, y));
     }
 

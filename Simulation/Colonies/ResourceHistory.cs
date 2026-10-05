@@ -22,23 +22,25 @@ public sealed class ResourceHistory
         public readonly Dictionary<ResourceType, List<Sample>> Samples = [];
     }
 
-    private readonly Dictionary<Colony, Observation> _colonies = [];
+    private readonly Dictionary<Settlement, Observation> _colonies = [];
     private long _lastDay = -1;
     public int Version { get; private set; }
 
     public IReadOnlyList<Sample> Of(Colony colony, ResourceType good) =>
-        _colonies.TryGetValue(colony, out var observation) && observation.Samples.TryGetValue(good, out var samples) ? samples : [];
+        _colonies.TryGetValue(colony.CurrentSettlement, out var observation) && observation.Samples.TryGetValue(good, out var samples) ? samples : [];
 
     public void Observe(WorldState world)
     {
         long day = world.Clock.TotalDays;
-        if (day == _lastDay && _colonies.Count == world.Colonies.Count) return;
+        if (day == _lastDay && _colonies.Count == world.Settlements.Count()) return;
         bool newDay = day != _lastDay;
         _lastDay = day;
-        foreach (Colony colony in world.Colonies)
+        foreach (Settlement place in world.Settlements)
         {
-            bool first = !_colonies.TryGetValue(colony, out var observation);
-            if (first) _colonies[colony] = observation = new Observation { Ticks = world.Clock.Ticks };
+            Colony colony = place.Owner;
+            using var scope = colony.UseSettlement(place);
+            bool first = !_colonies.TryGetValue(colony.CurrentSettlement, out var observation);
+            if (first) _colonies[place] = observation = new Observation { Ticks = world.Clock.Ticks };
             if (!first && !newDay) continue;
             double days = (world.Clock.Ticks - observation!.Ticks) / (double)TimeConstants.TicksPerDay;
             foreach (ResourceType good in Enum.GetValues<ResourceType>())

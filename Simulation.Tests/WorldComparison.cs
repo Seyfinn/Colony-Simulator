@@ -54,7 +54,8 @@ internal sealed class WorldComparison
         foreach (FieldInfo field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic).OrderBy(f => f.Name))
         {
             if (typeof(Delegate).IsAssignableFrom(field.FieldType) || field.FieldType == typeof(Pathfinder)
-                || (type == typeof(LocalMap) && field.Name == "_scratch")) continue;
+                || (type == typeof(LocalMap) && field.Name == "_scratch")
+                || field.GetCustomAttribute<NonSerializedAttribute>() is not null) continue;
             if (Difference(field.GetValue(expected), field.GetValue(actual), path + "." + field.Name) is { } difference) return difference;
         }
         return null;

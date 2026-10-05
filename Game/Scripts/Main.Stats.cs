@@ -28,7 +28,7 @@ public partial class Main
     private StatsPanel? _statsPanel;
     private bool _statsShown;
     private long _statsStartDay;
-    private int _observedBeforeStats;
+    private int _observedBeforeStats, _settlementBeforeStats;
     private Vector2 _cameraBeforeStats;
 
     /// <summary>La dernière vitesse avec la carte : on la retrouve en quittant la vue chiffrée.</summary>
@@ -69,6 +69,7 @@ public partial class Main
         _mapRestoreGeneration++;
         Select(null);
         _observedBeforeStats = _observed;
+        _settlementBeforeStats = _observedSettlementId;
         _cameraBeforeStats = _camera.Position;
         _statsStartDay = _world.Clock.TotalDays;
         _paceMultiplier = (int)GameSpeed.Fulgurante; _paceTicks = 0; _paceSeconds = 0; _paceWarmup = PaceWarmupSeconds;
@@ -107,7 +108,7 @@ public partial class Main
             _statsPanel?.Hide();
             if (_foundingMap is not null) return;
             RestoreObservedMap();
-            if (_observed == _observedBeforeStats) _camera.Position = _cameraBeforeStats;
+            if (_observed == _observedBeforeStats && _observedSettlementId == _settlementBeforeStats) _camera.Position = _cameraBeforeStats;
             ApplySettings();
             _hudCooldown = 0;
         })).CallDeferred();

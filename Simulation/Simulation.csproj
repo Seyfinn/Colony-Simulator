@@ -15,4 +15,13 @@
     <InternalsVisibleTo Include="Simulation.Tests" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Le schéma du format de sauvegarde v1, figé avant la refonte du village : il sert à lire (et migrer) les anciennes parties. -->
+    <EmbeddedResource Include="Persistence\SchemaV1.txt" LogicalName="SchemaV1.txt" />
+    <EmbeddedResource Include="Persistence\SchemaV3.txt" LogicalName="SchemaV3.txt" />
+    <EmbeddedResource Include="Persistence\SchemaV4.txt" LogicalName="SchemaV4.txt" />
+    <EmbeddedResource Include="Persistence\SchemaV5.txt" LogicalName="SchemaV5.txt" />
+    <EmbeddedResource Include="Persistence\SchemaV6.txt" LogicalName="SchemaV6.txt" />
+  </ItemGroup>
+
 </Project>

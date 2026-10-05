@@ -97,7 +97,8 @@ public class DiplomacyTests(ITestOutputHelper output)
         int warriors = party.Warriors.Count;
         Assert.InRange(warriors, Diplomacy.MinWarriors, Diplomacy.MaxWarriors);
         Assert.Equal(Math.Min(warriors, 8), party.Weapons);
-        Assert.DoesNotContain(a.Members, m => party.Warriors.Contains(m));
+        Assert.All(party.Warriors, w => Assert.Contains(w, a.Members)); // citoyens en marche
+        Assert.DoesNotContain(a.PresentMembers, m => party.Warriors.Contains(m));
 
         // Elle avance sur la route, se bat chez l'ennemi, puis rentre.
         long half = (party.ArriveTicks - world.Clock.Ticks) / 2;
@@ -106,13 +107,13 @@ public class DiplomacyTests(ITestOutputHelper output)
         while (world.WarParties.Contains(party))
         {
             world.Step();
-            Assert.Equal(coins, CoinsInTheWorld(world) + world.CoinsLostToEvents);
+            Assert.Equal(coins + world.Money.Minted, CoinsInTheWorld(world) + world.CoinsLostToEvents);
         }
         Assert.NotNull(party.Victory);
         output.WriteLine(string.Join("\n", b.Thoughts.TakeLast(3).Concat(a.Thoughts.TakeLast(2)).Select(t => t.Text)));
 
         int dead = a.Graves.Count(g => g.Cause == "guerre") + b.Graves.Count(g => g.Cause == "guerre");
-        Assert.Equal(people - dead, a.Members.Count + a.Transients.Count + b.Members.Count);
+        Assert.Equal(people - dead, a.Members.Count + b.Members.Count); // les citoyens de retour restent comptés une seule fois
         Assert.Equal(1, a.BattlesWon + a.BattlesLost);
         Assert.True(b.OpinionOf(a) < 0f && b.GrudgeAgainst(a) > 0f);
         if (party.Victory == false)

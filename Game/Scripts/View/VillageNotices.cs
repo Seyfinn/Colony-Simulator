@@ -11,6 +11,7 @@ public partial class VillageNotices : CanvasLayer
 {
     private WorldState _world = null!;
     private Colony _colony = null!;
+    private Settlement _settlement = null!;
     private readonly HashSet<string> _seen = [];
     private readonly Queue<(string Title, long Ticks)> _pending = [];
     private Label _text = null!;
@@ -20,7 +21,7 @@ public partial class VillageNotices : CanvasLayer
 
     public void Init(WorldState world, Colony colony)
     {
-        _world = world; _colony = colony;
+        _world = world; _colony = colony; _settlement = colony.CurrentSettlement;
         foreach (string id in colony.Achievements.Keys) _seen.Add(id);
         Layer = 2;
         var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
@@ -42,6 +43,7 @@ public partial class VillageNotices : CanvasLayer
     public override void _Process(double delta)
     {
         if (_world is null) return;
+        using var scope = _settlement.Observe();
         _cold.Visible = _colony.ColdSnapDaysLeft > 0 && Climate.ColdSeverity(_colony.Map.Biome) > 0;
         foreach (Milestone milestone in Milestones.All)
             if (_colony.Achievements.TryGetValue(milestone.Id, out long ticks) && _seen.Add(milestone.Id)) _pending.Enqueue((milestone.Title, ticks));

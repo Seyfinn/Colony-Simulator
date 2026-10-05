@@ -83,6 +83,7 @@ public sealed class SaveTests : IDisposable
             2, world.Clock.Ticks, world.Clock.Ticks + 100, world.Clock.Ticks + 300);
         caravan.Coins = 40;
         caravan.Cargo[ResourceType.Wood] = 3;
+        world.RegisterTrip(caravan);
         world.Caravans.Add(caravan);
         WorldSave.Save(SavePath, world);
         WorldState loaded = WorldSave.Load(SavePath).World;
@@ -186,8 +187,10 @@ public sealed class SaveTests : IDisposable
             map.SetGenerated(x, y, Math.Abs(x - 20) <= 2 && y >= 14 ? 5 : 8, SoilType.Grass, FloraType.None, 0);
         for (int y = 14; y < map.Height; y++) map.SetRiver(20, y, 20, y + 1);
         var colony = new Colony("Vallée", 5, 35, [(6, 35)]) { Map = map, Clock = world.Clock };
-        world.WorldMap.PlaceAt(colony, world.WorldMap.SuggestTile(Species.Human));
+        int tile = world.WorldMap.SuggestTile(Species.Human);
+        world.WorldMap.PlaceAt(colony, tile);
         world.Colonies.Add(colony);
+        world.RegisterSettlement(colony, tile);
         Assert.NotNull(Hydrology.FindReservoir(map, colony, 20, 20));
         colony.Prayers.Ask(DecisionKind.Dam, "20,20", "Un barrage ?", "Un lac pour les cultures.",
             () => ColonyBrain.ApplyDamDecision(colony, map, world.Clock, 20, 20), world.Clock);
@@ -196,7 +199,7 @@ public sealed class SaveTests : IDisposable
         loaded.AnswerPrayer(Assert.Single(loaded.Colonies[0].Prayers.Pending), true);
         Building dam = Assert.Single(loaded.Colonies[0].Buildings);
         Assert.True(dam.IsDam);
-        Assert.Equal((20, 20), (dam.X, dam.Y));
+        Assert.Equal((20, 20), (dam.RiverX, dam.RiverY));
         WorldSave.Save(SavePath, loaded);
         Assert.Equal(Fingerprint(loaded), Fingerprint(WorldSave.Load(SavePath).World));
     }

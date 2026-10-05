@@ -1,0 +1,49 @@
+{
+ "same": [
+  [
+   "Game/Scripts/WorldPanel.cs",
+   68,
+   "}",
+   "}"
+  ],
+  [
+   "Simulation/Colonies/Colonist.cs",
+   109,
+   "public Colony Colony { get; internal set; }",
+   "public Colony Colony { get; internal set; }"
+  ]
+ ],
+ "add": [
+  [
+   "Game/Scripts/Main.Saves.cs",
+   48,
+   "",
+   "if (_world!.SettlementById(view.SettlementId) is { } place && place.Status != GodColony.Si"
+  ],
+  [
+   "Game/Scripts/Main.Stats.cs",
+   31,
+   "private int _observedBeforeStats;",
+   "private int _observedBeforeStats, _settlementBeforeStats;"
+  ],
+  [
+   "Game/Scripts/Main.Stats.cs",
+   76,
+   "",
+   "_settlementBeforeStats = _observedSettlementId;"
+  ],
+  [
+   "Game/Scripts/Main.Stats.cs",
+   118,
+   "if (_observed == _observedBeforeStats) _camera.Position = _cameraBeforeStats;",
+   "if (_observed == _observedBeforeStats && _observedSettlementId == _settlementBeforeStats) "
+  ],
+  [
+   "Game/Scripts/View/ColonyHistory.cs",
+   3,
+   "",
+   "using System.Linq;"
+  ],
+  [
+   "Game/Scripts/View/EconomicUiPreview.cs",
+   70

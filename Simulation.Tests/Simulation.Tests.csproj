@@ -23,4 +23,9 @@
     <ProjectReference Include="..\Simulation\Simulation.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Des sauvegardes du format v1, figées avant la refonte du village : elles prouvent que les anciennes parties se migrent. -->
+    <None Include="Fixtures\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

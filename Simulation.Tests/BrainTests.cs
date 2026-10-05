@@ -39,7 +39,11 @@ public class BrainTests(ITestOutputHelper output)
     private static void ThinkSeveralHours(Colony colony, WorldState world, GameClock clock)
     {
         for (int i = 0; i < 8; i++)
+        {
             ColonyBrain.Think(colony, world.Map, clock);
+            // Les recherches d'emplacement avancent par petits lots entre deux pensées : on les termine ici pour juger les décisions.
+            SettlementPlanningScheduler.Drain(world);
+        }
     }
 
     [Fact]
@@ -70,8 +74,9 @@ public class BrainTests(ITestOutputHelper output)
         colony.IronSeen = true;
         ThinkSeveralHours(colony, world, world.Clock);
 
-        Assert.True(colony.WorkShares[WorkSector.Free] > 0.9f);
-        Assert.True(colony.Members.Count(m => m.Sector == WorkSector.Free) >= 18);
+        // Les ménages réclament maintenant de la poterie (argile à extraire) : une petite part reste productive même dans l'abondance.
+        Assert.True(colony.WorkShares[WorkSector.Free] > 0.75f);
+        Assert.True(colony.Members.Count(m => m.Sector == WorkSector.Free) >= 15);
         Assert.Contains(colony.Thoughts, t => t.Text.Contains("temps libre"));
     }
 

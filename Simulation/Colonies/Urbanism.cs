@@ -3,103 +3,43 @@ using GodColony.Simulation.Map;
 namespace GodColony.Simulation.Colonies;
 
 /// <summary>
-/// L'urbanisme de la colonie : où placer ses bâtiments. Pour l'instant, des huttes en anneau autour du feu,
-/// sur un terrain plat et dégagé, en laissant des passages entre elles.
+/// La façade historique de l'urbanisme : où placer ses bâtiments. Le choix de l'emplacement est confié au planificateur de quartiers
+/// (<see cref="SettlementPlanner"/>, <see cref="SitePlanner"/>) : un site se trouve par quartier, avec son accès réservé, son score et ses trajets, plus dans un anneau autour du feu.
+/// Les <c>Find*</c> sont des sondes pures (aucune modification du monde) ; les <c>Plan*</c> revalident l'emplacement demandé avec son profil et son accès. Une sonde pure
+/// n'est pas nécessairement rapide : la pensée horaire de la colonie ne les appelle pas, elle passe par des demandes persistantes (voir <see cref="SettlementPlanner.Poll"/>).
 /// </summary>
 public static class Urbanism
 {
-    private const int MinDistanceFromFire = 3;
-    private const int MaxDistanceFromFire = 14;
+    /// <summary>Le genre de développement d'un type de bâtiment (pour la priorité et l'identité de sa demande).</summary>
+    internal static DevelopmentKind KindOf(BuildingType type) => type switch
+    {
+        BuildingType.Hut => DevelopmentKind.Housing,
+        BuildingType.Storehouse => DevelopmentKind.Logistics,
+        _ => new Building(type, 0, 0) is { IsWorkshop: true } ? DevelopmentKind.Workshop : DevelopmentKind.Civic,
+    };
 
     /// <summary>Renvoie la case en haut à gauche d'un emplacement libre pour une hutte de 2 × 2, ou null s'il n'y en a pas.</summary>
-    public static (int X, int Y)? FindHutSite(LocalMap map, Colony colony) => FindSite(map, colony, MinDistanceFromFire);
-
-    /// <summary>Un atelier se tient un peu plus loin du feu que les huttes : fumée et étincelles.</summary>
-    public static (int X, int Y)? FindWorkshopSite(LocalMap map, Colony colony) => FindSite(map, colony, WorkshopMinDistance);
-
-    private const int WorkshopMinDistance = 5;
+    public static (int X, int Y)? FindHutSite(LocalMap map, Colony colony) => FindSite(map, colony, BuildingType.Hut);
 
     /// <summary>
-    /// Un moulin à eau se pose au bord d'une rivière, d'un lac de retenue ou d'un canal en eau, sur un terrain plat :
-    /// le plus près possible du camp. Null s'il n'y a pas d'eau vive à portée.
+    /// Le meilleur emplacement d'un bâtiment de ce type, ou null : le type précis compte (le moulin a besoin d'eau vive, la charbonnière se tient à l'écart des logements, le fût près de sa taverne).
+    /// Sonde pure : ne modifie rien, ne consomme aucun hasard.
     /// </summary>
-    public static (int X, int Y)? FindMillSite(LocalMap map, Colony colony)
+    public static (int X, int Y)? FindSite(LocalMap map, Colony colony, BuildingType type)
     {
-        (int X, int Y)? best = null;
-        float bestDistance = float.MaxValue;
-        int radius = FoodChain.MillSearchRadius;
-        for (int dy = -radius; dy <= radius; dy++)
-        for (int dx = -radius; dx <= radius; dx++)
-        {
-            int x = colony.CampX + dx, y = colony.CampY + dy;
-            if (!map.InBounds(x, y) || !IsBuildable(map, colony, x, y))
-                continue;
-            float distance = MathF.Sqrt((dx + 0.5f) * (dx + 0.5f) + (dy + 0.5f) * (dy + 0.5f));
-            if (distance < WorkshopMinDistance || distance >= bestDistance)
-                continue;
-            var probe = new Building(BuildingType.Mill, x, y);
-            if (Hydrology.MillFlow(map, probe) <= 0f)
-                continue;
-            bestDistance = distance;
-            best = (x, y);
-        }
-        return best;
+        PlacementProposal? proposal = SettlementPlanner.Probe(colony, KindOf(type), type, urgent: false, out _);
+        return proposal is null ? null : (proposal.X, proposal.Y);
     }
 
-    private static (int X, int Y)? FindSite(LocalMap map, Colony colony, int minDistance)
-    {
-        (int X, int Y)? best = null;
-        float bestScore = float.MaxValue;
-
-        for (int dy = -MaxDistanceFromFire; dy <= MaxDistanceFromFire; dy++)
-        for (int dx = -MaxDistanceFromFire; dx <= MaxDistanceFromFire; dx++)
-        {
-            int x = colony.CampX + dx, y = colony.CampY + dy;
-            if (!IsBuildable(map, colony, x, y))
-                continue;
-
-            // Au plus près du feu, sans empiéter sur le cercle où l'on mange et se détend.
-            float distance = MathF.Sqrt((dx + 0.5f) * (dx + 0.5f) + (dy + 0.5f) * (dy + 0.5f));
-            if (distance < minDistance)
-                continue;
-            if (distance < bestScore)
-            {
-                bestScore = distance;
-                best = (x, y);
-            }
-        }
-        return best;
-    }
-
-    private static bool IsBuildable(LocalMap map, Colony colony, int x, int y)
-    {
-        int elevation = map.InBounds(x, y) ? map.GetElevation(x, y) : -1;
-        for (int ty = y; ty < y + 2; ty++)
-        for (int tx = x; tx < x + 2; tx++)
-        {
-            if (!map.IsWalkable(tx, ty) || map.IsWaterway(tx, ty) || colony.CanalTiles.Contains((tx, ty))
-                || map.IsMountain(tx, ty) || map.GetElevation(tx, ty) != elevation)
-                return false;
-            if (map.GetFlora(tx, ty) is FloraType.Tree or FloraType.Bush)
-                return false;
-        }
-
-        // On garde une case de passage autour de chaque bâtiment, et on ne bâtit pas sur le cercle du feu.
-        foreach (Building other in colony.Buildings)
-            if (x < other.X + other.Width + 1 && x + 2 > other.X - 1 && y < other.Y + other.Height + 1 && y + 2 > other.Y - 1)
-                return false;
-        foreach (Grave grave in colony.Graves)
-            if (grave.X >= x - 1 && grave.X <= x + 2 && grave.Y >= y - 1 && grave.Y <= y + 2)
-                return false;
-        foreach (Field field in colony.Fields)
-            if (x < field.X + Field.Size + 1 && x + 2 > field.X - 1 && y < field.Y + Field.Size + 1 && y + 2 > field.Y - 1)
-                return false;
-        return true;
-    }
+    /// <summary>
+    /// Un moulin à eau se pose au bord d'une rivière, d'un lac de retenue ou d'un canal en eau, sur un terrain plat, avec un débit réel (<see cref="Hydrology.MillFlow"/>) ;
+    /// la recherche s'étend de pôle en pôle plutôt que dans un rayon fixe autour du feu. Null s'il n'y a pas d'eau vive à portée.
+    /// </summary>
+    public static (int X, int Y)? FindMillSite(LocalMap map, Colony colony) => FindSite(map, colony, BuildingType.Mill);
 
     /// <summary>
     /// Une case pour une tombe : le cimetière se tient à l'écart du camp et grandit autour de la première tombe,
-    /// sur un terrain dégagé, loin des huttes et des champs.
+    /// sur un terrain dégagé, loin des huttes, des champs et des accès réservés.
     /// </summary>
     public static (int X, int Y)? FindGraveSite(LocalMap map, Colony colony)
     {
@@ -108,12 +48,13 @@ public static class Urbanism
 
         (int X, int Y)? best = null;
         int bestDistance = int.MaxValue;
+        LocalSpatialIndex index = colony.Spatial;
         for (int dy = -18; dy <= 18; dy++)
         for (int dx = -18; dx <= 18; dx++)
         {
             int x = colony.CampX + dx, y = colony.CampY + dy;
             int fromCamp = Math.Max(Math.Abs(dx), Math.Abs(dy));
-            if (fromCamp < 8 || !IsGraveTile(map, colony, x, y))
+            if (fromCamp < 8 || !IsGraveTile(map, colony, index, x, y))
                 continue;
             int distance = (x - cx) * (x - cx) + (y - cy) * (y - cy);
             if (distance < bestDistance)
@@ -125,9 +66,11 @@ public static class Urbanism
         return best;
     }
 
-    private static bool IsGraveTile(LocalMap map, Colony colony, int x, int y)
+    private static bool IsGraveTile(LocalMap map, Colony colony, LocalSpatialIndex index, int x, int y)
     {
         if (!map.InBounds(x, y) || !map.IsWalkable(x, y) || map.IsWaterway(x, y) || colony.CanalTiles.Contains((x, y)) || map.IsMountain(x, y) || map.GetFlora(x, y) != FloraType.None)
+            return false;
+        if (index.Has(x, y, CellUse.Corridor | CellUse.Courtyard | CellUse.PublicSpace | CellUse.Plaza | CellUse.Building | CellUse.Field))
             return false;
         foreach (Grave grave in colony.Graves)
             if (Math.Max(Math.Abs(grave.X - x), Math.Abs(grave.Y - y)) < 2)
@@ -141,21 +84,49 @@ public static class Urbanism
         return true;
     }
 
-    /// <summary>Ouvre un chantier : on dégage le terrain (souches comprises) et on pose les fondations.</summary>
+    /// <summary>Ouvre un chantier de hutte à l'emplacement demandé : on dégage le terrain (souches comprises) et on pose les fondations.</summary>
     public static Building PlanHut(LocalMap map, Colony colony, int x, int y) => PlanBuilding(map, colony, BuildingType.Hut, x, y);
 
-    /// <summary>Outil de développement : pose tout de suite un bâtiment achevé sur le meilleur emplacement libre.</summary>
+    /// <summary>
+    /// Outil de développement : pose tout de suite un bâtiment achevé, sur le meilleur emplacement de son type (une hutte en quartier résidentiel, un atelier à sa place).
+    /// L'outil garde son exemption économique de développement mais respecte les contraintes physiques, l'association à un quartier et les notifications d'achèvement.
+    /// </summary>
     public static Building? BuildInstantly(LocalMap map, Colony colony, BuildingType type)
     {
-        (int X, int Y)? site = type == BuildingType.Mill ? FindMillSite(map, colony) : FindWorkshopSite(map, colony);
-        if (site is not { } s)
+        if (FindSite(map, colony, type) is not { } s)
             return null;
         Building building = PlanBuilding(map, colony, type, s.X, s.Y);
         building.Progress = 1f;
+        SettlementPlanner.OnObjectCompleted(colony, building);
         return building;
     }
 
+    /// <summary>
+    /// Ouvre le chantier d'un bâtiment à l'emplacement demandé. L'emplacement est revalidé avec le profil du type et son accès (quartier, porte, tracé réservé) ; un outil ou un
+    /// test qui insiste sur un site que les règles refusent obtient tout de même son bâtiment, enregistré comme un écart historique (accès traversable comme avant).
+    /// </summary>
     public static Building PlanBuilding(LocalMap map, Colony colony, BuildingType type, int x, int y)
+    {
+        // Pour un barrage, les coordonnées demandées désignent la rivière ; son emprise inclut les deux berges.
+        if (type == BuildingType.Dam)
+        {
+            Building dam = Hydrology.DamAt(map, x, y);
+            foreach ((int tx, int ty) in dam.Tiles)
+                map.ClearFlora(tx, ty);
+            colony.Buildings.Add(dam);
+            SettlementPlanner.Adopt(colony, dam);
+            return dam;
+        }
+        CommitResult result = SettlementPlanner.PlanAt(colony, KindOf(type), type, x, y);
+        if (result.Building is { } planned)
+            return planned;
+        Building building = Raise(map, colony, type, x, y);
+        SettlementPlanner.Adopt(colony, building);
+        return building;
+    }
+
+    /// <summary>La création brute : on dégage le terrain de l'emprise et le chantier rejoint la colonie. Seule l'admission d'un projet (ou une migration) l'appelle.</summary>
+    internal static Building Raise(LocalMap map, Colony colony, BuildingType type, int x, int y)
     {
         var building = new Building(type, x, y);
         foreach ((int tx, int ty) in building.Tiles)

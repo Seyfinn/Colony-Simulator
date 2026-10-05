@@ -53,6 +53,7 @@ public partial class MapView : Node2D
 
         map.TileChanged += OnTileChanged;
         map.FloraChanged += OnFloraChanged;
+        map.RoadChanged += OnTileChanged;
     }
 
     public override void _ExitTree()
@@ -61,6 +62,7 @@ public partial class MapView : Node2D
             return;
         _map.TileChanged -= OnTileChanged;
         _map.FloraChanged -= OnFloraChanged;
+        _map.RoadChanged -= OnTileChanged;
     }
 
     /// <summary>Le sol d'une case a changé : on la repeint avec ses voisines.</summary>

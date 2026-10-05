@@ -31,8 +31,9 @@ public static class Civic
     /// </summary>
     public static BuildingType? NextToBuild(Colony colony)
     {
+        // Un type que le terrain a déjà refusé (sans événement qui change la donne) ne bloque pas les suivants.
         foreach (BuildingType type in Candidates(colony))
-            if (Knowledge.Allows(colony, type))
+            if (Knowledge.Allows(colony, type) && !SettlementPlanner.IsKnownImpossible(colony, type))
                 return type;
         return null;
     }
@@ -40,7 +41,7 @@ public static class Civic
     /// <summary>Les bâtiments du village que la colonie voudrait, du plus pressé au moins pressé, qu'elle sache les bâtir ou non.</summary>
     public static IEnumerable<BuildingType> Candidates(Colony colony)
     {
-        int people = colony.Members.Count;
+        int people = colony.PresentMembers.Count;
         if (people < 6)
             yield break;
 
@@ -63,6 +64,8 @@ public static class Civic
             yield return BuildingType.Cask;
         if (!Planned(colony, BuildingType.School) && (colony.Children >= 3 || people >= 16))
             yield return BuildingType.School;
+        if (Offerings.WantsShrine(colony))
+            yield return BuildingType.Shrine;
         // Un village prospère agrandit son élevage : un enclos de plus quand les premiers débordent (voir Husbandry.WantsAnotherPen).
         if (Husbandry.WantsAnotherPen(colony))
             yield return BuildingType.Pen;
@@ -78,6 +81,7 @@ public static class Civic
         BuildingType.Market => "Le commerce prospère : nous bâtissons un marché pour y troquer avec les nomades de la région.",
         BuildingType.Tavern => "Les habitants méritent de souffler : nous bâtissons une taverne.",
         BuildingType.Cask => "La taverne a soif : nous bâtissons un fût où fermenteront nos céréales en bière.",
+        BuildingType.Shrine => "Nous voulons honorer les dieux : nous bâtissons un sanctuaire de pierre où préparer une offrande.",
         _ => "Les enfants grandissent : nous bâtissons une école.",
     };
 
@@ -90,7 +94,7 @@ public static class Civic
 
     public static int StorageCapacity(Colony colony)
     {
-        int capacity = BaseStorage + StoragePerColonist * colony.Members.Count
+        int capacity = BaseStorage + StoragePerColonist * colony.PresentMembers.Count
             + StoragePerStorehouse * colony.Buildings.Count(b => b.Type == BuildingType.Storehouse && b.IsComplete);
         return Specialties.Salted(colony) ? capacity * 13 / 10 : capacity;
     }
@@ -126,7 +130,8 @@ public static class Civic
     private const float MeatSpoilRate = 0.5f;
 
     /// <summary>Jours que la viande fraîche se garde avant de commencer à se gâter : trois, ou sept avec un entrepôt.</summary>
-    public static int MeatShelfDays(Colony colony) => Has(colony, BuildingType.Storehouse) ? 7 : 3;
+    public static int MeatShelfDays(Colony colony) => (Has(colony, BuildingType.Storehouse) ? 7 : 3)
+        + (colony.LocalSettlement.Equipment.PotteryExpiry.Count >= Math.Max(1, (colony.PresentMembers.Count + 3) / 4) ? 1 : 0);
 
     /// <summary>
     /// Chaque matin, la viande fraîche est mise au sel tant qu'il y en a (une unité de sel pour huit de viande) : la viande salée se garde
@@ -135,10 +140,10 @@ public static class Civic
     /// </summary>
     public static void PreserveMeat(Colony colony, GameClock clock)
     {
-        int meat = colony.Stock.Get(ResourceType.Meat);
-        if (meat == 0)
+        int meat = colony.Stock.Available(ResourceType.Meat);
+        if (colony.Stock.Get(ResourceType.Meat) == 0)
             return;
-        int salted = Math.Min(meat, colony.Stock.Get(ResourceType.Salt) * MeatPerSalt);
+        int salted = (int)Math.Min(meat, (long)colony.Stock.Available(ResourceType.Salt) * MeatPerSalt);
         if (salted > 0)
         {
             colony.Stock.TryTake(ResourceType.Salt, (salted + MeatPerSalt - 1) / MeatPerSalt);
@@ -198,6 +203,7 @@ public static class Civic
     {
         colony.RecordEvent(new(ColonyEventKind.Fire, building.X, building.Y, clock.Ticks, ColonyEventOutcome.Ruined, building.Type));
         colony.Buildings.Remove(building);
+        SettlementPlanner.OnObjectRemoved(colony, building);
         foreach (Colonist resident in building.Residents.ToList())
             resident.Home = null;
         building.Residents.Clear();
@@ -207,5 +213,6 @@ public static class Civic
         ColonyBrain.Say(colony, clock, $"Un incendie ravage {Building.WithArticle(building.Type)} : il est réduit en cendres !");
     }
 
-    internal static (int X, int Y)? FindSite(LocalMap map, Colony colony) => Urbanism.FindWorkshopSite(map, colony);
+    /// <summary>L'emplacement d'un bâtiment de la vie du village : le type précis compte (le fût près de sa taverne, l'entrepôt près du besoin qu'il sert).</summary>
+    internal static (int X, int Y)? FindSite(LocalMap map, Colony colony, BuildingType type) => Urbanism.FindSite(map, colony, type);
 }

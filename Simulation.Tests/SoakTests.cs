@@ -23,7 +23,7 @@ public class SoakTests(ITestOutputHelper output)
             if (i % TimeConstants.TicksPerDay != 0)
                 continue;
 
-            Assert.Equal(coins, Coins(world) + world.CoinsLostToEvents); // hors pillards et colporteurs
+            Assert.Equal(coins + world.Money.Minted, Coins(world) + world.CoinsLostToEvents); // hors pillards, colporteurs et frappe enregistrée
             foreach (Colony colony in world.Colonies)
             {
                 watches[colony].Observe(colony);
@@ -31,8 +31,10 @@ public class SoakTests(ITestOutputHelper output)
                 // Personne n'est compté deux fois, ni ailleurs que chez lui, ni à la fois au camp et en caravane.
                 Assert.Equal(colony.Members.Count, colony.Members.Distinct().Count());
                 Assert.All(colony.Members, m => Assert.Same(colony, m.Colony));
+                // Les voyageurs gardent leur citoyenneté : ils restent dans Members mais ne comptent pas parmi les présents.
                 var away = world.Caravans.Where(c => c.From == colony).SelectMany(c => c.Traders).ToList();
-                Assert.Empty(away.Intersect(colony.Members));
+                Assert.All(away, t => Assert.Contains(t, colony.Members));
+                Assert.Empty(away.Intersect(colony.PresentMembers));
 
                 // Aucune quantité négative en stock, aucun logement partagé par trop de monde.
                 foreach (ResourceType type in Enum.GetValues<ResourceType>())

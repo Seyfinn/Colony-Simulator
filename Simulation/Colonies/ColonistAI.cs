@@ -1,4 +1,5 @@
 using GodColony.Simulation.Map;
+using GodColony.Simulation.Pathfinding;
 using GodColony.Simulation.Time;
 
 namespace GodColony.Simulation.Colonies;
@@ -13,6 +14,7 @@ public static class ColonistAI
     // la marche et la durée des actions sont donc exprimées en secondes réelles à vitesse ×1.
     private const float WalkTilesPerSecond = 10f;
     private const float EatSeconds = 1.5f;
+    private const float CriticalFoodThreshold = 0.1f;
     private const float ForageSeconds = 1.5f;
     private const float FishSeconds = 3f;
     private const int FoodPerFish = 2;
@@ -82,8 +84,10 @@ public static class ColonistAI
         if (colonist.ChatCooldownTicks > 0)
             colonist.ChatCooldownTicks--;
 
-        // À bout de forces, il s'endort là où il est.
-        if (colonist.Needs.Rest <= 0f && colonist.Activity?.Kind != ActivityKind.Sleep)
+        // À bout de forces, il s'endort là où il est, après avoir terminé un repas vital (trajet compris).
+        bool urgentMeal = colonist.Needs.Food < CriticalFoodThreshold
+            && colonist.Activity?.Kind is ActivityKind.Eat or ActivityKind.ForageToEat;
+        if (colonist.Needs.Rest <= 0f && colonist.Activity?.Kind != ActivityKind.Sleep && !urgentMeal)
         {
             Cancel(colonist);
             TryStart(colonist, world, new Activity(ActivityKind.Sleep, colonist.TileX, colonist.TileY, 0));
@@ -147,8 +151,8 @@ public static class ColonistAI
         colonist.WorkCycleStartTicks = -1;
         colonist.WorkCycleExtraHours = 0;
 
-        colony.Members.Remove(colonist);
-        if (colonist.Home is { } home)
+        colony.PresentMembers.Remove(colonist);
+        if (colonist.TravelId == 0 && colonist.Home is { } home)
         {
             home.Residents.Remove(colonist);
             colonist.Home = null;
@@ -262,7 +266,8 @@ public static class ColonistAI
         bool cold = ColonyBrain.IsColdSeason(world.Clock.Season);
         bool warm = !cold || colonist.Colony.FireLit;
         bool housed = colonist.Home is not null;
-        return 0.2f + (housed ? 0.4f : 0f) + (warm ? 0.3f : 0f) + (housed && cold ? 0.1f : 0f) + Civic.ComfortBonus(colonist.Colony, cold);
+        return 0.2f + (housed ? 0.4f : 0f) + (warm ? 0.3f : 0f) + (housed && cold ? 0.1f : 0f) + Civic.ComfortBonus(colonist.Colony, cold)
+            + (colonist.HasShoes ? .03f : 0) + (colonist.Colony.LocalSettlement.Equipment.CopperwareExpiry.Count > 0 ? .02f : 0);
     }
 
     /// <summary>Choisit la prochaine activité, du besoin le plus pressant au travail.</summary>
@@ -272,8 +277,8 @@ public static class ColonistAI
         Needs needs = colonist.Needs;
         var clock = world.Clock;
 
-        // Épuisement : dormir passe avant tout.
-        if (needs.Rest < 0.15f)
+        // Épuisement : dormir passe avant les besoins ordinaires, mais une faim critique doit pouvoir être rassasiée.
+        if (needs.Rest < 0.15f && needs.Food >= CriticalFoodThreshold)
         {
             GoToSleep(colonist, world);
             return;
@@ -283,7 +288,7 @@ public static class ColonistAI
         bool bedtime = clock.IsNight || clock.IsEvening;
         if (needs.Food < 0.4f || (bedtime && needs.Food < 0.65f))
         {
-            if (colony.Stock.FoodUnits > 0 && StartNearCamp(colonist, world, ActivityKind.Eat, EatSeconds))
+            if (colony.Stock.FoodUnits > 0 && StartAtService(colonist, world, ActivityKind.Eat, EatSeconds, ServiceUse.Meal))
                 return;
             if (TryForage(colonist, world, ActivityKind.ForageToEat, colonist.TileX, colonist.TileY))
                 return;
@@ -301,7 +306,7 @@ public static class ColonistAI
         if (colonist.CarryingTo is { } site && TrySupplySite(colonist, world, site))
             return;
         if (colonist.Carrying is not null && colonist.CarryingTo is null
-            && StartNearCamp(colonist, world, ActivityKind.Deliver, DeliverSeconds))
+            && StartAtService(colonist, world, ActivityKind.Deliver, DeliverSeconds, ServiceUse.Stock))
             return;
 
         // Malade ou blessé : on se repose (à l'infirmerie, s'il y en a une) jusqu'à la guérison.
@@ -330,6 +335,9 @@ public static class ColonistAI
             // Les enfants vont à l'école, quand il y en a une.
             if (colonist.Stage == LifeStage.Child && Civic.IsSchoolTime(clock) && TryStudy(colonist, world))
                 return;
+            // Un vrai temps libre peut servir à aménager un chemin très fréquenté (facultatif, jamais en crise).
+            if (colonist.Stage != LifeStage.Child && needs.Leisure >= 0.6f && clock.Hour >= 6 && clock.Hour < 17 && TryRoadWork(colonist, world, idle: true))
+                return;
             if (needs.Leisure < 0.95f && StartRelax(colonist, world))
                 return;
             Wander(colonist, world);
@@ -350,7 +358,7 @@ public static class ColonistAI
     private static bool TryChat(Colonist colonist, WorldState world)
     {
         var candidates = new List<(Colonist Colonist, float Weight)>();
-        foreach (Colonist other in colonist.Colony.Members)
+        foreach (Colonist other in colonist.Colony.PresentMembers)
         {
             if (other == colonist || other.IsSleeping || other.Transit != TransitState.None || other.Stage == LifeStage.Child)
                 continue;
@@ -415,11 +423,11 @@ public static class ColonistAI
     {
         if (Civic.Site(colonist.Colony, BuildingType.Tavern) is { } tavern)
         {
-            (int x, int y) = tavern.Tiles.ElementAt(colonist.Id % 4);
+            (int x, int y) = StandAt(colonist, tavern);
             if (TryStart(colonist, world, new Activity(ActivityKind.Relax, x, y, Ticks(RelaxSeconds)) { Building = tavern }))
                 return true;
         }
-        return StartNearCamp(colonist, world, ActivityKind.Relax, RelaxSeconds);
+        return StartAtService(colonist, world, ActivityKind.Relax, RelaxSeconds, ServiceUse.Meet);
     }
 
     /// <summary>Un malade garde le lit : à l'infirmerie s'il y a de la place (quatre lits), sinon près du feu. Sans hasard, pour ne pas décaler les graines.</summary>
@@ -427,9 +435,9 @@ public static class ColonistAI
     {
         Colony colony = colonist.Colony;
         if (Civic.Site(colony, BuildingType.Infirmary) is { } infirmary
-            && colony.Members.Count(m => m != colonist && m.Activity is { Kind: ActivityKind.Relax, Building.Type: BuildingType.Infirmary }) < Building.HutCapacity)
+            && colony.PresentMembers.Count(m => m != colonist && m.Activity is { Kind: ActivityKind.Relax, Building.Type: BuildingType.Infirmary }) < Building.HutCapacity)
         {
-            (int x, int y) = infirmary.Tiles.ElementAt(colonist.Id % 4);
+            (int x, int y) = StandAt(colonist, infirmary);
             if (TryStart(colonist, world, new Activity(ActivityKind.Relax, x, y, Ticks(RelaxSeconds * 2)) { Building = infirmary }))
                 return true;
         }
@@ -443,7 +451,7 @@ public static class ColonistAI
     {
         if (Civic.Site(colonist.Colony, BuildingType.School) is not { } school)
             return false;
-        (int x, int y) = school.Tiles.ElementAt(colonist.Id % 4);
+        (int x, int y) = StandAt(colonist, school);
         return TryStart(colonist, world, new Activity(ActivityKind.Study, x, y, Ticks(StudySeconds)) { Building = school });
     }
 
@@ -454,7 +462,7 @@ public static class ColonistAI
         if (!Husbandry.WorkPending(colony) || Husbandry.NearestPen(colony, colonist.TileX, colonist.TileY) is not { } pen)
             return false;
         float seconds = TendSeconds / WorkSpeed(colonist, SkillType.Husbandry);
-        (int x, int y) = pen.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        (int x, int y) = StandAt(colonist, pen);
         return TryStart(colonist, world, new Activity(ActivityKind.Tend, x, y, Ticks(seconds)) { Building = pen });
     }
 
@@ -465,7 +473,7 @@ public static class ColonistAI
         if (Husbandry.NextSlaughter(colony) is not { } species || Husbandry.NearestPen(colony, colonist.TileX, colonist.TileY) is not { } pen)
             return false;
         float seconds = SlaughterSeconds / WorkSpeed(colonist, SkillType.Husbandry);
-        (int x, int y) = pen.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        (int x, int y) = StandAt(colonist, pen);
         return TryStart(colonist, world, new Activity(ActivityKind.Slaughter, x, y, Ticks(seconds)) { Building = pen, Species = species });
     }
 
@@ -474,11 +482,33 @@ public static class ColonistAI
     {
         Colony colony = colonist.Colony;
         if (Civic.Site(colony, BuildingType.Infirmary) is not { } infirmary || Health.PatientCount(colony) == 0
-            || colony.Members.Any(m => m.Activity?.Kind == ActivityKind.Heal))
+            || colony.PresentMembers.Any(m => m.Activity?.Kind == ActivityKind.Heal))
             return false;
         float seconds = HealSeconds / WorkSpeed(colonist, SkillType.Medicine);
-        (int x, int y) = infirmary.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        (int x, int y) = StandAt(colonist, infirmary);
         return TryStart(colonist, world, new Activity(ActivityKind.Heal, x, y, Ticks(seconds)) { Building = infirmary });
+    }
+
+    /// <summary>
+    /// La case où l'on se tient pour travailler dans un bâtiment ou le servir : sa cellule de travail accessible, hors de son emprise (généralement à l'entrée), la plus proche
+    /// du colon. Un bâtiment sans porte (parcelle ancienne) se travaille dans son emprise, comme avant.
+    /// </summary>
+    private static (int X, int Y) StandAt(Colonist colonist, Building building)
+    {
+        SettlementLayout layout = colonist.Colony.Layout;
+        int best = -1;
+        int bestDistance = int.MaxValue;
+        foreach (int cell in SettlementServices.WorkCells(colonist.Colony, building))
+        {
+            (int cx, int cy) = layout.Decode(cell);
+            int distance = Math.Abs(cx - colonist.TileX) + Math.Abs(cy - colonist.TileY);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                best = cell;
+            }
+        }
+        return layout.Decode(best);
     }
 
     private static bool IsAtCamp(Colonist colonist) =>
@@ -489,6 +519,79 @@ public static class ColonistAI
         (int x, int y) = colonist.Colony.SleepSpot(colonist);
         if (!TryStart(colonist, world, new Activity(ActivityKind.Sleep, x, y, 0)))
             TryStart(colonist, world, new Activity(ActivityKind.Sleep, colonist.TileX, colonist.TileY, 0));
+    }
+
+    /// <summary>
+    /// Va à un lieu de service (repas, rencontre, dépôt) : parmi les lieux disponibles, celui dont le trajet réel est le plus court (les deux plus proches à vol d'oiseau
+    /// sont mesurés), en tenant compte de la suite (le chantier où l'on portera des matériaux). Le camp reste le repli. Le choix de la case est stable (selon le colon),
+    /// jamais un tirage de <c>WorldState.Random</c>.
+    /// </summary>
+    private static bool StartAtService(Colonist colonist, WorldState world, ActivityKind kind, float seconds, ServiceUse use, (int X, int Y)? next = null, Building? building = null)
+    {
+        Colony colony = colonist.Colony;
+        SettlementLayout layout = colony.Layout;
+        var options = new List<(ServicePoint Point, int X, int Y, float Estimate)>();
+        foreach (ServicePoint point in SettlementServices.Points(colony))
+        {
+            if (!point.Provides(use))
+                continue;
+            int cell = point.Cells.Length == 0 ? -1 : PickServiceCell(colonist, layout, point);
+            if (cell < 0)
+                continue;
+            (int cx, int cy) = layout.Decode(cell);
+            float estimate = TraversalCost.Octile(cx - colonist.TileX, cy - colonist.TileY)
+                + (next is { } n ? TraversalCost.Octile(cx - n.X, cy - n.Y) : 0f);
+            options.Add((point, cx, cy, estimate));
+        }
+        options.Sort((a, b) => a.Estimate != b.Estimate ? a.Estimate.CompareTo(b.Estimate) : a.Point.Id.CompareTo(b.Point.Id));
+
+        Activity? best = null;
+        NavPath? bestPath = null;
+        int bestMaxStep = 1;
+        float bestSeconds = float.MaxValue;
+        foreach ((ServicePoint _, int x, int y, float _) in options.Take(2))
+        {
+            var activity = new Activity(kind, x, y, Ticks(seconds)) { Building = building };
+            (NavPath? path, int maxStep) = PlanPath(colonist, world, activity);
+            if (path is null)
+                continue;
+            float total = path.Seconds + (next is { } n ? TraversalCost.Octile(x - n.X, y - n.Y) / SettlementRules.WalkTilesPerSecond : 0f);
+            if (total < bestSeconds)
+                (best, bestPath, bestMaxStep, bestSeconds) = (activity, path, maxStep, total);
+        }
+        if (best is null || bestPath is null)
+            return building is null ? StartNearCamp(colonist, world, kind, seconds)
+                : TryStart(colonist, world, new Activity(kind, colony.CampX, colony.CampY, Ticks(seconds)) { Building = building });
+        Commit(colonist, best, bestPath, bestMaxStep, world.Clock.Ticks);
+        return true;
+    }
+
+    /// <summary>La case de service d'un point : l'une des trois plus proches du colon, choisie selon son identifiant pour qu'on ne s'empile pas sur la même.</summary>
+    private static int PickServiceCell(Colonist colonist, SettlementLayout layout, ServicePoint point)
+    {
+        var cells = point.Cells.Select(c =>
+        {
+            (int x, int y) = layout.Decode(c);
+            return (Cell: c, Distance: TraversalCost.Octile(x - colonist.TileX, y - colonist.TileY));
+        }).OrderBy(c => c.Distance).ThenBy(c => c.Cell).Take(3).ToList();
+        return cells[colonist.Id % cells.Count].Cell;
+    }
+
+    /// <summary>Le colon est à un point de dépôt : le camp, ou la porte d'un entrepôt achevé.</summary>
+    private static bool IsAtStockAccess(Colonist colonist)
+    {
+        if (IsAtCamp(colonist))
+            return true;
+        SettlementLayout layout = colonist.Colony.Layout;
+        foreach (ServicePoint point in SettlementServices.Points(colonist.Colony))
+            if (point.Provides(ServiceUse.Stock))
+                foreach (int cell in point.Cells)
+                {
+                    (int x, int y) = layout.Decode(cell);
+                    if (Math.Max(Math.Abs(x - colonist.TileX), Math.Abs(y - colonist.TileY)) <= 1)
+                        return true;
+                }
+        return false;
     }
 
     private static bool StartNearCamp(Colonist colonist, WorldState world, ActivityKind kind, float seconds)
@@ -526,15 +629,15 @@ public static class ColonistAI
             options.Add((new Activity(ActivityKind.Fish, wx, wy, Ticks(fishSeconds)) { StandX = sx, StandY = sy }, FoodPerFish, fishSeconds));
 
         Activity? best = null;
-        List<(int X, int Y)>? bestPath = null;
+        NavPath? bestPath = null;
         int bestMaxStep = 1;
         float bestRate = 0f;
         foreach ((Activity activity, float food, float workSeconds) in options)
         {
-            (List<(int X, int Y)>? path, int maxStep) = PlanPath(colonist, world, activity);
+            (NavPath? path, int maxStep) = PlanPath(colonist, world, activity);
             if (path is null)
                 continue;
-            float roundTripSeconds = 2f * path.Count / WalkTilesPerSecond;
+            float roundTripSeconds = 2f * path.Seconds;
             float rate = food / (roundTripSeconds + workSeconds);
             if (rate > bestRate)
                 (best, bestPath, bestMaxStep, bestRate) = (activity, path, maxStep, rate);
@@ -598,18 +701,25 @@ public static class ColonistAI
             .OrderBy(b => Math.Abs(b.X - colonist.TileX) + Math.Abs(b.Y - colonist.TileY))
             .FirstOrDefault(b => b.HasAllMaterials || b.MaterialToFetch(colony.Stock) is not null);
         if (site is null)
-            return TryDig(colonist, world);
+            return TryDig(colonist, world) || TryRoadWork(colonist, world, idle: false);
 
         if (!site.HasAllMaterials)
         {
-            IReadOnlyList<(int X, int Y)> spots = colony.GatherSpots;
-            (int x, int y) = spots[world.Random.Next(Math.Min(12, spots.Count))];
-            return TryStart(colonist, world, new Activity(ActivityKind.FetchMaterials, x, y, Ticks(FetchSeconds)) { Building = site });
+            // Au dépôt le plus utile au trajet vers le chantier (le camp, ou un entrepôt achevé).
+            (int sx, int sy) = site.HasDoor ? (site.AccessX, site.AccessY) : (site.X, site.Y);
+            return StartAtService(colonist, world, ActivityKind.FetchMaterials, FetchSeconds, ServiceUse.Stock, (sx, sy), site);
         }
 
-        (int bx, int by) = site.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        (int bx, int by) = StandAt(colonist, site);
         float seconds = BuildActionSeconds / WorkSpeed(colonist, SkillType.Construction);
         return TryStart(colonist, world, new Activity(ActivityKind.Build, bx, by, Ticks(seconds)) { Building = site });
+    }
+
+    /// <summary>Un aménagement de chemin facultatif : une cellule d'un axe très fréquenté (voir <see cref="RoadWorks"/>).</summary>
+    private static bool TryRoadWork(Colonist colonist, WorldState world, bool idle)
+    {
+        Activity? activity = RoadWorks.NextActivity(colonist, WorkSpeed(colonist, SkillType.Construction), idle);
+        return activity is not null && TryStart(colonist, world, activity);
     }
 
     /// <summary>Creuse la prochaine case d'un canal en chantier, en commençant par la source : l'eau avance à mesure.</summary>
@@ -626,7 +736,7 @@ public static class ColonistAI
 
     private static bool TrySupplySite(Colonist colonist, WorldState world, Building site)
     {
-        (int bx, int by) = site.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        (int bx, int by) = StandAt(colonist, site);
         return TryStart(colonist, world, new Activity(ActivityKind.SupplySite, bx, by, Ticks(DeliverSeconds)) { Building = site });
     }
 
@@ -650,17 +760,39 @@ public static class ColonistAI
         Building? workshop = null;
         if ((Cuisine.PickCake(colony) ?? Cuisine.PickStew(colony, Cuisine.UrgentFill) ?? Cuisine.PickBrew(colony, Cuisine.UrgentFill)) is { } first)
             (workshop, product) = (first.Workshop, first.Recipe.Output);
+        // Une offrande en chantier occupe au plus un dixième des artisans (jamais en crise) : elle avance même quand une chaîne cherche sans cesse du travail.
+        if (workshop is null && Offerings.PickSculptJob(colony) is { } shrine)
+        {
+            (int sx, int sy) = StandAt(colonist, shrine);
+            return TryStart(colonist, world, new Activity(ActivityKind.Sculpt, sx, sy, Ticks(Offerings.ChunkSeconds / WorkSpeed(colonist, SkillType.Construction))) { Building = shrine });
+        }
         workshop ??= Crafting.PickJob(colony, (int)ColonyBrain.HeatingTarget(colony, world.Clock.Season));
         if (workshop is null && (Cuisine.PickStew(colony) ?? Cuisine.PickBrew(colony)) is { } dish)
             (workshop, product) = (dish.Workshop, dish.Recipe.Output);
+        if (workshop is null && ExtendedIndustry.PickJob(colony) is { } industry)
+            (workshop, product) = (industry.Workshop, industry.Recipe.Output);
         if (workshop is null)
             return false;
+        if (workshop.Type == BuildingType.Market)
+        {
+            var source = world.VisitRegion(colony.LocalSettlement.RegionTileIndex).Deposits.FirstOrDefault(d => d.Material == Specialties.NativeOf(colony));
+            if (source is null || colony.PresentMembers.Any(c => c.Activity?.DepositId == source.Id)) return false;
+            if (source.Material == ResourceType.Hardwood && !colony.Map.CanChop(source.X,source.Y))
+            {
+                var tree = WorkSites.TreesToChop(colony.Map,colony).Take(1).ToArray();
+                if (tree.Length == 0) return false;
+                source.X = tree[0].X; source.Y = tree[0].Y;
+            }
+            if (source.Material == ResourceType.Spices && colony.Map.GetBerries(source.X,source.Y) == 0) return false;
+            return TryStart(colonist,world,new Activity(ActivityKind.Extract,source.X,source.Y,
+                Ticks(10f / WorkSpeed(colonist,SkillType.Trading))) { DepositId = source.Id });
+        }
         Recipe recipe = Crafting.RecipeFor(colony, workshop.Type, product);
         float seconds = recipe.Seconds / WorkSpeed(colonist, Crafting.SkillFor(workshop.Type));
         // Un moulin tourne au rythme de la rivière : un barrage en amont le ralentit.
         if (workshop.Type == BuildingType.Mill)
             seconds /= MathF.Max(0.25f, Hydrology.MillFlow(colonist.Colony.Map, workshop));
-        (int x, int y) = workshop.Tiles.OrderBy(t => Math.Abs(t.X - colonist.TileX) + Math.Abs(t.Y - colonist.TileY)).First();
+        (int x, int y) = StandAt(colonist, workshop);
         return TryStart(colonist, world, new Activity(ActivityKind.Craft, x, y, Ticks(seconds)) { Building = workshop, Product = product });
     }
 
@@ -669,6 +801,9 @@ public static class ColonistAI
         float seconds = MineSeconds / WorkSpeed(colonist, SkillType.Mining);
         bool wantOre = colonist.Colony.Sensors?.Chain is { Active: true, OreMissing: > 0 };
         Colony colony = colonist.Colony;
+        foreach (var deposit in ExtendedIndustry.ExtractionJobs(world, colony).Take(TargetsToTry))
+            if (!colony.PresentMembers.Any(c => c.Activity?.DepositId == deposit.Id)
+                && TryStart(colonist, world, new Activity(ActivityKind.Extract, deposit.X, deposit.Y, Ticks(seconds * deposit.Difficulty)) { DepositId = deposit.Id })) return true;
         foreach ((int rockX, int rockY, int standX, int standY) in WorkSites.RocksToMine(colonist.Colony.Map, colony, wantOre)
                      .Where(r => !colony.UnreachableStands.Contains((r.StandX, r.StandY)))
                      .Take(TargetsToTry))
@@ -692,6 +827,8 @@ public static class ColonistAI
             int x = colony.CampX + world.Random.Next(-7, 8);
             int y = colony.CampY + world.Random.Next(-7, 8);
             float seconds = 1.5f + 2f * world.Random.NextSingle();
+            if (colony.Map.InBounds(x, y) && colony.Spatial.BlocksWalking(x, y))
+                continue; // on ne flâne pas à l'intérieur d'une maison
             if (TryStart(colonist, world, new Activity(ActivityKind.Wander, x, y, Ticks(seconds))))
                 return;
         }
@@ -700,16 +837,16 @@ public static class ColonistAI
     /// <summary>Calcule le chemin vers l'endroit de l'action et la confie au colon. Renvoie false si l'endroit est inaccessible.</summary>
     private static bool TryStart(Colonist colonist, WorldState world, Activity activity)
     {
-        (List<(int X, int Y)>? path, int maxStep) = PlanPath(colonist, world, activity);
+        (NavPath? path, int maxStep) = PlanPath(colonist, world, activity);
         if (path is null)
             return false;
         Commit(colonist, activity, path, maxStep, world.Clock.Ticks);
         return true;
     }
 
-    private static (List<(int X, int Y)>? Path, int MaxStep) PlanPath(Colonist colonist, WorldState world, Activity activity)
+    private static (NavPath? Path, int MaxStep) PlanPath(Colonist colonist, WorldState world, Activity activity)
     {
-        List<(int X, int Y)>? path = colonist.Colony.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY);
+        NavPath? path = LocalNavigation.FindPath(colonist.Colony, colonist.TileX, colonist.TileY, activity.StandX, activity.StandY);
 
         // Filet de sécurité : coincé dans un trou ou sur un plateau isolé par la carrière,
         // on escalade une marche de deux niveaux pour rentrer au camp.
@@ -718,7 +855,7 @@ public static class ColonistAI
             // D'abord une marche de deux niveaux ; si le colon est enfermé dans un trou plus profond, il escalade
             // la paroi à mains nues plutôt que d'y mourir de faim.
             foreach (int step in new[] { 2, LocalMap.MaxElevation })
-                if (colonist.Colony.Pathfinder.FindPath(colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, maxStep: step) is { } rescue)
+                if (LocalNavigation.FindPath(colonist.Colony, colonist.TileX, colonist.TileY, activity.StandX, activity.StandY, step) is { } rescue)
                     return (rescue, step);
             return (null, 2);
         }
@@ -728,7 +865,7 @@ public static class ColonistAI
     private static bool IsGoingHome(Activity activity) =>
         activity.Kind is ActivityKind.Sleep or ActivityKind.Eat or ActivityKind.Deliver or ActivityKind.Relax;
 
-    private static void Commit(Colonist colonist, Activity activity, List<(int X, int Y)> path, int maxStep, long now)
+    private static void Commit(Colonist colonist, Activity activity, NavPath path, int maxStep, long now)
     {
         // Mesure du coût en travail : une récolte démarre un cycle qui se termine au dépôt au camp ;
         // toute autre occupation les mains vides (manger, dormir…) l'interrompt.
@@ -743,9 +880,15 @@ public static class ColonistAI
         }
 
         colonist.Activity = activity;
-        colonist.Path = path;
+        colonist.Path = path.Cells;
         colonist.PathIndex = 0;
         colonist.PathMaxStep = maxStep;
+        colonist.PathStartBuilding = path.StartBuildingId;
+        colonist.PathGoalBuilding = path.GoalBuildingId;
+        colonist.PathStartX = colonist.TileX;
+        colonist.PathStartY = colonist.TileY;
+        colonist.PathRevision = colonist.Colony.Spatial.Revision;
+        colonist.StepElapsedTicks = 0f;
         Reserve(colonist.Colony, activity);
     }
 
@@ -780,37 +923,83 @@ public static class ColonistAI
             colony.Reserved.Remove((activity.StandX, activity.StandY));
     }
 
+    /// <summary>
+    /// Fait avancer le colon le long de son chemin pendant un tick. Un pas dure autant que son arête (<see cref="TraversalCost"/> : longueur, terrain, route,
+    /// montée) : la même durée que celle qu'utilisent le pathfinder et les budgets du planificateur. Le temps du tick se consomme sur le pas courant et déborde sur
+    /// le suivant ; chaque pas terminé compte comme un passage (voir <see cref="RoadDevelopment"/>). Le prochain pas est vérifié avec le terrain et l'occupation actuels.
+    /// </summary>
     private static void Move(Colonist colonist, WorldState world)
     {
-        LocalMap map = colonist.Colony.Map;
-        (int nextX, int nextY) = colonist.Path[colonist.PathIndex];
+        Colony colony = colonist.Colony;
+        LocalMap map = colony.Map;
+        LocalSpatialIndex index = colony.Spatial;
 
-        // Le terrain a pu changer depuis le calcul du chemin (une case minée, par exemple).
-        if (!map.CanStep(colonist.TileX, colonist.TileY, nextX, nextY, colonist.PathMaxStep))
+        // Un bâtiment a pu apparaître sur la route depuis le calcul du chemin : on revérifie le reste du trajet, sans tout recalculer.
+        if (colonist.PathRevision != index.Revision)
         {
-            Activity activity = colonist.Activity!;
-            Release(colonist.Colony, activity);
-            if (!TryStart(colonist, world, activity))
-                Cancel(colonist);
-            return;
+            colonist.PathRevision = index.Revision;
+            if (!LocalNavigation.StillValid(index, colonist.Path, colonist.PathIndex, colonist.PathStartBuilding, colonist.PathGoalBuilding))
+            {
+                Replan(colonist, world);
+                return;
+            }
         }
 
-        float speed = WalkTilesPerSecond / TimeConstants.TicksPerSecond / map.MoveCost(colonist.TileX, colonist.TileY);
-        float targetX = nextX + 0.5f, targetY = nextY + 0.5f;
-        float dx = targetX - colonist.X, dy = targetY - colonist.Y;
-        float distance = MathF.Sqrt(dx * dx + dy * dy);
-        if (distance <= speed)
+        float budget = 1f;
+        while (budget > 0f && colonist.PathIndex < colonist.Path.Count)
         {
-            colonist.X = targetX;
-            colonist.Y = targetY;
-            colonist.PathIndex++;
+            (int nextX, int nextY) = colonist.Path[colonist.PathIndex];
+            (int fromX, int fromY) = colonist.PathIndex == 0
+                ? (colonist.PathStartX, colonist.PathStartY)
+                : colonist.Path[colonist.PathIndex - 1];
+
+            if (colonist.StepElapsedTicks == 0f)
+            {
+                // Le terrain a pu changer depuis le calcul du chemin (une case minée, par exemple) : on ne s'engage que sur un pas permis maintenant.
+                if (!map.CanStep(fromX, fromY, nextX, nextY, colonist.PathMaxStep))
+                {
+                    Replan(colonist, world);
+                    return;
+                }
+                colonist.StepFromX = colonist.X;
+                colonist.StepFromY = colonist.Y;
+            }
+
+            float duration = TraversalCost.StepTicks(map, fromX, fromY, nextX, nextY);
+            float remaining = duration - colonist.StepElapsedTicks;
+            float targetX = nextX + 0.5f, targetY = nextY + 0.5f;
+            float beforeX = colonist.X, beforeY = colonist.Y;
+            if (budget >= remaining)
+            {
+                budget -= remaining;
+                colonist.X = targetX;
+                colonist.Y = targetY;
+                colonist.PathIndex++;
+                colonist.StepElapsedTicks = 0f;
+                float walked = MathF.Sqrt((targetX - beforeX) * (targetX - beforeX) + (targetY - beforeY) * (targetY - beforeY));
+                colonist.DistanceWalked += walked; ExtendedIndustry.Walk(colonist, walked);
+                RoadDevelopment.OnStepCompleted(colony, nextX, nextY);
+            }
+            else
+            {
+                colonist.StepElapsedTicks += budget;
+                budget = 0f;
+                float t = colonist.StepElapsedTicks / duration;
+                colonist.X = colonist.StepFromX + (targetX - colonist.StepFromX) * t;
+                colonist.Y = colonist.StepFromY + (targetY - colonist.StepFromY) * t;
+                float walked = MathF.Sqrt((colonist.X - beforeX) * (colonist.X - beforeX) + (colonist.Y - beforeY) * (colonist.Y - beforeY));
+                colonist.DistanceWalked += walked; ExtendedIndustry.Walk(colonist, walked);
+            }
         }
-        else
-        {
-            colonist.X += dx / distance * speed;
-            colonist.Y += dy / distance * speed;
-        }
-        colonist.DistanceWalked += Math.Min(distance, speed);
+    }
+
+    /// <summary>Le chemin n'est plus praticable : on cherche un autre trajet vers la même cible, sinon on renonce.</summary>
+    private static void Replan(Colonist colonist, WorldState world)
+    {
+        Activity activity = colonist.Activity!;
+        Release(colonist.Colony, activity);
+        if (!TryStart(colonist, world, activity))
+            Cancel(colonist);
     }
 
     private static void Act(Colonist colonist, WorldState world)
@@ -819,7 +1008,7 @@ public static class ColonistAI
         if (!activity.Started)
         {
             // Quiconque revient au camp y dépose ce qu'il rapporte (sauf les matériaux destinés à un chantier).
-            if (colonist.Carrying is { } load && colonist.CarryingTo is null && IsAtCamp(colonist))
+            if (colonist.Carrying is { } load && colonist.CarryingTo is null && IsAtStockAccess(colonist))
             {
                 colonist.Colony.Stock.Add(load.Type, load.Amount, colonist.WorkCycleStartTicks >= 0 ? ResourceFlow.Production : ResourceFlow.Transfer);
                 colonist.Carrying = null;
@@ -855,7 +1044,7 @@ public static class ColonistAI
         bool done = activity.Kind == ActivityKind.Sleep
             ? needs.Rest >= 1f
               || (!world.Clock.IsNight && needs.Rest >= 0.7f)
-              || (needs.Food < 0.1f && needs.Rest > 0.15f) // la faim réveille
+              || (needs.Food < CriticalFoodThreshold && needs.Rest > 0.15f) // la faim réveille
             : activity.ElapsedTicks >= activity.DurationTicks;
         if (done)
             Finish(colonist, world, activity);
@@ -874,14 +1063,19 @@ public static class ColonistAI
         ActivityKind.Forage or ActivityKind.ForageToEat => colonist.Colony.Map.GetBerries(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Fish => colonist.Colony.Map.GetFish(activity.TargetX, activity.TargetY) > 0,
         ActivityKind.Chop => colonist.Colony.Map.CanChop(activity.TargetX, activity.TargetY),
+        ActivityKind.Extract => colonist.Colony.Map.IsWalkable(activity.TargetX, activity.TargetY),
         ActivityKind.Mine => WorkSites.CanMineFrom(colonist.Colony.Map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY),
         ActivityKind.Dig => !colonist.Colony.Map.IsCanal(activity.TargetX, activity.TargetY),
+        ActivityKind.BuildRoad => colonist.Colony.Map.Roads.SurfaceAt(activity.TargetY * colonist.Colony.Map.Width + activity.TargetX) != RoadSurface.DirtRoad
+                                  && RoadWorks.IsAllowed(colonist.Colony),
+        ActivityKind.ClearAccess => colonist.Colony.Map.GetFlora(activity.TargetX, activity.TargetY) == FloraType.Bush && RoadWorks.IsAllowed(colonist.Colony),
         ActivityKind.Craft => activity.Building is { IsComplete: true } workshop && TakeCraftInputs(colonist, activity, workshop),
         ActivityKind.Tend => Husbandry.PenSite(colonist.Colony) is not null && Husbandry.WorkPending(colonist.Colony),
         ActivityKind.Heal => Health.PatientCount(colonist.Colony) > 0,
         ActivityKind.FetchMaterials => TakeMaterials(colonist, activity.Building!),
         ActivityKind.SupplySite => activity.Building is { IsComplete: false } site && colonist.CarryingTo == site,
         ActivityKind.Build => activity.Building is { IsComplete: false, HasAllMaterials: true },
+        ActivityKind.Sculpt => activity.Building is { Type: BuildingType.Shrine, IsComplete: true } && Offerings.CanSculpt(colonist.Colony),
         _ => true,
     };
 
@@ -895,12 +1089,38 @@ public static class ColonistAI
     /// <summary>À l'arrivée à l'atelier, on prend au stock les matières de la recette ; elles manquent peut-être déjà.</summary>
     private static bool TakeCraftInputs(Colonist colonist, Activity activity, Building workshop)
     {
-        if (!ToolChain.TryTakeInputs(colonist.Colony, Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product), out double inputHours))
+        Recipe recipe = Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product);
+        // La frappe engage d'abord son quota annuel ; si les matières manquent ensuite, l'engagement est rendu.
+        if (workshop.Type == BuildingType.Mint && !Minting.TryCommit(colonist.Colony, activity, recipe))
             return false;
+        if (!ToolChain.TryTakeInputs(colonist.Colony, recipe, out double inputHours, out Stockpile inventory))
+        {
+            Minting.Cancel(colonist.Colony, activity);
+            return false;
+        }
+        activity.InputsInventory = inventory;
+        activity.CommittedRecipe = recipe;
         activity.InputsTaken = true;
         activity.InputLaborHours = inputHours;
         colonist.WorkCycleExtraHours = inputHours;
         return true;
+    }
+
+    /// <summary>La viande engagée vieillit aussi à l'atelier ; une perte interrompt la recette.</summary>
+    internal static void AgeCraftInputs(Colony colony)
+    {
+        foreach (Colonist colonist in colony.PresentMembers.Concat(colony.Transients))
+        {
+            if (colonist.Activity is not { Kind: ActivityKind.Craft, InputsTaken: true, InputsInventory: { } inventory }
+                || inventory.Get(ResourceType.Meat) == 0)
+                continue;
+            inventory.AgeMeat();
+            int lost = inventory.SpoilMeat(3, 0.5f);
+            if (lost == 0)
+                continue;
+            ResourceAccounting.Record(colony.Stock, ResourceType.Meat, ResourceFlow.Loss, lost);
+            Cancel(colonist);
+        }
     }
 
     /// <summary>Prend au stock le matériau qui manque encore au chantier (bois d'abord, puis pierre), dans la limite de ce qu'on peut porter.</summary>
@@ -958,34 +1178,81 @@ public static class ColonistAI
                 colonist.Carrying = null;
                 colonist.CarryingTo = null;
                 break;
+            case ActivityKind.Sculpt when activity.Building is { Type: BuildingType.Shrine }:
+                Offerings.AddWork(colonist.Colony);
+                break;
             case ActivityKind.Build when activity.Building is { IsComplete: false } site:
                 site.Progress = MathF.Min(1f, site.Progress + BuildActionSeconds / site.WorkSeconds);
                 if (site.IsComplete)
                     ColonyBrain.OnBuildingComplete(colonist.Colony, site, map, world.Clock);
                 break;
             case ActivityKind.Sow when Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Fallow } plot:
+                if (plot.Crop == CropKind.Grain && !ExtendedIndustry.Crisis(colonist.Colony))
+                {
+                    int specialtyPlots = Farming.Plots(colonist.Colony).Count(p => p.Crop != CropKind.Grain);
+                    if (specialtyPlots < Farming.Plots(colonist.Colony).Count() / 10)
+                    {
+                        if (Knowledge.Has(colonist.Colony, Discovery.Weaving) && ExtendedIndustry.Target(colonist.Colony, ResourceType.Flax) > 0)
+                            plot.Crop = CropKind.Flax;
+                        else if (Knowledge.Has(colonist.Colony, Discovery.Brewing) && colonist.Colony.Map.SoilRichness >= .7f
+                            && Farming.VineSuitability(colonist.Colony.Map, plot.X, plot.Y) >= Farming.MinVineSuitability
+                            && colonist.Colony.Stock.TryTake(ResourceType.Wood, 1)) plot.Crop = CropKind.Grapes;
+                    }
+                }
+                plot.PlantedTicks = world.Clock.Ticks;
                 plot.Stage = CropStage.Growing;
                 plot.Growth = 0f;
                 colonist.Colony.RecordSowing(world.Clock.Ticks - activity.CommittedAtTicks);
                 break;
             case ActivityKind.Harvest when Farming.PlotAt(colonist.Colony, activity.TargetX, activity.TargetY) is { Stage: CropStage.Ripe } plot:
-                plot.Stage = CropStage.Fallow;
+                plot.LastHarvestTicks = world.Clock.Ticks;
+                plot.Stage = plot.Crop == CropKind.Grapes ? CropStage.Growing : CropStage.Fallow;
                 plot.Growth = 0f;
-                colonist.Carrying = (ResourceType.Grain, Farming.YieldAt(colonist.Colony, map, activity.TargetX, activity.TargetY));
+                colonist.Carrying = plot.Crop switch
+                {
+                    CropKind.Flax => (ResourceType.Flax, Math.Clamp((int)MathF.Round(3 * map.SoilRichness + (map.IsIrrigated(plot.X,plot.Y) ? 1 : 0)), 1, 5)),
+                    CropKind.Grapes => (ResourceType.Grapes, Math.Clamp((int)MathF.Round(4 * map.SoilRichness * Farming.VineSuitability(map, plot.X, plot.Y)), 1, 6)),
+                    _ => (ResourceType.Grain, Farming.YieldAt(colonist.Colony, map, activity.TargetX, activity.TargetY)),
+                };
                 break;
             case ActivityKind.Craft when activity.InputsTaken && activity.Building is { Type: BuildingType.Cask } cask:
                 // Les céréales sont versées dans le fût : rien à rapporter, la bière fermente et sera tirée dans cinq jours.
+                cask.BrewProduct = activity.CommittedRecipe?.Output ?? ResourceType.Beer;
                 Cuisine.StartBrewing(colonist.Colony, cask, activity.InputLaborHours + LaborLedger.TicksToHours(world.Clock.Ticks - activity.CommittedAtTicks), world.Clock);
+                if (activity.InputsInventory is { } brewingInputs)
+                    ToolChain.ConsumeInputs(colonist.Colony, brewingInputs);
                 activity.InputsTaken = false;
+                activity.InputsInventory = null;
+                activity.CommittedRecipe = null;
                 colonist.WorkCycleStartTicks = -1;
                 colonist.WorkCycleExtraHours = 0;
                 break;
             case ActivityKind.Craft when activity.InputsTaken && activity.Building is { } workshop:
             {
-                Recipe recipe = Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product);
+                Recipe recipe = activity.CommittedRecipe ?? Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product);
                 bool first = colonist.Colony.AnnouncedProducts.Add(recipe.Output);
-                colonist.Carrying = (recipe.Output, recipe.OutputAmount);
+                int output = recipe.OutputAmount;
+                if (workshop.Type == BuildingType.Market)
+                {
+                    var source = world.VisitRegion(colonist.Colony.LocalSettlement.RegionTileIndex).Deposits.FirstOrDefault(d => d.Material == recipe.Output);
+                    output = source is null ? 0 : DepositExtraction.Extract(world, colonist.Colony, source, output);
+                    if (source is not null && output > 0 && recipe.Output == ResourceType.Hardwood)
+                    {
+                        if (!map.CanChop(source.X,source.Y)) output = 0;
+                        else map.ChopTree(source.X,source.Y);
+                    }
+                    if (source is not null && output > 0 && recipe.Output == ResourceType.Spices)
+                        output = Math.Min(output, map.HarvestBerries(source.X,source.Y));
+                }
+                if (workshop.Type == BuildingType.Mint)
+                    Minting.Complete(colonist.Colony, activity);
+                else if (output > 0)
+                    colonist.Carrying = (recipe.Output, output);
+                if (activity.InputsInventory is { } usedInputs)
+                    ToolChain.ConsumeInputs(colonist.Colony, usedInputs);
                 activity.InputsTaken = false;
+                activity.InputsInventory = null;
+                activity.CommittedRecipe = null;
                 if (first)
                     ColonyBrain.OnFirstProduct(colonist.Colony, recipe.Output, world.Clock);
                 break;
@@ -1002,6 +1269,12 @@ public static class ColonistAI
                 break;
             case ActivityKind.Dig when !map.IsCanal(activity.TargetX, activity.TargetY):
                 FinishDig(colonist, world, activity);
+                break;
+            case ActivityKind.BuildRoad when map.Roads.SurfaceAt(activity.TargetY * map.Width + activity.TargetX) != RoadSurface.DirtRoad:
+                RoadWorks.CompleteCell(colonist.Colony, activity.TargetX, activity.TargetY, activity.SegmentId);
+                break;
+            case ActivityKind.ClearAccess when map.GetFlora(activity.TargetX, activity.TargetY) == FloraType.Bush:
+                map.ClearFlora(activity.TargetX, activity.TargetY);
                 break;
             case ActivityKind.Chat when activity.Partner is { } partner:
             {
@@ -1020,11 +1293,31 @@ public static class ColonistAI
             case ActivityKind.Chop when map.CanChop(activity.TargetX, activity.TargetY):
                 colonist.Carrying = (ResourceType.Wood, map.ChopTree(activity.TargetX, activity.TargetY));
                 break;
-            case ActivityKind.Mine when WorkSites.CanMineFrom(map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY):
-                colonist.Carrying = map.Mine(activity.TargetX, activity.TargetY) == Material.IronOre
-                    ? (ResourceType.IronOre, IronOrePerLayer)
-                    : (ResourceType.Stone, StonePerLayer);
+            case ActivityKind.Extract:
+            {
+                var deposit = world.VisitRegion(colonist.Colony.LocalSettlement.RegionTileIndex).Deposits.FirstOrDefault(d => d.Id == activity.DepositId);
+                if (deposit is not null)
+                {
+                    int units = DepositExtraction.Extract(world, colonist.Colony, deposit, 2);
+                    if (units > 0 && deposit.Material == ResourceType.Hardwood)
+                    { if (!map.CanChop(deposit.X,deposit.Y)) units = 0; else map.ChopTree(deposit.X,deposit.Y); }
+                    if (units > 0 && deposit.Material == ResourceType.Spices) units = Math.Min(units,map.HarvestBerries(deposit.X,deposit.Y));
+                    if (units > 0) colonist.Carrying = (deposit.Material, units);
+                }
                 break;
+            }
+            case ActivityKind.Mine when WorkSites.CanMineFrom(map, colonist.TileX, colonist.TileY, activity.TargetX, activity.TargetY):
+            {
+                Material mined = map.Mine(activity.TargetX, activity.TargetY);
+                int units = StonePerLayer;
+                if (mined == Material.IronOre)
+                {
+                    var iron = world.VisitRegion(colonist.Colony.LocalSettlement.RegionTileIndex).Deposits.FirstOrDefault(d => d.Material == ResourceType.IronOre);
+                    units = iron is null ? 0 : DepositExtraction.Extract(world, colonist.Colony, iron, IronOrePerLayer);
+                }
+                if (units > 0) colonist.Carrying = (mined == Material.IronOre ? ResourceType.IronOre : ResourceType.Stone, units);
+                break;
+            }
         }
         colonist.Needs.Clamp();
         EndActivity(colonist);
@@ -1057,8 +1350,14 @@ public static class ColonistAI
             // Une fabrication interrompue rend les matières à la colonie.
             if (activity is { Kind: ActivityKind.Craft, InputsTaken: true, Building: { } workshop })
             {
-                ToolChain.Refund(colonist.Colony, Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product));
+                Minting.Cancel(colonist.Colony, activity);
+                if (activity.InputsInventory is { } inventory)
+                    ToolChain.Refund(colonist.Colony, inventory);
+                else
+                    ToolChain.Refund(colonist.Colony, Crafting.RecipeFor(colonist.Colony, workshop.Type, activity.Product));
                 activity.InputsTaken = false;
+                activity.InputsInventory = null;
+                activity.CommittedRecipe = null;
                 colonist.WorkCycleExtraHours = 0;
             }
         }
@@ -1066,6 +1365,8 @@ public static class ColonistAI
         colonist.Path = [];
         colonist.PathIndex = 0;
         colonist.PathMaxStep = 1;
+        colonist.PathStartBuilding = colonist.PathGoalBuilding = 0;
+        colonist.StepElapsedTicks = 0f;
         colonist.ThinkCooldown = 0;
     }
 

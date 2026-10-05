@@ -20,7 +20,7 @@ public class IronChainTests(ITestOutputHelper output)
 
     private static void Complete(WorldState world, Colony colony, BuildingType type)
     {
-        (int x, int y) = Urbanism.FindWorkshopSite(world.Map, colony)!.Value;
+        (int x, int y) = Urbanism.FindSite(world.Map, colony, type)!.Value;
         Urbanism.PlanBuilding(world.Map, colony, type, x, y).Progress = 1f;
     }
 

@@ -6,6 +6,8 @@ Une ligne par tâche, la plus récente **en haut**. Quand une tâche du cahier e
 
 | Date | N° | Tâche | Par | Fichiers / commit | Notes |
 |---|---|---|---|---|---|
+| 2026-10-05 | T-032 | Places, accès et cadrage | Codex | `ColonistsView.Places.cs`, `Main.cs`, `Main.Menus.cs` | Espaces publics et place lus dans le plan réel, repères d’accès et seuils des bâtiments ; recentrage sur l’emprise active. Compilation et aperçu `village-chemins-places.png`. |
+| 2026-10-05 | T-031 | Chemins locaux | Codex | `TerrainPainter.Roads.cs`, `TerrainPainter.cs`, `MapView.cs` | Sentiers et chemins de terre depuis la couche réelle ; actualisation par `RoadChanged`, raccords confinés à leurs cellules, sans déplacement des objets. Aperçu `village-chemins-places.png`. |
 | 2026-10-04 | T-030 | Habillage Savoirs et relations | ChatGPT/Codex | `CivilizationPanel.cs`, `tools/habillage_civilisation.patch` | Cartes, badges, emblèmes et jauge assortis à DashboardStyle ; données, onglets et commandes conservés. Apparence déjà appliquée localement, delta séparé du socle non commité de Claude. |
 | 2026-10-04 | T-029 | Guerriers locaux équipés | ChatGPT/Codex | `CivilizationArt.cs`, `ColonistsView.cs` | Lance et bouclier en code, identité et costume des quatre peuples conservés ; guerriers identifiés depuis les vraies bandes, sans modifier leurs outils ni déplacements. |
 | 2026-10-04 | T-028 | Dix-neuf icônes des savoirs | ChatGPT/Codex | `icons/knowledge_*.png`, `CivilizationArt.cs`, `CivilizationPanel.cs` | 19 PNG RGBA8 16 × 16, marge d'un pixel, icône à gauche du nom et assombrie quand le savoir est verrouillé. |

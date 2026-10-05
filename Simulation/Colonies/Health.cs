@@ -95,9 +95,9 @@ public static class Health
     private const float InjuryDeathChance = 0.04f;
     private const int TreatmentHours = 6;
 
-    public static IEnumerable<Colonist> Patients(Colony colony) => colony.Members.Where(m => m.Ailment != Ailment.None);
+    public static IEnumerable<Colonist> Patients(Colony colony) => colony.PresentMembers.Where(m => m.Ailment != Ailment.None);
 
-    public static int PatientCount(Colony colony) => colony.Members.Count(m => m.Ailment != Ailment.None);
+    public static int PatientCount(Colony colony) => colony.PresentMembers.Count(m => m.Ailment != Ailment.None);
 
     /// <summary>Chance qu'un colon tombe malade dans la journée.</summary>
     public static float SicknessChancePerDay(Colony colony, Colonist colonist, GameClock clock)
@@ -130,7 +130,7 @@ public static class Health
     /// <summary>Chaque matin : qui tombe malade aujourd'hui ?</summary>
     public static void Daily(WorldState world, Colony colony)
     {
-        foreach (Colonist colonist in colony.Members.ToList())
+        foreach (Colonist colonist in colony.PresentMembers.ToList())
         {
             if (colonist.Ailment != Ailment.None)
                 continue;
@@ -172,7 +172,7 @@ public static class Health
     /// <summary>Chaque heure, la convalescence avance (deux fois plus vite à l'infirmerie) ; au bout, on guérit ou l'on succombe.</summary>
     public static void Hourly(WorldState world, Colony colony)
     {
-        foreach (Colonist colonist in colony.Members.ToList())
+        foreach (Colonist colonist in colony.PresentMembers.ToList())
         {
             if (colonist.Ailment == Ailment.None)
                 continue;

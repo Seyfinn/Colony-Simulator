@@ -16,12 +16,21 @@ public sealed class Colonist
         Name = name;
         Sex = sex;
         Colony = colony;
+        HomeSettlementId = colony.LocalSettlement.Id;
+        LocationSettlementId = colony.PrimarySettlementId;
         Skills = skills;
         X = PrevX = x;
         Y = PrevY = y;
     }
 
     public Skills Skills { get; }
+    public int HomeSettlementId { get; internal set; }
+    public int LocationSettlementId { get; internal set; }
+    public int TravelId { get; internal set; }
+    public bool HasShoes { get; internal set; }
+    public float ShoeDistance { get; internal set; }
+    public ColonistLocation Location => new(TravelId == 0 ? ColonistLocationKind.Settlement : ColonistLocationKind.Travel,
+        TravelId == 0 ? LocationSettlementId : TravelId, X, Y);
 
     // --- Âge et famille ---
 
@@ -85,8 +94,8 @@ public sealed class Colonist
     internal HashSet<int> Friends { get; } = [];
     internal HashSet<int> Rivals { get; } = [];
 
-    public IEnumerable<Colonist> FriendsIn(Colony colony) => colony.Members.Where(m => Friends.Contains(m.Id));
-    public IEnumerable<Colonist> RivalsIn(Colony colony) => colony.Members.Where(m => Rivals.Contains(m.Id));
+    public IEnumerable<Colonist> FriendsIn(Colony colony) => colony.PresentMembers.Where(m => Friends.Contains(m.Id));
+    public IEnumerable<Colonist> RivalsIn(Colony colony) => colony.PresentMembers.Where(m => Rivals.Contains(m.Id));
 
     /// <summary>Temps à attendre avant de chercher à nouveau de la compagnie, après une tentative ratée.</summary>
     internal int ChatCooldownTicks { get; set; }
@@ -171,6 +180,21 @@ public sealed class Colonist
 
     /// <summary>Hauteur de marche autorisée sur le chemin en cours (2 seulement pour escalader hors d'un trou).</summary>
     internal int PathMaxStep { get; set; } = 1;
+
+    /// <summary>
+    /// Le bâtiment qu'on quitte et celui où l'on entre (0 : aucun) : leurs emprises sont les seules que le chemin en cours traverse. La case de départ du chemin et la révision
+    /// de l'occupation à son calcul permettent de revérifier le reste du trajet quand un bâtiment apparaît.
+    /// </summary>
+    internal int PathStartBuilding { get; set; }
+    internal int PathGoalBuilding { get; set; }
+    internal int PathStartX { get; set; }
+    internal int PathStartY { get; set; }
+    internal int PathRevision { get; set; }
+
+    /// <summary>Temps passé sur le pas en cours (en ticks) et d'où l'on est parti : le pas dure autant que le coût de son arête, le déplacement s'y interpole.</summary>
+    internal float StepElapsedTicks { get; set; }
+    internal float StepFromX { get; set; }
+    internal float StepFromY { get; set; }
     internal int ThinkCooldown { get; set; }
 
     /// <summary>Moment où il est parti récolter ce qu'il rapporte, pour mesurer le coût en travail (-1 sinon).</summary>

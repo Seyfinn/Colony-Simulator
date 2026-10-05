@@ -36,7 +36,7 @@ public static class Cuisine
 
     /// <summary>Céréales à garder en réserve avant de brasser : trois jours de repas pour la colonie, ou la réserve ordinaire si elle est plus petite.</summary>
     public static int BeerGrainReserve(Colony colony) =>
-        Math.Max(GrainKept, (int)MathF.Ceiling(colony.Members.Count * ColonyBrain.MealsPerColonistPerDay * BeerGrainReserveDays));
+        Math.Max(GrainKept, (int)MathF.Ceiling(colony.PresentMembers.Count * ColonyBrain.MealsPerColonistPerDay * BeerGrainReserveDays));
 
     /// <summary>Durée de l'entrain que donne une chope : cinq jours, une saison entière. On reprend une chope quand il est retombé sous la moitié.</summary>
     public const int BeerDays = 5;
@@ -57,10 +57,10 @@ public static class Cuisine
     public static bool IsDish(ResourceType good) => good is ResourceType.Cake or ResourceType.Stew;
 
     /// <summary>Un gâteau pour huit habitants, plus un.</summary>
-    public static int CakeTarget(Colony colony) => 1 + colony.Members.Count / 8;
+    public static int CakeTarget(Colony colony) => 1 + colony.PresentMembers.Count / 8;
 
     /// <summary>Un bol de ragoût pour chacun.</summary>
-    public static int StewTarget(Colony colony) => colony.Members.Count;
+    public static int StewTarget(Colony colony) => colony.PresentMembers.Count;
 
     /// <summary>Viande, fraîche ou salée : le ragoût accepte l'une et l'autre.</summary>
     public static int MeatOnHand(Colony colony) => colony.Stock.Get(ResourceType.Meat) + colony.Stock.Get(ResourceType.SaltedMeat);
@@ -80,10 +80,10 @@ public static class Cuisine
     public static (Building Workshop, Recipe Recipe)? PickJob(Colony colony) => PickCake(colony) ?? PickStew(colony) ?? PickBrew(colony);
 
     /// <summary>Cinq jours de consommation, soit le temps qu'il faut à un fût pour fermenter : deux chopes par habitant.</summary>
-    public static int BeerTarget(Colony colony) => 2 * colony.Members.Count;
+    public static int BeerTarget(Colony colony) => 2 * colony.PresentMembers.Count;
 
     /// <summary>Un fût pour vingt colons (au moins un, quatre au plus).</summary>
-    public static int CasksWanted(Colony colony) => Math.Clamp((colony.Members.Count + ColonistsPerCask - 1) / ColonistsPerCask, 1, MaxCasks);
+    public static int CasksWanted(Colony colony) => Math.Clamp((colony.PresentMembers.Count + ColonistsPerCask - 1) / ColonistsPerCask, 1, MaxCasks);
 
     /// <summary>La colonie bâtit un fût (ou un fût de plus) dès qu'elle a une taverne et que ses fûts ne suffisent plus à ses habitants.</summary>
     public static bool WantsCask(Colony colony) =>
@@ -134,7 +134,7 @@ public static class Cuisine
         if (!(colony.Sensors?.SurvivalAssured ?? true) || !Civic.Has(colony, BuildingType.Tavern))
             return null;
         Building? cask = colony.Workshops(BuildingType.Cask).FirstOrDefault(c => !c.IsBrewing
-            && !colony.Members.Any(m => m.Activity is { Kind: ActivityKind.Craft, Product: ResourceType.Beer } filling && filling.Building == c));
+            && !colony.PresentMembers.Any(m => m.Activity is { Kind: ActivityKind.Craft, Product: ResourceType.Beer } filling && filling.Building == c));
         return cask is not null && stock.Get(ResourceType.Grain) >= BeerRecipe.Inputs[0].Amount + BeerGrainReserve(colony)
             && stock.Get(ResourceType.Beer) + MugsInCasks(colony) + BeerRecipe.OutputAmount * Crafting.Pending(colony, ResourceType.Beer) < BeerTarget(colony) * fill
             ? (cask, BeerRecipe) : null;
@@ -143,7 +143,7 @@ public static class Cuisine
     /// <summary>Un colon vient de verser les céréales : le fût fermente cinq jours. <paramref name="hours"/> est ce que la fournée a coûté en travail.</summary>
     public static void StartBrewing(Colony colony, Building cask, double hours, GameClock clock)
     {
-        cask.BrewReadyTicks = clock.Ticks + BrewDays * TimeConstants.TicksPerDay;
+        cask.BrewReadyTicks = clock.Ticks + (cask.BrewProduct == ResourceType.Wine ? 3 : BrewDays) * TimeConstants.TicksPerDay;
         cask.BrewCostHours = hours;
         ColonyBrain.Say(colony, clock, $"On met un fût en perce : {BeerRecipe.Inputs[0].Amount} céréales fermenteront {BrewDays} jours pour donner {BeerRecipe.OutputAmount} chopes.");
     }
@@ -158,10 +158,13 @@ public static class Cuisine
             return;
         foreach (Building cask in colony.Buildings.Where(b => b.Type == BuildingType.Cask && b.IsComplete && b.IsBrewing && clock.Ticks >= b.BrewReadyTicks))
         {
-            colony.Stock.Add(ResourceType.Beer, BeerRecipe.OutputAmount);
-            colony.Labor.Record(ResourceType.Beer, cask.BrewCostHours, BeerRecipe.OutputAmount);
+            ResourceType product = cask.BrewProduct ?? ResourceType.Beer;
+            int units = product == ResourceType.Wine ? 2 : BeerRecipe.OutputAmount;
+            colony.Stock.Add(product, units);
+            colony.Labor.Record(product, cask.BrewCostHours, units);
             cask.BrewReadyTicks = 0;
             cask.BrewCostHours = 0;
+            cask.BrewProduct = null;
             ColonyBrain.Say(colony, clock, $"Le fût est tiré : {BeerRecipe.OutputAmount} chopes de bière sont disponibles à la taverne.");
         }
     }

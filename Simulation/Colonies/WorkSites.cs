@@ -137,7 +137,7 @@ public static class WorkSites
             yield break;
 
         // On ne creuse jamais sous les pieds de quelqu'un.
-        var occupied = colony.Members.Select(m => (m.TileX, m.TileY)).ToHashSet();
+        var occupied = colony.PresentMembers.Select(m => (m.TileX, m.TileY)).ToHashSet();
 
         // Quand la colonie manque de minerai, elle creuse d'abord là où il est proche de la surface (une veine qui
         // affleure, ou à quelques couches sous la roche), en partant de la carrière et en s'éloignant.

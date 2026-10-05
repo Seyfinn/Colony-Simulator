@@ -8,10 +8,13 @@ namespace GodColony.Simulation.Colonies;
 /// les bêtes vivantes (poules, moutons, vaches) qu'on garde en réserve ou qu'on vend, en attendant de les mettre à l'enclos,
 /// la viande (fraîche, qui vieillit puis se gâte, ou salée, qui se garde) et trois produits de fête : le gâteau, le ragoût et la bière.
 /// </summary>
-public enum ResourceType { Food, Grain, Wood, Stone, IronOre, Charcoal, Iron, Tools, Flour, Bread, Coins, Fish, Eggs, Wool, Clothes, Salt, Spices, Hardwood, Milk, Chickens, Sheep, Cows, Meat, SaltedMeat, Cake, Stew, Beer }
+public enum ResourceType { Food, Grain, Wood, Stone, IronOre, Charcoal, Iron, Tools, Flour, Bread, Coins, Fish, Eggs, Wool, Clothes, Salt, Spices, Hardwood, Milk, Chickens, Sheep, Cows, Meat, SaltedMeat, Cake, Stew, Beer,
+    MineralCoal = 27, Clay = 28, Pottery = 29, CopperOre = 30, Copper = 31, Copperware = 32,
+    Flax = 33, Linen = 34, Hides = 35, Leather = 36, Shoes = 37, Grapes = 38, Wine = 39,
+    GoldOre = 40, Gold = 41, Ruby = 42, Sapphire = 43, Emerald = 44, Diamond = 45, Jewelry = 46 }
 
 /// <summary>Le stock commun de la colonie : tout appartient à la colonie, rien aux colons.</summary>
-public sealed class Stockpile
+public sealed partial class Stockpile
 {
     private readonly Dictionary<ResourceType, int> _amounts = [];
 
@@ -32,17 +35,17 @@ public sealed class Stockpile
 
     /// <summary>Tout ce qui se mange : nourriture sauvage, céréales et pain (un repas chacun). La farine ne se mange pas crue.</summary>
     public int FoodUnits => Get(ResourceType.Food) + Get(ResourceType.Fish) + Get(ResourceType.Eggs) + Get(ResourceType.Milk) + Get(ResourceType.Grain) + Get(ResourceType.Bread)
-        + Get(ResourceType.Meat) + Get(ResourceType.SaltedMeat) + Get(ResourceType.Stew) + Get(ResourceType.Cake) * PortionsPerCake + _cakeSlices;
+        + Get(ResourceType.Meat) + Get(ResourceType.SaltedMeat) + Get(ResourceType.Stew) + Get(ResourceType.Cake) * PortionsPerCake + Get(ResourceType.Grapes) + _cakeSlices;
 
     /// <summary>Valeur du stock comestible : 100 points de faim correspondent à une unité de nourriture.</summary>
     public decimal FoodNutrition => Nutrition(ResourceType.Food) + Nutrition(ResourceType.Fish) + Nutrition(ResourceType.Eggs)
         + Nutrition(ResourceType.Milk) + Nutrition(ResourceType.Grain) + Nutrition(ResourceType.Bread)
-        + Nutrition(ResourceType.Meat) + Nutrition(ResourceType.SaltedMeat) + Nutrition(ResourceType.Stew) + Nutrition(ResourceType.Cake)
+        + Nutrition(ResourceType.Meat) + Nutrition(ResourceType.SaltedMeat) + Nutrition(ResourceType.Stew) + Nutrition(ResourceType.Cake) + Nutrition(ResourceType.Grapes)
         + _cakeSlices * (decimal)CakeMealValue;
 
     public static decimal NutritionPerItem(ResourceType type) => type switch
     {
-        ResourceType.Food or ResourceType.Fish or ResourceType.Eggs => (decimal)WildMealValue,
+        ResourceType.Food or ResourceType.Fish or ResourceType.Eggs or ResourceType.Grapes => (decimal)WildMealValue,
         ResourceType.Milk => (decimal)MilkMealValue,
         ResourceType.Grain => (decimal)GrainMealValue,
         ResourceType.Bread => (decimal)BreadMealValue,
@@ -80,6 +83,7 @@ public sealed class Stockpile
         else if (TryTake(ResourceType.Stew, 1)) (value, dish) = (StewMealValue, ResourceType.Stew);
         else if (TryTake(ResourceType.Food, 1)) value = WildMealValue;
         else if (TryTake(ResourceType.Fish, 1)) value = WildMealValue;
+        else if (TryTake(ResourceType.Grapes, 1)) value = WildMealValue;
         else if (TryTake(ResourceType.Meat, 1)) value = MeatMealValue;
         else if (TryTake(ResourceType.Bread, 1)) value = BreadMealValue;
         else if (TryTake(ResourceType.Grain, 1)) value = GrainMealValue;
@@ -93,7 +97,9 @@ public sealed class Stockpile
 
     public void Add(ResourceType type, int amount, ResourceFlow flow = ResourceFlow.Production)
     {
-        _amounts[type] = Get(type) + amount;
+        if (amount < 0 || !Enum.IsDefined(type))
+            throw new ArgumentOutOfRangeException(nameof(amount), "Une entrée de stock doit être positive et porter sur une ressource connue.");
+        _amounts[type] = checked(Get(type) + amount);
         ResourceAccounting.Record(this, type, flow, amount);
         if (type == ResourceType.Meat && amount > 0)
             _meatByAge[0] = _meatByAge.GetValueOrDefault(0) + amount;
@@ -102,12 +108,16 @@ public sealed class Stockpile
     /// <summary>Retire une quantité si elle est disponible (la viande la plus vieille d'abord). Renvoie false sinon, sans rien retirer.</summary>
     public bool TryTake(ResourceType type, int amount, ResourceFlow flow = ResourceFlow.Usage)
     {
-        if (Get(type) < amount)
+        if (amount < 0 || !Enum.IsDefined(type))
+            throw new ArgumentOutOfRangeException(nameof(amount));
+        if ((flow == ResourceFlow.Loss ? Get(type) : Available(type)) < amount)
             return false;
         _amounts[type] = Get(type) - amount;
         ResourceAccounting.Record(this, type, flow, amount);
         if (type == ResourceType.Meat)
             RemoveMeat(amount, 0);
+        if (flow == ResourceFlow.Loss)
+            ReconcileReservations(type);
         return true;
     }
 
@@ -154,6 +164,7 @@ public sealed class Stockpile
         }
         _amounts[ResourceType.Meat] = Get(ResourceType.Meat) - lost;
         ResourceAccounting.Record(this, ResourceType.Meat, ResourceFlow.Loss, lost);
+        ReconcileReservations(ResourceType.Meat);
         return lost;
     }
 }

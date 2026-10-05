@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Godot;
 using GodColony.Simulation.Colonies;
+using GodColony.Simulation.Time;
 
 namespace GodColony.View;
 
@@ -10,7 +11,7 @@ namespace GodColony.View;
 public partial class ProductionDashboard : VBoxContainer
 {
     private static readonly BuildingType[] Workshops = [BuildingType.Mill, BuildingType.Oven, BuildingType.Kiln,
-        BuildingType.Bloomery, BuildingType.Forge, BuildingType.Loom, BuildingType.Market];
+        BuildingType.Bloomery, BuildingType.Forge, BuildingType.Loom, BuildingType.Market, BuildingType.Tavern, BuildingType.Cask, BuildingType.PotteryKiln, BuildingType.Tannery, BuildingType.Goldsmith];
     private Label _workers = null!, _workshops = null!, _emptyCosts = null!, _constructionCosts = null!;
     private WorkforceChart _chart = null!;
     private PanelContainer _costCard = null!;
@@ -18,6 +19,8 @@ public partial class ProductionDashboard : VBoxContainer
     private readonly Dictionary<WorkSector, (Label Count, Label Share, ProgressBar Bar)> _sectors = [];
     private readonly Dictionary<ResourceType, CostRow> _costs = [];
     private readonly List<WorkshopCard> _recipes = [];
+    private readonly Dictionary<ResourceType, (Control Row, Label Amount)> _deliveries = [];
+    private Label _deliveryState = null!;
 
     public override void _Ready()
     {
@@ -48,11 +51,30 @@ public partial class ProductionDashboard : VBoxContainer
             _sectors.Add(sector, (count, share, bar));
             card.TooltipText = "Pourcentage du temps de travail prévu et nombre d'habitants affectés à ce secteur.\nUne affectation ne signifie pas que l'habitant travaille à cet instant.";
         }
+        var deliveryCard = DashboardStyle.Card(this);
+        var deliveries = MenuStyle.Column(deliveryCard, 7);
+        DashboardStyle.Text(deliveries, "LIVRAISONS LOCALES", 11, DashboardStyle.Gold);
+        _deliveryState = DashboardStyle.Text(deliveries, "", 11, DashboardStyle.Muted, true);
+        var deliveryFlow = new HFlowContainer(); deliveryFlow.AddThemeConstantOverride("h_separation", 14);
+        deliveryFlow.AddThemeConstantOverride("v_separation", 6); deliveries.AddChild(deliveryFlow);
+        foreach (ResourceType good in Enum.GetValues<ResourceType>().Where(g => g != ResourceType.Coins))
+        {
+            var row = DashboardStyle.Row(deliveryFlow, 5); DashboardStyle.Icon(row, good, 24);
+            var amount = DashboardStyle.Text(row, "", 12, DashboardStyle.Mint);
+            amount.Name = $"LivraisonLocale{good}";
+            row.TooltipText = $"{ResourceIcons.Name(good)} transportés vers le stock ; ils ne sont pas encore disponibles.";
+            _deliveries.Add(good, (row, amount));
+        }
         DashboardStyle.Text(this, "MATIÈRES PREMIÈRES → PRODUITS", 11, DashboardStyle.Gold);
         _recipesGrid = Grid(this);
         foreach (BuildingType type in Workshops)
         {
             var card = new WorkshopCard { Workshop = type }; _recipesGrid.AddChild(card); _recipes.Add(card);
+        }
+        foreach (Recipe recipe in ExtendedIndustry.Recipes.GroupBy(r => r.Output).Select(g => g.First())
+            .Where(r => r.Workshop is BuildingType.Bloomery or BuildingType.Forge or BuildingType.Loom or BuildingType.Cask))
+        {
+            var card = new WorkshopCard { Workshop = recipe.Workshop, Variant = recipe }; _recipesGrid.AddChild(card); _recipes.Add(card);
         }
         DashboardStyle.Text(this, "Les quantités correspondent à un lot. Les jauges de fabrication suivent les actions commencées.",
             11, DashboardStyle.Muted, true);
@@ -83,7 +105,7 @@ public partial class ProductionDashboard : VBoxContainer
         WorkSector.Craft => "Artisanat", _ => "Temps libre",
     };
 
-    public void Refresh(Colony colony)
+    public void Refresh(Colony colony, long ticks)
     {
         Colonist[] workers = colony.Workers.ToArray();
         _workers.Text = workers.Length.ToString();
@@ -96,7 +118,18 @@ public partial class ProductionDashboard : VBoxContainer
             int people = workers.Count(w => w.Sector == sector);
             view.Count.Text = $"{people} pers.";
         }
-        foreach (WorkshopCard card in _recipes) card.Refresh(colony);
+        Colonist[] carriers = colony.PresentMembers.Concat(colony.Transients).Distinct()
+            .Where(m => m.Colony == colony && m.Carrying is not null).ToArray();
+        int toStock = carriers.Count(m => m.CarryingTo is null), toSites = carriers.Length - toStock;
+        _deliveryState.Text = toStock + toSites == 0 ? "Aucune livraison en cours."
+            : $"{toStock} habitant(s) vers le stock · {toSites} vers les chantiers";
+        foreach (var (good, view) in _deliveries)
+        {
+            int amount = carriers.Where(m => m.CarryingTo is null && m.Carrying!.Value.Type == good)
+                .Sum(m => m.Carrying!.Value.Amount);
+            view.Row.Visible = amount > 0; view.Amount.Text = $"{amount} {Trade.GoodName(good, amount)}";
+        }
+        foreach (WorkshopCard card in _recipes) card.Refresh(colony, ticks);
         double maximum = _costs.Keys.Select(g => colony.Labor.HoursPerUnit(g) ?? 0).DefaultIfEmpty(0).Max();
         _emptyCosts.Visible = !_costs.Keys.Any(g => colony.Labor.HoursPerUnit(g) is not null);
         foreach (var (good, view) in _costs) view.Refresh(colony.Labor, maximum);
@@ -133,25 +166,27 @@ public partial class ProductionDashboard : VBoxContainer
     private sealed partial class WorkshopCard : PanelContainer
     {
         public BuildingType Workshop;
-        private Label _count = null!, _state = null!;
+        public Recipe? Variant;
+        private Label _count = null!, _state = null!, _inputs = null!;
         private HBoxContainer _flow = null!;
         private ProgressBar _progress = null!;
         private Recipe? _recipe;
         public override void _Ready()
         {
-            Name = $"Recipe{Workshop}"; SizeFlagsHorizontal = SizeFlags.ExpandFill;
+            Name = $"Recipe{Workshop}{Variant?.Output.ToString() ?? ""}"; SizeFlagsHorizontal = SizeFlags.ExpandFill;
             AddThemeStyleboxOverride("panel", MenuStyle.Box(new Color(0.09f, 0.16f, 0.135f), MenuStyle.Edge, 10));
             var column = MenuStyle.Column(this, 7); var heading = DashboardStyle.Row(column, 7);
             DashboardStyle.Picture(heading, SpriteFactory.BuildingSprite(Workshop.ToString()), 30);
-            var title = DashboardStyle.Text(heading, Building.NameOf(Workshop), 13);
+            var title = DashboardStyle.Text(heading, Variant is null ? Building.NameOf(Workshop) : ResourceIcons.Name(Variant.Output), 13);
             title.SizeFlagsHorizontal = SizeFlags.ExpandFill; title.ClipText = true;
             title.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
             _count = DashboardStyle.Text(heading, "", 11, DashboardStyle.Muted);
             _flow = DashboardStyle.Row(column, 7);
             _state = DashboardStyle.Text(column, "", 11, DashboardStyle.Muted, true);
-            _state.Name = $"RecipeState{Workshop}";
+            _state.Name = $"RecipeState{Workshop}{Variant?.Output.ToString() ?? ""}";
+            _inputs = DashboardStyle.Text(column, "", 11, DashboardStyle.Gold, true);
             _progress = DashboardStyle.Bar(column, DashboardStyle.Mint, 4);
-            _progress.Name = $"RecipeProgress{Workshop}";
+            _progress.Name = $"RecipeProgress{Workshop}{Variant?.Output.ToString() ?? ""}";
         }
 
         private void SetRecipe(Recipe recipe)
@@ -179,16 +214,25 @@ public partial class ProductionDashboard : VBoxContainer
             row.TooltipText = $"{amount} {Trade.GoodName(good, amount)}";
         }
 
-        public void Refresh(Colony colony)
+        public void Refresh(Colony colony, long ticks)
         {
-            Recipe recipe = Crafting.RecipeFor(colony, Workshop); SetRecipe(recipe);
+            Recipe recipe = Variant ?? (Workshop == BuildingType.Tavern ? Cuisine.StewRecipe : Workshop == BuildingType.Cask ? Cuisine.BeerRecipe : Crafting.RecipeFor(colony, Workshop));
+            Activity? active = colony.PresentMembers.Select(m => m.Activity).FirstOrDefault(a => a?.Building?.Type == Workshop && a.InputsTaken && (Variant is null || a.CommittedRecipe?.Output == Variant.Output));
+            if (active?.CommittedRecipe is { } committed) recipe = committed;
+            SetRecipe(recipe);
             int count = colony.Buildings.Count(b => b.Type == Workshop && b.IsComplete);
             bool planned = colony.Buildings.Any(b => b.Type == Workshop && !b.IsComplete);
             _count.Text = count > 0 ? $"×{count}" : planned ? "En chantier" : "À construire";
-            Activity[] jobs = colony.Members.Select(m => m.Activity).OfType<Activity>()
-                .Where(a => a.Kind == ActivityKind.Craft && a.Building?.Type == Workshop).ToArray();
+            if (Workshop == BuildingType.Market && count > 0)
+            {
+                int extensions = colony.Buildings.Count(b => b.Type == Workshop && b.IsExtension && b.IsComplete);
+                _count.Text = $"×{count - extensions}" + (extensions > 0 ? $" · {extensions} extension(s)" : "")
+                    + (planned ? " · agrandissement en chantier" : "");
+            }
+            Activity[] jobs = colony.PresentMembers.Select(m => m.Activity).OfType<Activity>()
+                .Where(a => a.Kind == ActivityKind.Craft && a.Building?.Type == Workshop && (Variant is null || a.Product == Variant.Output)).ToArray();
             Activity[] started = jobs.Where(a => a.Started).ToArray();
-            var missing = recipe.Inputs.Where(i => colony.Stock.Get(i.Type) < i.Amount).ToArray();
+            var missing = ToolChain.MissingInputs(colony, recipe);
             Color color;
             if (started.Length > 0)
             {
@@ -197,15 +241,36 @@ public partial class ProductionDashboard : VBoxContainer
             }
             else if (jobs.Length > 0) { _state.Text = $"{jobs.Length} artisan{(jobs.Length > 1 ? "s" : "")} en trajet"; color = DashboardStyle.Gold; }
             else if (count == 0) { _state.Text = planned ? "Atelier en construction" : "Atelier non construit"; color = DashboardStyle.Muted; }
-            else if (missing.Length > 0)
+            else if (missing.Count > 0)
             {
                 _state.Text = "Manque : " + string.Join(", ", missing.Select(i => ResourceIcons.Name(i.Type)));
                 color = DashboardStyle.Warning;
             }
             else { _state.Text = "Matières disponibles"; color = DashboardStyle.Mint; }
+            Building[] brewing = Workshop == BuildingType.Cask
+                ? colony.Buildings.Where(b => b.Type == Workshop && b.IsComplete && b.IsBrewing && (Variant is null || (b.BrewProduct ?? ResourceType.Beer) == Variant.Output)).ToArray() : [];
+            if (brewing.Length > 0)
+            {
+                double days = Math.Max(0, brewing.Min(b => b.BrewReadyTicks) - ticks) / (double)TimeConstants.TicksPerDay;
+                string state = days > 0 ? $"Prochain fût prêt dans {days:0.0} j"
+                    : Civic.Has(colony, BuildingType.Tavern) ? "Prêt à être tiré" : "Prêt · attend une taverne";
+                _state.Text = $"{brewing.Length} fût(s) · {brewing.Sum(b => b.BrewProduct == ResourceType.Wine ? 2 : Cuisine.BeerRecipe.OutputAmount)} chopes\n{state}"
+                    + (started.Length > 0 ? $"\n{started.Length} lot(s) en préparation" : "");
+                color = days > 0 ? DashboardStyle.Gold : DashboardStyle.Mint;
+            }
             _state.AddThemeColorOverride("font_color", color);
-            _progress.Visible = started.Length > 0;
-            _progress.Value = started.Length == 0 ? 0 : started.Average(a => a.DurationTicks > 0 ? Math.Clamp(a.ElapsedTicks / a.DurationTicks, 0, 1) : 0);
+            var engaged = started.Where(a => a.InputsInventory is not null).SelectMany(a => Enum.GetValues<ResourceType>()
+                .Select(g => (Good: g, Amount: a.InputsInventory!.Get(g)))).Where(p => p.Amount > 0)
+                .GroupBy(p => p.Good).Select(g => $"{g.Sum(p => p.Amount)} {Trade.GoodName(g.Key)}");
+            _inputs.Text = string.Join(" · ", engaged);
+            _inputs.Visible = _inputs.Text.Length > 0;
+            if (_inputs.Visible) _inputs.Text = "Intrants engagés : " + _inputs.Text;
+            _progress.Visible = started.Length > 0 || brewing.Length > 0;
+            _progress.Value = brewing.Length > 0
+                ? brewing.Average(b => Math.Clamp(1 - (b.BrewReadyTicks - ticks)
+                    / (double)((b.BrewProduct == ResourceType.Wine ? 3 : Cuisine.BrewDays) * TimeConstants.TicksPerDay), 0, 1))
+                : started.Length == 0 ? 0 : started.Average(a => a.DurationTicks > 0 ? Math.Clamp(a.ElapsedTicks / a.DurationTicks, 0, 1) : 0);
+            _progress.TooltipText = brewing.Length > 0 ? "Avancement moyen de la fermentation des fûts remplis." : "Avancement moyen des fabrications commencées.";
             TooltipText = $"{Building.NameOf(Workshop)} · un lot produit {recipe.OutputAmount} {Trade.GoodName(recipe.Output, recipe.OutputAmount)}\n"
                 + string.Join("\n", recipe.Inputs.Select(i => $"{ResourceIcons.Name(i.Type)} : {colony.Stock.Get(i.Type)} en stock, {i.Amount} nécessaires"))
                 + "\nLes réserves protégées et les objectifs de la colonie décident du lancement d'une fabrication.";

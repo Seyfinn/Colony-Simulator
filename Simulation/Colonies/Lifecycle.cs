@@ -59,7 +59,7 @@ public static class Lifecycle
     /// <summary>Chaque heure : celui qui n'a rien mangé depuis deux jours meurt de faim.</summary>
     public static void Hourly(WorldState world, Colony colony)
     {
-        foreach (Colonist colonist in colony.Members.ToList())
+        foreach (Colonist colonist in colony.PresentMembers.ToList())
         {
             if (colonist.Needs.Food > 0.001f)
             {
@@ -85,7 +85,7 @@ public static class Lifecycle
         FormCouples(world, colony);
         GiveBirths(world, colony);
         Conceive(world, colony);
-        foreach (Colonist colonist in colony.Members.ToList())
+        foreach (Colonist colonist in colony.PresentMembers.ToList())
             if (world.Random.NextSingle() < OldAgeDeathChance(colonist.EquivalentAge))
                 Die(world, colonist, "vieillesse");
     }
@@ -97,7 +97,7 @@ public static class Lifecycle
     /// </summary>
     public static Sex ChooseSex(Colony colony, Random random)
     {
-        var everyone = colony.Members.Concat(colony.Transients).ToList();
+        var everyone = colony.PresentMembers.Concat(colony.Transients).ToList();
         int females = everyone.Count(m => m.Sex == Sex.Female), males = everyone.Count - females;
         float tilt = 0.4f * (males - females) / Math.Max(6, everyone.Count);
         float chanceOfGirl = Math.Clamp(0.5f + tilt, 0.2f, 0.8f);
@@ -111,7 +111,7 @@ public static class Lifecycle
     /// </summary>
     public static void FormCouples(WorldState world, Colony colony)
     {
-        List<Colonist> singles = colony.Members
+        List<Colonist> singles = colony.PresentMembers
             .Where(m => m.Stage == LifeStage.Adult && m.Partner is null)
             .ToList();
         var candidates = new List<(float Affinity, Colonist Woman, Colonist Man)>();
@@ -163,7 +163,7 @@ public static class Lifecycle
         long now = world.Clock.Ticks;
         long due = now + (long)(PregnancyDays * TimeConstants.TicksPerDay);
 
-        foreach (Colonist woman in colony.Members.Where(m => m.Sex == Sex.Female))
+        foreach (Colonist woman in colony.PresentMembers.Where(m => m.Sex == Sex.Female))
         {
             if (!CanConceive(woman, due))
                 continue;
@@ -189,7 +189,7 @@ public static class Lifecycle
     private static void GiveBirths(WorldState world, Colony colony)
     {
         long now = world.Clock.Ticks;
-        foreach (Colonist mother in colony.Members.Where(m => m.PregnantUntilTicks is { } due && due <= now).ToList())
+        foreach (Colonist mother in colony.PresentMembers.Where(m => m.PregnantUntilTicks is { } due && due <= now).ToList())
             GiveBirth(world, mother);
     }
 
@@ -199,7 +199,7 @@ public static class Lifecycle
         Colony colony = mother.Colony;
         Colonist? father = mother.PregnancyFather;
         Sex sex = ChooseSex(colony, world.Random);
-        string name = Names.Pick(sex, world.Random, colony.Members.Concat(colony.Transients).Select(m => m.Name));
+        string name = Names.Pick(sex, world.Random, colony.PresentMembers.Concat(colony.Transients).Select(m => m.Name));
         Skills fatherSkills = father?.Skills ?? mother.Skills;
         Personality fatherPersonality = father?.Personality ?? mother.Personality;
 
@@ -222,7 +222,7 @@ public static class Lifecycle
         mother.LastBirthTicks = world.Clock.Ticks;
         mother.Children.Add(child);
         father?.Children.Add(child);
-        colony.Members.Add(child);
+        colony.PresentMembers.Add(child);
 
         // Le bébé dort dans la hutte de sa mère, s'il y a de la place.
         if (mother.Home is { } home && home.Residents.Count < Building.HutCapacity)
@@ -246,6 +246,10 @@ public static class Lifecycle
     {
         Colony colony = colonist.Colony;
         float age = colonist.AgeYears;
+        colonist.TravelId = 0; // La mort retire la citoyenneté, même pendant une mission.
+        foreach (WarParty party in world.WarParties) party.Warriors.Remove(colonist);
+        foreach (Caravan trip in world.Caravans)
+            if (trip.Traders is List<Colonist> participants) participants.Remove(colonist);
         ColonistAI.DetachFromColony(colonist);
 
         // Le deuil : le conjoint le plus durement, puis les enfants et les parents, les frères et sœurs, les amis.
@@ -254,7 +258,7 @@ public static class Lifecycle
             partner.Partner = null;
             partner.Needs.Grief = 1f;
         }
-        foreach (Colonist other in colony.Members)
+        foreach (Colonist other in colony.PresentMembers)
         {
             float grief = 0f;
             if (colonist.Children.Contains(other) || colonist.Mother == other || colonist.Father == other)

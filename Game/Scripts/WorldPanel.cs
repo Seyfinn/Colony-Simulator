@@ -11,6 +11,8 @@ namespace GodColony;
 public partial class WorldPanel : CanvasLayer
 {
     public event Action<int>? ColonyRequested;
+    public event Action<int>? SettlementRequested;
+    public int ObservedSettlementId { get; set; }
     public event Action? FoundingRequested;
     public event Action<int>? SiteRequested;
     private WorldState _world = null!;
@@ -149,6 +151,7 @@ public partial class WorldPanel : CanvasLayer
         _map.OffsetLeft = 16; _map.OffsetBottom = -60;
         if (_world is not null) _map.Init(_world);
         _map.ColonyClicked += index => { MapOpen = false; ColonyRequested?.Invoke(index); };
+        _map.SettlementClicked += id => { MapOpen = false; SettlementRequested?.Invoke(id); };
         _map.SiteClicked += tile => SiteRequested?.Invoke(tile);
         BuildEconomy();
         BuildCivilization();
@@ -275,12 +278,15 @@ public partial class WorldPanel : CanvasLayer
         };
         frame.AddChild(scroll);
         _economyDashboard = new EconomyDashboard();
+        _economyDashboard.SettlementRequested += id => { MapOpen = false; Open = false; SettlementRequested?.Invoke(id); };
         scroll.AddChild(_economyDashboard);
     }
 
     private void RefreshEconomy(Colony colony)
     {
-        _title.Text = $"Économie · {colony.Name}";
+        Settlement place = _world.SettlementById(ObservedSettlementId) is { } selected && selected.Owner == colony ? selected : colony.PrimarySettlement;
+        using var scope = place.Observe();
+        _title.Text = $"Économie · {place.Name}";
         _economyDashboard.Refresh(_world, colony);
         _economyDashboard.RefreshGraphs(colony, ResourceHistory);
     }

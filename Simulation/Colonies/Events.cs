@@ -16,10 +16,10 @@ public static class Milestones
 
     public static readonly IReadOnlyList<Milestone> All =
     [
-        new("pop10", "Dix habitants", (c, _) => c.Members.Count >= 10),
-        new("pop20", "Vingt habitants", (c, _) => c.Members.Count >= 20),
-        new("pop40", "Quarante habitants : une vraie bourgade", (c, _) => c.Members.Count >= 40),
-        new("birth", "Premier enfant né dans la colonie", (c, _) => c.Members.Any(m => m.Mother is not null)),
+        new("pop10", "Dix habitants", (c, _) => c.PresentMembers.Count >= 10),
+        new("pop20", "Vingt habitants", (c, _) => c.PresentMembers.Count >= 20),
+        new("pop40", "Quarante habitants : une vraie bourgade", (c, _) => c.PresentMembers.Count >= 40),
+        new("birth", "Premier enfant né dans la colonie", (c, _) => c.PresentMembers.Any(m => m.Mother is not null)),
         new("year2", "Une année entière survécue", (_, k) => k.Year >= 2),
         new("harvest", "Première grande moisson (20 céréales)", (c, _) => c.Labor.TotalProduced(ResourceType.Grain) >= 20),
         new("bread", "Premier pain cuit", (c, _) => c.Labor.TotalProduced(ResourceType.Bread) >= 1),
@@ -48,7 +48,7 @@ public static class Milestones
             if (colony.Achievements.ContainsKey(milestone.Id) || !milestone.Reached(colony, clock))
                 continue;
             colony.Achievements[milestone.Id] = clock.Ticks;
-            foreach (Colonist colonist in colony.Members)
+            foreach (Colonist colonist in colony.PresentMembers)
                 colonist.Needs.Faith = Math.Min(1f, colonist.Needs.Faith + FaithGain);
             ColonyBrain.Say(colony, clock, $"★ Objectif atteint : {milestone.Title}.");
         }
@@ -79,14 +79,14 @@ public static class Events
             return;
         Random chance = world.Chance;
 
-        if (colony.Members.Count >= MinPopulationForFire && chance.NextSingle() < FireChancePerDay * (colony.DroughtDaysLeft > 0 ? 3f : 1f))
+        if (colony.PresentMembers.Count >= MinPopulationForFire && chance.NextSingle() < FireChancePerDay * (colony.DroughtDaysLeft > 0 ? 3f : 1f))
             Fire(world, colony);
 
-        if (colony.Members.Count >= MinPopulationForRaid && world.Clock.TotalDays >= MinDaysForRaid && chance.NextSingle() < RaidChancePerDay)
+        if (colony.PresentMembers.Count >= MinPopulationForRaid && world.Clock.TotalDays >= MinDaysForRaid && chance.NextSingle() < RaidChancePerDay)
             Raid(world, colony);
 
         float peddler = PeddlerChancePerDay * (Civic.Has(colony, BuildingType.Market) ? 2f : 1f);
-        if (colony.Members.Count >= 6 && chance.NextSingle() < peddler)
+        if (colony.PresentMembers.Count >= 6 && chance.NextSingle() < peddler)
             Peddler(world, colony);
     }
 
@@ -118,11 +118,11 @@ public static class Events
         if (stock.Get(ResourceType.Coins) < 100 && stock.Get(ResourceType.Tools) == 0 && stock.Get(ResourceType.Grain) < 20)
             return;
 
-        int adults = colony.Members.Count(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None);
+        int adults = colony.PresentMembers.Count(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None);
         float defense = (adults + 1.5f * Math.Min(stock.Get(ResourceType.Tools), adults))
             * (Knowledge.Has(colony, Discovery.Fortification) ? Knowledge.FortificationFactor : 1f)
             + Diplomacy.AlliedHelp(world, colony, attacker: null);
-        float strength = 4f + colony.Members.Count / 3f + world.Clock.Year + 2f * world.Chance.NextSingle();
+        float strength = 4f + colony.PresentMembers.Count / 3f + world.Clock.Year + 2f * world.Chance.NextSingle();
         GameClock clock = world.Clock;
 
         if (defense >= strength)
@@ -142,7 +142,7 @@ public static class Events
         stock.TryTake(ResourceType.Grain, grain, ResourceFlow.Loss);
 
         int wounded = 0;
-        foreach (Colonist victim in colony.Members.Where(m => m.Stage != LifeStage.Child && m.Ailment == Ailment.None)
+        foreach (Colonist victim in colony.PresentMembers.Where(m => m.Stage != LifeStage.Child && m.Ailment == Ailment.None)
                      .OrderBy(_ => world.Chance.Next()).Take(Math.Max(1, (int)MathF.Ceiling((strength - defense) / 3f))).ToList())
         {
             Health.Fall(colony, victim, Ailment.Injured, 72 + world.Chance.Next(0, 48), clock, "");

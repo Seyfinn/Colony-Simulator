@@ -21,7 +21,20 @@ public static class Specialties
         _ => ResourceType.Hardwood,
     };
 
-    public static ResourceType NativeOf(Colony colony) => NativeOf(colony.Map.Biome);
+    /// <summary>
+    /// La denrée que la région produit réellement : celle de son biome si la colonie connaît une source de cette denrée, sinon la première source connue
+    /// (un littoral boisé a du sel et du bois dur). Les gîtes viennent de la géologie de la région, jamais d'une règle de marché.
+    /// </summary>
+    public static ResourceType NativeOf(Colony colony)
+    {
+        ResourceType usual = NativeOf(colony.Map.Biome);
+        int region = colony.LocalSettlement.RegionTileIndex;
+        bool Known(ResourceType good) => colony.DepositReports.Any(k => k.Region == region && k.Material == good && k.State != GodColony.Simulation.Map.DepositObservation.Depleted);
+        if (Known(usual)) return usual;
+        foreach (ResourceType good in Goods)
+            if (Known(good)) return good;
+        return usual;
+    }
 
     public static bool IsSpecialty(ResourceType good) => Goods.Contains(good);
 
@@ -32,7 +45,7 @@ public static class Specialties
     public static int NativeTarget(Colony colony) => 6 + colony.ExportInterest.GetValueOrDefault(NativeOf(colony));
 
     /// <summary>Ce que la colonie veut garder de chaque denrée qu'elle ne produit pas : un peu moins d'une unité par habitant.</summary>
-    public static float ImportNeed(Colony colony) => Math.Max(2f, colony.Members.Count * 0.4f);
+    public static float ImportNeed(Colony colony) => Math.Max(2f, colony.PresentMembers.Count * 0.4f);
 
     public static string Name(ResourceType good) => good switch
     {
@@ -61,7 +74,7 @@ public static class Specialties
     /// <summary>Chaque matin : on consomme un peu de sel (conservation) et d'épices (repas relevés).</summary>
     public static void Daily(Colony colony)
     {
-        int people = colony.Members.Count;
+        int people = colony.PresentMembers.Count;
         if (people == 0)
             return;
         colony.SaltUse += people / 15f;

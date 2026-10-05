@@ -165,7 +165,9 @@ public partial class PrayerPanel : CanvasLayer
         var auto = new CheckBox { Text = "Toujours accorder ce type de décision", ButtonPressed = prayer.Colony.Prayers.AutoApprove.Contains(prayer.Kind) };
         auto.AddThemeColorOverride("font_color", Muted);
         auto.AddThemeFontSizeOverride("font_size", 12);
-        column.AddChild(auto);
+        // Un souhait divin n'est jamais accordé d'office : la case n'a pas de sens pour lui.
+        if (prayer.Kind != DecisionKind.Wish)
+            column.AddChild(auto);
 
         var buttons = new HBoxContainer();
         buttons.AddThemeConstantOverride("separation", 8);
