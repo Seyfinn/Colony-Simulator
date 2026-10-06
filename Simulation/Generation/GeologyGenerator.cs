@@ -19,14 +19,14 @@ internal static class GeologyGenerator
 
     /// <summary>
     /// La pierre précieuse d'une région à gemmes : le monde est partagé en provinces de quelques cases, chacune riche d'une pierre (rubis, saphir ou émeraude),
-    /// avec de rares exceptions. Une grande zone commerciale réunit donc plusieurs pierres sans qu'aucune région ne les ait toutes ; le diamant reste exceptionnel.
+    /// avec de rares exceptions. Une grande zone commerciale réunit donc plusieurs pierres sans qu'aucune région ne les ait toutes ; le diamant reste plus rare que les autres pierres.
     /// </summary>
     internal static ResourceType GemOf(int seed, WorldTile tile, Random random)
     {
         ResourceType[] zones = [ResourceType.Ruby, ResourceType.Sapphire, ResourceType.Emerald];
         int zone = (tile.Col / 5 + tile.Row / 5 + Math.Abs(seed % 3)) % 3;
         int roll = random.Next(12);
-        return roll == 0 ? ResourceType.Diamond : roll == 1 ? zones[(zone + 1) % 3] : zones[zone];
+        return roll < 2 ? ResourceType.Diamond : roll == 2 ? zones[(zone + 1) % 3] : zones[zone];
     }
 
     internal static List<Deposit> Generate(int seed, WorldTile worldTile, LocalMap map, bool permanentIron)
@@ -47,8 +47,8 @@ internal static class GeologyGenerator
         bool mountain = relief == Relief.Mountains;
         if (mountain || random.Next(3) == 0) materials.Add(ResourceType.MineralCoal);
         if (random.Next(mountain ? 2 : 3) == 0) materials.Add(ResourceType.CopperOre);
-        if (random.Next(mountain ? 5 : 8) == 0) materials.Add(ResourceType.GoldOre);
-        if (random.Next(mountain ? 4 : 15) == 0) materials.Add(GemOf(seed, worldTile, random));
+        if (mountain ? random.Next(5) < 2 : random.Next(4) == 0) materials.Add(ResourceType.GoldOre);
+        if (mountain ? random.Next(2) == 0 : random.Next(15) < 2) materials.Add(GemOf(seed, worldTile, random));
         var result = new List<Deposit>();
         foreach (ResourceType material in materials)
         {
@@ -63,11 +63,11 @@ internal static class GeologyGenerator
             bool permanent = material is ResourceType.Clay or ResourceType.Salt or ResourceType.Spices or ResourceType.Hardwood
                 || material == ResourceType.IronOre && permanentIron;
             int reserve = material is ResourceType.Ruby or ResourceType.Sapphire or ResourceType.Emerald or ResourceType.Diamond
-                ? random.Next(3, 13) : material == ResourceType.GoldOre ? random.Next(24, 100) : random.Next(120, 401);
+                ? random.Next(30, 121) : material == ResourceType.GoldOre ? random.Next(24, 100) : random.Next(120, 401);
             result.Add(new Deposit { Id = checked(tile * 32 + result.Count + 1), Region = tile, Material = material,
                 X = place.X, Y = place.Y, Mode = permanent ? DepositMode.Permanent : DepositMode.Finite,
                 InitialReserve = reserve * (mountain ? 3 : 1), RemainingReserve = reserve * (mountain ? 3 : 1), DailyLimit = permanent ? 4 : mountain ? 16 : 8,
-                Difficulty = material is ResourceType.GoldOre or ResourceType.Diamond ? 2 : 1, Depth = DepthOf(material, mountain) });
+                Difficulty = material is ResourceType.Ruby or ResourceType.Sapphire or ResourceType.Emerald or ResourceType.Diamond ? 6 : material == ResourceType.GoldOre ? 2 : 1, Depth = DepthOf(material, mountain) });
         }
         return result;
     }
