@@ -19,7 +19,7 @@ public static partial class BuildingSprites
         if (Textures.TryGetValue(key, out var texture)) return texture;
 
         // Une image fournie dans Game/Assets/buildings/ prime sur le dessin en code (voir le cahier des charges).
-        string file = kind == "DamSide" ? "dam_side" : kind.ToLowerInvariant();
+        string file = kind == "Mill" ? "mill_body" : kind == "DamSide" ? "dam_side" : kind.ToLowerInvariant();
         string variant = biome.ToString().ToLowerInvariant();
         if ((AssetLibrary.Get($"buildings/{file}_{variant}.png") ?? AssetLibrary.Get($"buildings/{file}.png")) is { } provided)
             return Textures[key] = provided;
@@ -50,6 +50,8 @@ public static partial class BuildingSprites
             case "PotteryKiln": PotteryKiln(art, biome); break;
             case "Tannery": Tannery(art, biome); break;
             case "Goldsmith": Goldsmith(art, biome); break;
+            case "Mint": Mint(art, biome); break;
+            case "Shrine": Shrine(art, biome); break;
             case "Dam": Dam(art); break;
             case "DamSide": SideDam(art); break;
             default: Cottage(art, biome); break;
@@ -302,10 +304,7 @@ public static partial class BuildingSprites
         a.Box(28, 58, 11, 16, Wood); a.Box(30, 60, 7, 14, Wood.Darkened(0.3f));
         a.Box(31, 60, 1, 14, WoodLight); a.Dot(36, 67, Brass);
         a.Box(27, 75, 14, 2, StoneLight);
-        // Coursier du moulin ; la roue à aubes est une animation indépendante.
-        a.Box(44, 71, 19, 6, Mortar); a.Box(46, 71, 16, 3, C(104, 170, 175));
-        // La roue est désormais dessinée séparément, pour tourner selon le débit réel.
-        a.Line(47, 75, 51, 75, C(205, 226, 199)); a.Line(56, 73, 61, 73, C(190, 220, 204));
+        // La roue et le coursier sont assemblés côté eau par ColonistsView.
         Sack(a, 9, 65);
         a.Box(32, 38, 7, 9, Wood); a.Box(33, 39, 5, 7, C(73, 100, 94));
         // Épi sculpté sur l'enseigne.

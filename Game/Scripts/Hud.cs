@@ -25,14 +25,24 @@ public partial class Hud : CanvasLayer
     public event Action? HelpRequested;
     public event Action<Colonist, string, string>? ColonistRenameRequested;
 
+    /// <summary>Le joueur choisit, dans le menu de l'empire, la colonie (village ou campement) à observer : identifiant de l'établissement.</summary>
+    public event Action<int>? PlaceRequested;
+
     private Control _root = null!;
-    private Label _colonyName = null!, _colonyMeta = null!, _calendar = null!, _hour = null!, _tileInfo = null!;
+    private Label _colonyName = null!, _colonyMeta = null!, _calendar = null!, _hour = null!, _tileInfo = null!, _deaths = null!;
+    private OptionButton _placePicker = null!;
+    private string _placeSignature = "";
+    private readonly List<Label> _scopeLabels = [];
     private readonly Dictionary<ResourceType, Label> _stocks = [];
     private readonly Dictionary<ResourceType, PanelContainer> _resourceCards = [];
     private readonly Dictionary<ResourceType, Label> _foodDetails = [];
     private PanelContainer _foodDropdown = null!;
     private static readonly ResourceType[] FoodResources = [ResourceType.Food, ResourceType.Fish, ResourceType.Eggs, ResourceType.Milk, ResourceType.Meat, ResourceType.SaltedMeat,
-        ResourceType.Cake, ResourceType.Stew, ResourceType.Grain, ResourceType.Bread, ResourceType.Flour, ResourceType.Grapes];
+        ResourceType.Cake, ResourceType.Stew, ResourceType.Bread, ResourceType.Grapes, ResourceType.Honey, ResourceType.Mushrooms];
+
+    /// <summary>Un groupe de ressources (cultures, minéraux) : une carte dans le bandeau, un menu déroulant pour les quantités détaillées.</summary>
+    private sealed record GroupCard(PanelContainer Card, Label Total, PanelContainer Dropdown, ResourceType[] Members, Dictionary<ResourceType, Label> Lines);
+    private readonly Dictionary<ResourceCatalog.Group, GroupCard> _groups = [];
 
     /// <summary>Marchandises de l'élevage et du négoce : elles ont leur place dans l'écran Économie plutôt que dans le bandeau des stocks.</summary>
     private static readonly ResourceType[] TradeGoods = [ResourceType.Wool, ResourceType.Clothes, ResourceType.Salt, ResourceType.Spices, ResourceType.Hardwood,
@@ -83,15 +93,16 @@ public partial class Hud : CanvasLayer
 
     public override void _Input(InputEvent @event)
     {
-        if (_foodDropdown.Visible && @event is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape })
+        bool anyDropdown = _foodDropdown.Visible || _groups.Values.Any(g => g.Dropdown.Visible);
+        if (anyDropdown && @event is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape })
         {
             CloseFoodDetails();
             GetViewport().SetInputAsHandled();
             return;
         }
-        if (_foodDropdown.Visible && @event is InputEventMouseButton { Pressed: true } mouse
-            && !_foodDropdown.GetGlobalRect().HasPoint(mouse.Position)
-            && !_resourceCards[ResourceType.Food].GetGlobalRect().HasPoint(mouse.Position))
+        if (anyDropdown && @event is InputEventMouseButton { Pressed: true } mouse
+            && !(_foodDropdown.Visible && (_foodDropdown.GetGlobalRect().HasPoint(mouse.Position) || _resourceCards[ResourceType.Food].GetGlobalRect().HasPoint(mouse.Position)))
+            && !_groups.Values.Any(g => g.Dropdown.Visible && (g.Dropdown.GetGlobalRect().HasPoint(mouse.Position) || g.Card.GetGlobalRect().HasPoint(mouse.Position))))
             CloseFoodDetails();
         if (_nameEditor.IsVisibleInTree() && @event is InputEventKey { Pressed: true, Echo: false, Keycode: Key.Escape })
         {
@@ -111,9 +122,24 @@ public partial class Hud : CanvasLayer
         badge.CustomMinimumSize = new Vector2(42, 0);
         var identity = Column(row, 1);
         identity.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
-        _colonyName = Text(identity, "Première colonie", 21, Ink);
+        var title = Row(identity, 12);
+        _colonyName = Text(title, "Empire", 21, Ink);
+        _colonyName.CustomMinimumSize = new Vector2(190, 0);
         _colonyName.ClipText = true;
         _colonyName.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        _placePicker = new OptionButton
+        {
+            Name = "ColoniesEmpire", CustomMinimumSize = new Vector2(250, 0), ClipText = true, TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis,
+            FitToLongestItem = false, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+            TooltipText = "Colonies de l'empire et des empires de son royaume (même teinte sur la carte). Choisissez un lieu pour l'observer.",
+        };
+        _placePicker.ItemSelected += index => PlaceRequested?.Invoke((int)_placePicker.GetItemId((int)index));
+        title.AddChild(_placePicker);
+        _placePicker.GetPopup().MaxSize = new Vector2I(900, 340);
+        _deaths = Text(title, "", 14, Gold);
+        _deaths.Name = "DecesEmpire";
+        _deaths.MouseFilter = Control.MouseFilterEnum.Stop;
+        _deaths.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
         _colonyMeta = Text(identity, "", 12, Muted);
         _colonyMeta.ClipText = true;
         _colonyMeta.MouseFilter = Control.MouseFilterEnum.Pass;
@@ -132,7 +158,7 @@ public partial class Hud : CanvasLayer
             (GameSpeed.Observation, "×1", "Observation · touche 1"),
             (GameSpeed.Rapide, "×4", "Rapide · touche 2"),
             (GameSpeed.TresRapide, "×30", "Très rapide · touche 3"),
-            (GameSpeed.Fulgurante, "×200", "Fulgurante · touche 4\nLa carte se met en veille : seuls les chiffres et les courbes des colonies restent à l'écran, pour voir passer les années."),
+            (GameSpeed.Fulgurante, "×200", "Fulgurante · touche 4\nLa carte se met en veille : seuls les chiffres et les courbes des empires restent à l'écran, pour voir passer les années."),
         })
         {
             var button = Button(speeds, caption, hint, speed == GameSpeed.Fulgurante ? 56 : 48);
@@ -156,7 +182,10 @@ public partial class Hud : CanvasLayer
         row.AddThemeConstantOverride("v_separation", 6);
         foreach (ResourceType type in Enum.GetValues<ResourceType>())
         {
-            if ((int)type >= 27 || (type != ResourceType.Food && FoodResources.Contains(type)) || TradeGoods.Contains(type)) continue;
+            if ((int)type >= 27 || (type != ResourceType.Food && FoodResources.Contains(type)) || TradeGoods.Contains(type) || IsGrouped(type)) continue;
+            // Les groupes prennent place à côté de ce qu'ils complètent : les cultures avant le bois, les minéraux avant les outils.
+            if (type == ResourceType.Wood) BuildGroupCard(row, ResourceCatalog.Group.Crops);
+            if (type == ResourceType.Tools) BuildGroupCard(row, ResourceCatalog.Group.Minerals);
             var card = Panel();
             card.Name = $"Resource{type}";
             card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
@@ -165,17 +194,11 @@ public partial class Hud : CanvasLayer
             _resourceCards[type] = card;
             card.TooltipText = type.ToString() switch
             {
-                "Food" => "Réserve nutritive totale. 100 points de faim = 1 nourriture. Cliquez pour voir le détail.",
-                "Grain" => "Céréales récoltées dans les champs. Elles complètent la réserve de nourriture.",
+                "Food" => "Réserve nutritive de la colonie observée (nourriture, pain, viande…). 100 points de faim = 1 nourriture. Les céréales crues n'y comptent que pour leur très faible valeur. Cliquez pour voir le détail.",
                 "Wood" => "Bois disponible pour les constructions et le feu de camp.",
-                "Stone" => "Pierre extraite par les mineurs.",
-                "IronOre" => "Minerai de fer extrait de la roche.",
                 "Charcoal" => "Charbon de bois produit par la charbonnière, utilisé pour travailler le fer.",
-                "Iron" => "Fer produit au bas fourneau pour fabriquer des outils.",
                 "Tools" => "Outils fabriqués à la forge pour équiper les travailleurs.",
-                "Flour" => "Farine moulue par le moulin à eau ; elle ne se mange pas crue.",
-                "Bread" => "Pain cuit au four : il nourrit mieux que les céréales crues.",
-                "Coins" => "Pièces de la monnaie commune à toutes les colonies.",
+                "Coins" => "Pièces de la monnaie commune à tous les empires.",
                 "Eggs" => "Œufs de l'enclos : ils se mangent comme la nourriture sauvage.",
                 "Milk" => "Lait des vaches : il nourrit un peu mieux que la nourriture sauvage, mais il tourne vite.",
                 _ => ResourceIcons.Name(type),
@@ -210,7 +233,9 @@ public partial class Hud : CanvasLayer
                 card.AddChild(toggle);
                 toggle.Pressed += () =>
                 {
-                    _foodDropdown.Visible = !_foodDropdown.Visible;
+                    bool open = !_foodDropdown.Visible;
+                    CloseFoodDetails();
+                    _foodDropdown.Visible = open;
                     Layer = _foodDropdown.Visible ? 13 : 10;
                     PositionFoodDetails();
                 };
@@ -223,7 +248,8 @@ public partial class Hud : CanvasLayer
         _foodDropdown.CustomMinimumSize = new Vector2(360, 0);
         _root.AddChild(_foodDropdown);
         var detail = Column(_foodDropdown, 10);
-        Text(detail, "Stock de nourriture", 16, Gold);
+        Text(detail, "Réserves alimentaires", 16, Gold);
+        _scopeLabels.Add(Text(detail, "", 12, Muted));
         Text(detail, "100 points de faim = 1 nourriture", 12, Muted);
         foreach (var type in FoodResources)
         {
@@ -240,12 +266,112 @@ public partial class Hud : CanvasLayer
             _foodDetails[type] = Text(line, "", 13, Ink);
             _foodDetails[type].Name = $"FoodDetail{type}";
         }
-        Text(detail, "Farine : à transformer en pain", 12, Muted);
+        Text(detail, "Céréales et farine : voir « Cultures » (matières premières)", 12, Muted);
         _foodDropdown.Hide();
     }
 
-    internal static int ResourceCardCount => Enum.GetValues<ResourceType>().Count(type =>
-        (int)type < 27 && (type == ResourceType.Food || !FoodResources.Contains(type)) && !TradeGoods.Contains(type));
+    private static bool IsGrouped(ResourceType type) => ResourceCatalog.Minerals.Contains(type) || ResourceCatalog.Crops.Contains(type);
+
+    /// <summary>Les cartes du bandeau : les ressources isolées, plus les groupes Cultures et Minéraux.</summary>
+    internal static int ResourceCardCount => 2 + Enum.GetValues<ResourceType>().Count(type =>
+        (int)type < 27 && (type == ResourceType.Food || !FoodResources.Contains(type)) && !TradeGoods.Contains(type) && !IsGrouped(type));
+
+    private static readonly (string Title, ResourceType[] Types)[] MineralSections =
+    [
+        ("Roches et sels", [ResourceType.Stone, ResourceType.Clay, ResourceType.Salt, ResourceType.MineralCoal]),
+        ("Minerais bruts", [ResourceType.IronOre, ResourceType.CopperOre, ResourceType.GoldOre]),
+        ("Métaux", [ResourceType.Iron, ResourceType.Copper, ResourceType.Gold]),
+        ("Pierres précieuses", [ResourceType.Ruby, ResourceType.Sapphire, ResourceType.Emerald, ResourceType.Diamond]),
+    ];
+
+    /// <summary>Une carte de groupe (cultures ou minéraux) et son menu déroulant : le total reste affiché, le détail s'ouvre à la demande.</summary>
+    private void BuildGroupCard(GridContainer row, ResourceCatalog.Group group)
+    {
+        bool minerals = group == ResourceCatalog.Group.Minerals;
+        string title = minerals ? "Minéraux" : "Cultures";
+        ResourceType[] members = minerals ? ResourceCatalog.Minerals : ResourceCatalog.Crops;
+        var card = Panel();
+        card.Name = $"Groupe{group}";
+        card.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        card.CustomMinimumSize = new Vector2(0, 54);
+        card.AddThemeStyleboxOverride("panel", MenuStyle.Surface(8));
+        card.TooltipText = minerals
+            ? "Minéraux de la colonie observée : roches, minerais bruts, métaux et pierres précieuses. Cliquez pour voir les quantités."
+            : $"Matières premières agricoles de la colonie observée : les céréales ne se mangent qu'en dernier recours (valeur nutritive : {Stockpile.GrainMealValue:0.##} repas) ; on les moud et on les cuit. Cliquez pour voir le détail.";
+        row.AddChild(card);
+        var content = Row(card, 8);
+        content.AddChild(new TextureRect
+        {
+            Texture = ResourceIcons.Get(minerals ? ResourceType.Stone : ResourceType.Grain), TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+            ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+            CustomMinimumSize = new Vector2(24, 24), MouseFilter = Control.MouseFilterEnum.Ignore, SizeFlagsVertical = Control.SizeFlags.ShrinkCenter,
+        });
+        var text = Column(content, 0);
+        text.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
+        var label = Text(text, $"{title} ▾", 12, Muted);
+        label.ClipText = true;
+        label.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+        Label total = Text(text, "0", 21, Ink);
+        total.Name = $"Total{group}";
+        total.ClipText = true;
+        total.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
+
+        var dropdown = Panel();
+        dropdown.AddThemeStyleboxOverride("panel", Style(new Color(0.065f, 0.115f, 0.105f, 1f), Border));
+        dropdown.Name = $"Detail{group}";
+        dropdown.ZIndex = 20;
+        dropdown.CustomMinimumSize = new Vector2(330, 0);
+        _root.AddChild(dropdown);
+        var detail = Column(dropdown, 6);
+        Text(detail, minerals ? "Minéraux" : "Cultures (matières premières)", 16, Gold);
+        _scopeLabels.Add(Text(detail, "", 12, Muted));
+        var lines = new Dictionary<ResourceType, Label>();
+        void AddLine(ResourceType type)
+        {
+            var line = Row(detail, 12);
+            line.AddChild(new TextureRect
+            {
+                Texture = ResourceIcons.Get(type), TextureFilter = CanvasItem.TextureFilterEnum.Nearest,
+                ExpandMode = TextureRect.ExpandModeEnum.IgnoreSize, StretchMode = TextureRect.StretchModeEnum.KeepAspectCentered,
+                CustomMinimumSize = new Vector2(16, 16), SizeFlagsVertical = Control.SizeFlags.ShrinkCenter, MouseFilter = Control.MouseFilterEnum.Ignore,
+            });
+            string name = ResourceIcons.Name(type);
+            Text(line, char.ToUpperInvariant(name[0]) + name[1..], 14, Ink).CustomMinimumSize = new Vector2(120, 0);
+            lines[type] = Text(line, "", 13, Ink);
+            lines[type].Name = $"Detail{type}";
+        }
+        if (minerals)
+            foreach (var (section, types) in MineralSections)
+            {
+                Text(detail, section.ToUpperInvariant(), 10, Muted);
+                foreach (ResourceType type in types) AddLine(type);
+            }
+        else
+        {
+            foreach (ResourceType type in members) AddLine(type);
+            Text(detail, "Le grain cru ne rassasie presque pas : on le moud en farine, puis on cuit le pain.", 12, Muted);
+        }
+        dropdown.Hide();
+        _groups[group] = new GroupCard(card, total, dropdown, members, lines);
+
+        var toggle = new Button
+        {
+            Name = $"Basculer{group}", Flat = true, FocusMode = Control.FocusModeEnum.All,
+            MouseDefaultCursorShape = Control.CursorShape.PointingHand, TooltipText = card.TooltipText,
+        };
+        card.AddChild(toggle);
+        toggle.Pressed += () =>
+        {
+            bool open = !dropdown.Visible;
+            CloseFoodDetails();
+            dropdown.Visible = open;
+            Layer = open ? 13 : 10;
+            PositionDropdown(card, dropdown);
+        };
+    }
+
+    private void PositionDropdown(Control card, Control dropdown) =>
+        dropdown.Position = card.GlobalPosition - _root.GlobalPosition + new Vector2(0, card.Size.Y + 6);
 
     private void PositionFoodDetails()
     {
@@ -253,7 +379,12 @@ public partial class Hud : CanvasLayer
         _foodDropdown.Position = card.GlobalPosition - _root.GlobalPosition + new Vector2(0, card.Size.Y + 6);
     }
 
-    public void CloseFoodDetails() { _foodDropdown.Hide(); Layer = 10; }
+    public void CloseFoodDetails()
+    {
+        _foodDropdown.Hide();
+        foreach (GroupCard group in _groups.Values) group.Dropdown.Hide();
+        Layer = 10;
+    }
 
     private void BuildJournal()
     {
@@ -263,7 +394,7 @@ public partial class Hud : CanvasLayer
         Place(_tray, 0, 1, 0, 1, 16, -316, 436, -60);
         var column = Column(_tray, 8);
         var header = Row(column, 6);
-        _journalTab = Button(header, "Journal", "Dernières pensées de la colonie", 94);
+        _journalTab = Button(header, "Journal", "Dernières pensées de l'empire", 94);
         _workTab = Button(header, "Production", "Travail, recettes des ateliers et coûts de production", 110);
         _workTab.Name = "Production";
         _journalTab.ToggleMode = _workTab.ToggleMode = true;
@@ -393,13 +524,13 @@ public partial class Hud : CanvasLayer
         _help.Visible = false;
         var commands = Column(_help, 8);
         Section(commands, "COMMANDES");
-        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit ou molette maintenue   Glisser   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nC   Recentrer sur le village ou l'habitant sélectionné\nTab   Observer la colonie suivante\nM   Carte du monde   ·   E   Économie   ·   R   Savoirs et relations   ·   P   Prières\nJ   Journal   ·   H   Afficher / fermer les commandes\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   4   Vue chiffrée (×200)\nF5   Sauvegarde rapide   ·   F9   Chargement rapide\nÉchap   Fermer un panneau / menu", 13, Ink);
+        Wrapped(commands, "ZQSD / WASD / flèches   Déplacer la caméra\nClic droit ou molette maintenue   Glisser   ·   Molette   Zoom\nClic gauche   Sélectionner un habitant / miner la roche\nC   Recentrer sur le village ou l'habitant sélectionné\nTab   Observer l'empire suivant\nM   Carte du monde   ·   E   Économie   ·   R   Savoirs et relations   ·   P   Prières\nJ   Journal   ·   H   Afficher / fermer les commandes\nEspace   Pause   ·   1 / 2 / 3   Vitesse   ·   4   Vue chiffrée (×200)\nF5   Sauvegarde rapide   ·   F9   Chargement rapide\nÉchap   Fermer un panneau / menu", 13, Ink);
     }
 
     private void ResizePanels()
     {
         var layout = InterfaceLayout.For(_root.Size);
-        _resourceRow.Columns = Math.Min(layout.ResourceColumns, _resourceCards.Count);
+        _resourceRow.Columns = Math.Min(layout.ResourceColumns, _resourceCards.Count + _groups.Count);
         _resourceRow.OffsetBottom = 98 + layout.ResourcesHeight;
         float inspectorWidth = Math.Clamp(_root.Size.X * 0.24f, 300, 336);
         _colonistPanel.OffsetLeft = -16 - inspectorWidth;
@@ -454,20 +585,29 @@ public partial class Hud : CanvasLayer
         foreach (var (mode, button) in _speedButtons) button.SetPressedNoSignal(speed == mode);
     }
 
-    public void ShowColony(Colony colony, GameClock clock)
+    public void ShowColony(Colony colony, GameClock clock, IReadOnlyList<Colony>? realmColonies = null)
     {
         _shownTicks = clock.Ticks;
         _resourceRow.Show(); _tray.Visible = !_mapOverlay && !_economyOverlay && !HelpOpen;
-        _colonyName.Text = colony.CurrentSettlement.Name;
+        Settlement place = colony.CurrentSettlement;
+        _colonyName.Text = $"Empire {colony.Name}";
+        ShowPlaces(colony, place, realmColonies);
+        int localDeaths = colony.Deaths.Count;
+        _deaths.Text = $"☠ {colony.TotalDeaths} décès (empire, depuis le début)";
+        _deaths.TooltipText = $"Décès cumulés de tout l'empire depuis le début de la partie : {colony.TotalDeaths}.\n"
+            + (localDeaths == 0 ? $"Aucun décès enregistré à {place.Name}." : $"À {place.Name} : {localDeaths}. Causes : "
+                + string.Join(", ", colony.Deaths.GroupBy(d => d.Cause).Select(g => $"{g.Key} {g.Count()}")));
         int arriving = colony.Transients.Count(t => t.Transit == TransitState.Arriving);
-        string population = $"{colony.Members.Count} citoyens · {colony.PresentMembers.Count} présents" + (colony.Children > 0 ? $" · {colony.Children} enfants" : "");
+        string population = $"Empire : {colony.Members.Count} citoyens · Colonie : {colony.PresentMembers.Count} présents" + (colony.Children > 0 ? $" · {colony.Children} enfants" : "");
         if (arriving > 0) population += $" · {arriving} en route";
-        if (colony.Graves.Count > 0) population += $" · {colony.Graves.Count} tombes";
         int sick = Health.PatientCount(colony);
         if (sick > 0) population += $" · {sick} malade{(sick > 1 ? "s" : "")}";
         float days = colony.Stock.FoodUnits / (Math.Max(1, colony.PresentMembers.Count) * ColonyBrain.MealsPerColonistPerDay);
-        _colonyMeta.Text = $"{population}   ·   Humeur {colony.AverageMood * 100:0} %   ·   Réserves {days:0.0} j";
-        _colonyMeta.TooltipText = $"{population}\nRéserves de repas : {days:0.0} jours (nourriture, céréales et pain)\nHumeur : {colony.AverageMood * 100:0} % · Attrait : {Migration.Attractiveness(colony, clock) * 100:0} %";
+        _colonyMeta.Text = $"{population}   ·   Humeur {colony.AverageMood * 100:0} %   ·   Réserves de la colonie {days:0.0} j";
+        _colonyMeta.TooltipText = $"{population}\nRéserves de repas de la colonie observée : {days:0.0} jours (nourriture et pain ; les céréales crues comptent à peine)\nHumeur : {colony.AverageMood * 100:0} % · Attrait : {Migration.Attractiveness(colony, clock) * 100:0} %"
+            + $"\nChef : {Leadership.Describe(colony, clock)}"
+            + (colony.RealmId != 0 ? $"\nMembre d'un royaume · loyauté : {Realms.LoyaltyWord(colony)} (le détail est sur la carte du monde)" : "")
+            + $"\nPrestige : {colony.Prestige}";
         foreach (var (resource, value) in _stocks)
         {
             decimal stock = resource == ResourceType.Food ? colony.Stock.FoodNutrition : colony.Stock.Get(resource);
@@ -478,7 +618,54 @@ public partial class Hud : CanvasLayer
         foodStyle.BorderColor = days < 2 ? MenuStyle.Error : Border;
         foreach (var (type, value) in _foodDetails)
             value.Text = $"{colony.Stock.Get(type):N0} × {Stockpile.NutritionPerItem(type):0.##} = {colony.Stock.Nutrition(type):0.##}";
+        foreach (var (group, card) in _groups)
+        {
+            card.Total.Text = card.Members.Sum(type => colony.Stock.Get(type)).ToString("N0");
+            foreach (var (type, line) in card.Lines)
+            {
+                int amount = colony.Stock.Get(type);
+                line.Text = type == ResourceType.Grain ? $"{amount:N0} × {Stockpile.GrainMealValue:0.##} = {colony.Stock.Nutrition(type):0.##} repas (dernier recours)"
+                    : type == ResourceType.Flour ? $"{amount:N0} (ne se mange pas crue)" : amount.ToString("N0");
+                line.AddThemeColorOverride("font_color", amount == 0 ? Muted : Ink);
+            }
+            if (card.Dropdown.Visible) PositionDropdown(card.Card, card.Dropdown);
+        }
+        foreach (Label scope in _scopeLabels) scope.Text = $"Colonie observée : {place.Name}";
         PositionFoodDetails();
+    }
+
+    /// <summary>
+    /// Les colonies du royaume ; les lieux fermés restent lisibles, mais ne sont plus sélectionnables.
+    /// La liste n'est reconstruite que quand elle change, pour ne pas refermer le menu ouvert.
+    /// </summary>
+    private void ShowPlaces(Colony colony, Settlement observed, IReadOnlyList<Colony>? realmColonies = null)
+    {
+        // Le royaume que la carte colore d'une même teinte : l'empire observé d'abord, puis ses pairs dans l'ordre du royaume.
+        var colonies = (realmColonies ?? [colony]).OrderBy(c => c != colony).ToList();
+        var places = colonies.SelectMany(c => c.Settlements
+            .OrderBy(s => s.Id != c.PrimarySettlementId).ThenBy(s => s.Id)).ToList();
+        string signature = string.Join('|', places.Select(s => $"{s.Owner.Name}:{s.Id}:{s.Name}:{s.Status}"));
+        if (signature != _placeSignature)
+        {
+            _placeSignature = signature;
+            _placePicker.Clear();
+            foreach (Settlement s in places)
+                _placePicker.AddItem(s.Name, s.Id);
+        }
+        for (int i = 0; i < places.Count; i++)
+        {
+            Settlement s = places[i];
+            Colony owner = s.Owner;
+            string kind = s.Id == owner.PrimarySettlementId ? "colonie d'origine" : s.Kind == SettlementKind.Camp ? "campement" : s.Kind == SettlementKind.Hamlet ? "hameau" : "village";
+            string status = s.Status == SettlementStatus.Evacuating ? "Évacuation · " : s.Status == SettlementStatus.Closed ? "Fermée · " : "";
+            string empire = owner == colony ? "" : $"{owner.Name} · ";
+            string text = $"{status}{empire}{s.Name} · {s.Population.Count} hab.";
+            _placePicker.SetItemText(i, text);
+            _placePicker.SetItemTooltip(i, $"{text}\n{kind} de l'empire {owner.Name}");
+            _placePicker.SetItemDisabled(i, s.Status == SettlementStatus.Closed);
+            if (s == observed) { _placePicker.Select(i); _placePicker.TooltipText = $"{text}\nChoisissez une colonie du royaume pour l'observer."; }
+        }
+        _placePicker.Visible = places.Count > 0;
     }
 
     public void ShowUnsettled(string name, string hint)
@@ -486,6 +673,7 @@ public partial class Hud : CanvasLayer
         CancelRename();
         _shownColonist = null;
         _colonyName.Text = name; _colonyMeta.Text = hint;
+        _placePicker.Visible = false; _deaths.Text = "";
         _resourceRow.Hide(); _tray.Hide(); _colonistPanel.Hide();
         CloseFoodDetails();
     }
@@ -529,7 +717,7 @@ public partial class Hud : CanvasLayer
         {
             _thoughtRows[0].Date.GetParent<Control>().Visible = true;
             _thoughtRows[0].Date.Text = "·";
-            _thoughtRows[0].Message.Text = "La colonie prend ses marques…";
+            _thoughtRows[0].Message.Text = "L'empire prend ses marques…";
         }
     }
 
@@ -641,7 +829,7 @@ public partial class Hud : CanvasLayer
     {
         "Foraging" => "Cueillette", "Fishing" => "Pêche", "Woodcutting" => "Bûcheronnage", "Mining" => "Minage",
         "Farming" => "Agriculture", "Smithing" => "Métallurgie", "Cooking" => "Boulangerie", "Husbandry" => "Élevage",
-        "Weaving" => "Tissage", "Trading" => "Négoce", "Medicine" => "Médecine", _ => "Construction",
+        "Weaving" => "Tissage", "Trading" => "Négoce", "Medicine" => "Médecine", "Hunting" => "Chasse", _ => "Construction",
     };
 
     private static string Describe(Colonist colonist)
@@ -680,6 +868,11 @@ public partial class Hud : CanvasLayer
             ActivityKind.Harvest => there ? "Moissonne" : "Part moissonner",
             ActivityKind.Tend => there ? "Soigne les bêtes de l'enclos" : "Part à l'enclos",
             ActivityKind.Slaughter => there ? "Abat une bête" : "Part à l'enclos pour abattre une bête",
+            ActivityKind.Hunt => there ? "Chasse une harde" : "Part chasser",
+            ActivityKind.GreatHunt => there ? "Affronte l'alpha avec les autres chasseurs" : "Part pour la grande chasse",
+            ActivityKind.Capture => there ? "Capture une bête sauvage" : "Part capturer une bête sauvage",
+            ActivityKind.Tame => there ? "Apprivoise les bêtes capturées" : "Part à l'enclos apprivoiser une bête",
+            ActivityKind.Gather => there ? "Récolte miel, champignons ou plantes" : "Part récolter dans la nature",
             ActivityKind.Heal => there ? "Soigne les malades" : "Part à l'infirmerie",
             ActivityKind.Study => there ? "Apprend à l'école" : "Part à l'école",
             ActivityKind.Arrive => "Marche vers la colonie",

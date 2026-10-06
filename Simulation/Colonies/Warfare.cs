@@ -28,17 +28,18 @@ public static class Warfare
     {
         int warriors = WarriorCount(colony);
         int armed = Math.Min(warriors, colony.Stock.Get(ResourceType.Tools));
-        return Strength(colony, warriors, armed);
+        return Strength(colony, warriors, armed, DivinePowers.ChampionStrengthBonus(colony, PickWarriors(colony), WarriorStrength));
     }
 
-    private static float Strength(Colony colony, int warriors, int armed) =>
-        (warriors * WarriorStrength + armed * WeaponStrength) * (Knowledge.Has(colony, Discovery.Warfare) ? Knowledge.WarfareFactor : 1f);
+    private static float Strength(Colony colony, int warriors, int armed, float champions) =>
+        (warriors * WarriorStrength + armed * WeaponStrength + champions) * (Knowledge.Has(colony, Discovery.Warfare) ? Knowledge.WarfareFactor : 1f);
 
     /// <summary>La force de ceux qui défendent la colonie, renforts des alliés compris (sans le hasard de la bataille).</summary>
     public static float DefenseEstimate(WorldState world, Colony colony, Colony? attacker)
     {
         int defenders = HealthyAdults(colony);
-        float strength = defenders * DefenderStrength + DefenderToolStrength * Math.Min(colony.Stock.Get(ResourceType.Tools), defenders);
+        float strength = defenders * DefenderStrength + DefenderToolStrength * Math.Min(colony.Stock.Get(ResourceType.Tools), defenders)
+            + DivinePowers.ChampionStrengthBonus(colony, colony.PresentMembers.Where(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None), DefenderStrength);
         if (Knowledge.Has(colony, Discovery.Fortification))
             strength *= Knowledge.FortificationFactor;
         return strength + Diplomacy.AlliedHelp(world, colony, attacker);
@@ -126,13 +127,14 @@ public static class Warfare
         Colony attacker = party.From, defender = party.To;
         Random luck = world.Politics;
         GameClock clock = world.Clock;
-        float attack = Strength(attacker, party.Warriors.Count, party.Weapons) * (0.8f + 0.4f * luck.NextSingle());
+        float attack = Strength(attacker, party.Warriors.Count, party.Weapons, DivinePowers.ChampionStrengthBonus(attacker, party.Warriors, WarriorStrength)) * (0.8f + 0.4f * luck.NextSingle());
         float defense = DefenseEstimate(world, defender, attacker) * (0.8f + 0.4f * luck.NextSingle());
         Diplomacy.OnAttacked(world, defender, attacker);
 
         if (attack > defense)
         {
             party.Victory = true;
+            defender.LastDefeatTicks = world.Clock.Ticks;
             attacker.BattlesWon++;
             defender.BattlesLost++;
             float margin = (attack - defense) / Math.Max(1f, defense);
@@ -160,10 +162,13 @@ public static class Warfare
             // Quelques vainqueurs rentrent blessés.
             foreach (Colonist warrior in party.Warriors.Where(_ => luck.NextSingle() < 0.25f).ToList())
                 Health.Fall(attacker, warrior, Ailment.Injured, 48 + luck.Next(0, 48), clock, "");
+            // Une victoire sans appel, après d'autres, peut faire tomber la colonie (voir Conquest) ; sinon le pillage reste la seule issue.
+            Conquest.TryConquer(world, attacker, defender, party, attack, defense);
             return;
         }
 
         party.Victory = false;
+        attacker.LastDefeatTicks = world.Clock.Ticks;
         attacker.BattlesLost++;
         defender.BattlesWon++;
         float gap = (defense - attack) / Math.Max(1f, defense);
@@ -263,6 +268,10 @@ public static class Warfare
         colony.FillVacancies();
         colony.AssignSectors();
 
+        // Une victoire de guerre fait la renommée de ceux qui la rapportent.
+        if (party.Victory == true)
+            foreach (Colonist warrior in party.Warriors)
+                warrior.Renown += 3f;
         string loot = string.Join(", ", party.Loot.Where(l => l.Value > 0).Select(l => $"{l.Value} {Trade.GoodName(l.Key, l.Value)}"));
         ColonyBrain.Say(colony, world.Clock, party.Victory switch
         {

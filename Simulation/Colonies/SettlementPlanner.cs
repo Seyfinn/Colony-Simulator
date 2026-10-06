@@ -114,9 +114,9 @@ public static partial class SettlementPlanner
         if (layout.ParcelById(field.ParcelId) is not null)
             return;
 
-        District? district = DistrictFor(layout, null, field.X, field.Y, Field.Size, Field.Size, DistrictKind.Agricultural)
+        District? district = DistrictFor(layout, null, field.X, field.Y, field.Size, field.Size, DistrictKind.Agricultural)
             ?? OpenDistrict(colony, layout, DistrictKind.Agricultural, field.X, field.Y);
-        var parcel = new PlotReservation(layout.NextParcelId++, district.Id, ParcelKind.Field, field.X, field.Y, Field.Size, Field.Size, colony.Clock.Ticks)
+        var parcel = new PlotReservation(layout.NextParcelId++, district.Id, ParcelKind.Field, field.X, field.Y, field.Size, field.Size, colony.Clock.Ticks)
         {
             OccupantId = field.Id,
             State = ReservationState.Occupied,
@@ -260,7 +260,7 @@ public static partial class SettlementPlanner
             {
                 int ax = door.AccessX, ay = door.AccessY;
                 if (map.InBounds(ax, ay) && map.IsWalkable(ax, ay) && !map.IsRiver(ax, ay) && !map.IsCanal(ax, ay)
-                    && !index.Has(ax, ay, CellUse.Building | CellUse.Field | CellUse.Grave | CellUse.Canal))
+                    && !index.Has(ax, ay, CellUse.Building | CellUse.Field | CellUse.Canal))
                 {
                     building.AccessX = parcel.AccessX = ax;
                     building.AccessY = parcel.AccessY = ay;
@@ -303,12 +303,12 @@ public static partial class SettlementPlanner
         LocalSpatialIndex index = colony.Spatial;
         float bestDistance = float.MaxValue;
         (int X, int Y)? best = null;
-        for (int i = -1; i <= Field.Size; i++)
-        foreach ((int ax, int ay) in new[] { (field.X + i, field.Y - 1), (field.X + i, field.Y + Field.Size), (field.X - 1, field.Y + i), (field.X + Field.Size, field.Y + i) })
+        for (int i = -1; i <= field.Size; i++)
+        foreach ((int ax, int ay) in new[] { (field.X + i, field.Y - 1), (field.X + i, field.Y + field.Size), (field.X - 1, field.Y + i), (field.X + field.Size, field.Y + i) })
         {
             if (!map.InBounds(ax, ay) || !map.IsWalkable(ax, ay) || map.IsWaterway(ax, ay) || index.IsSolid(ax, ay))
                 continue;
-            if (ax >= field.X && ax < field.X + Field.Size && ay >= field.Y && ay < field.Y + Field.Size)
+            if (ax >= field.X && ax < field.X + field.Size && ay >= field.Y && ay < field.Y + field.Size)
                 continue;
             float distance = (ax - colony.CampX) * (ax - colony.CampX) + (ay - colony.CampY) * (ay - colony.CampY);
             if (distance < bestDistance)
@@ -331,7 +331,7 @@ public static partial class SettlementPlanner
             return false;
         if (!map.CanStep(ax, ay, entryX, entryY) || !map.CanStep(entryX, entryY, ax, ay))
             return false;
-        return !index.Has(ax, ay, CellUse.Building | CellUse.Canal | CellUse.Grave);
+        return !index.Has(ax, ay, CellUse.Building | CellUse.Canal);
     }
 
     /// <summary>Un tronçon d'une cellule protège une case d'accès (la parcelle en reste propriétaire).</summary>

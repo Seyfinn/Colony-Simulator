@@ -13,7 +13,7 @@ public partial class EconomyDashboard : VBoxContainer
 {
     private Label _coins = null!, _food = null!, _gain = null!, _context = null!, _grudges = null!, _routeCount = null!, _noRoutes = null!, _noTrades = null!;
     private VBoxContainer _stocks = null!, _commerce = null!, _routes = null!, _trades = null!;
-    private GridContainer _goodsGrid = null!;
+    private readonly List<GridContainer> _goodsGrids = [];
     private SupplierOverview _suppliers = null!;
     public event Action<int>? SettlementRequested;
     private Label _presence = null!;
@@ -32,6 +32,9 @@ public partial class EconomyDashboard : VBoxContainer
     private ResourceGraphs _graphs = null!;
     private HBoxContainer _metrics = null!;
     private Control _settlementCard = null!;
+    private ScaleDashboard _scale = null!;
+    private Button _scaleTab = null!;
+    private Button _villageTab = null!, _powersTab = null!;
 
     public override void _Ready()
     {
@@ -49,7 +52,8 @@ public partial class EconomyDashboard : VBoxContainer
         _presence = DashboardStyle.Text(settlementColumn, "", 12, DashboardStyle.Ink, true);
         _presence.Name = "PopulationEtablissement";
         _context = DashboardStyle.Text(this, "", 12, DashboardStyle.Muted, true);
-        var tabs = DashboardStyle.Row(this);
+        var tabs = new HFlowContainer { SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        tabs.AddThemeConstantOverride("h_separation", 6); tabs.AddThemeConstantOverride("v_separation", 6); AddChild(tabs);
         _stocksTab = Tab(tabs, "Stocks et besoins", "StocksEconomie", false);
         _commerceTab = Tab(tabs, "Commerce", "CommerceEconomie", true);
         _graphsTab = new Button { Text = "Graphiques", Name = "GraphiquesEconomie", ToggleMode = true,
@@ -60,17 +64,25 @@ public partial class EconomyDashboard : VBoxContainer
         tabs.AddChild(_milestonesTab); _milestonesTab.Pressed += ShowMilestones;
         _stocks = MenuStyle.Column(this, 10);
         _legend = DashboardStyle.Row(_stocks);
-        DashboardStyle.Text(_legend, "RÉSERVES DE LA COLONIE", 11, DashboardStyle.Gold);
+        DashboardStyle.Text(_legend, "RÉSERVES DE LA COLONIE OBSERVÉE", 11, DashboardStyle.Gold);
         DashboardStyle.Spacer(_legend);
         DashboardStyle.Pill(_legend, "À compléter", DashboardStyle.Warning);
         DashboardStyle.Pill(_legend, "Couvert", DashboardStyle.Mint);
-        _goodsGrid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill };
-        _goodsGrid.AddThemeConstantOverride("h_separation", 10); _goodsGrid.AddThemeConstantOverride("v_separation", 10);
-        _stocks.AddChild(_goodsGrid);
-        foreach (ResourceType good in Economy.Tradable)
+        // Les biens sont présentés par rubrique (vivres, cultures, matériaux, minéraux, produits transformés), les minéraux dans l'ordre du catalogue.
+        foreach (var group in new[] { ResourceCatalog.Group.Food, ResourceCatalog.Group.Crops, ResourceCatalog.Group.Materials, ResourceCatalog.Group.Minerals, ResourceCatalog.Group.Processed })
         {
-            var card = new GoodCard { Good = good };
-            _goodsGrid.AddChild(card); _goods.Add(good, card);
+            var goods = Economy.Tradable.Where(good => ResourceCatalog.GroupOf(good) == group)
+                .OrderBy(good => group == ResourceCatalog.Group.Minerals ? Array.IndexOf(ResourceCatalog.Minerals, good) : 0).ToList();
+            if (goods.Count == 0) continue;
+            DashboardStyle.Text(_stocks, ResourceCatalog.Category(goods[0]).ToUpperInvariant(), 11, DashboardStyle.Gold);
+            var grid = new GridContainer { Columns = 2, SizeFlagsHorizontal = SizeFlags.ExpandFill, Name = $"Rubrique{group}" };
+            grid.AddThemeConstantOverride("h_separation", 10); grid.AddThemeConstantOverride("v_separation", 10);
+            _stocks.AddChild(grid); _goodsGrids.Add(grid);
+            foreach (ResourceType good in goods)
+            {
+                var card = new GoodCard { Good = good };
+                grid.AddChild(card); _goods.Add(good, card);
+            }
         }
         DashboardStyle.Text(_stocks, "Les jauges comparent le stock au besoin actuel. Coût et valeur : heures de travail par unité. ~ indique une estimation.",
             11, DashboardStyle.Muted, true);
@@ -97,6 +109,14 @@ public partial class EconomyDashboard : VBoxContainer
             CustomMinimumSize = new Vector2(0,36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
         tabs.AddChild(_territoryTab); _territoryTab.Pressed += ShowTerritories;
         _graphs = new ResourceGraphs(); AddChild(_graphs);
+        _scale = new ScaleDashboard(); AddChild(_scale);
+        _scaleTab = new Button { Text = "Économies d’échelle", Name = "OngletEchelle", ToggleMode = true,
+            CustomMinimumSize = new Vector2(0, 36), SizeFlagsHorizontal = SizeFlags.ExpandFill };
+        tabs.AddChild(_scaleTab); _scaleTab.Pressed += ShowScale;
+        _villageTab = new Button { Text = "Village", Name = "OngletVillage", ToggleMode = true, CustomMinimumSize = new Vector2(0, 36) };
+        tabs.AddChild(_villageTab); _villageTab.Pressed += () => ShowScaleSection("village");
+        _powersTab = new Button { Text = "Monnaie et pouvoirs", Name = "OngletPouvoirs", ToggleMode = true, CustomMinimumSize = new Vector2(0, 36) };
+        tabs.AddChild(_powersTab); _powersTab.Pressed += () => ShowScaleSection("powers");
         ShowCommerce(false);
         Resized += ResizeDashboard;
         GetViewport().SizeChanged += ResizeDashboard;
@@ -105,11 +125,11 @@ public partial class EconomyDashboard : VBoxContainer
 
     private void ResizeDashboard()
     {
-        _goodsGrid.Columns = Size.X >= 500 ? 2 : 1;
+        foreach (GridContainer grid in _goodsGrids) grid.Columns = Size.X >= 500 ? 2 : 1;
         bool compact = GetViewportRect().Size.Y < 760;
-        _context.Visible = !compact && !_graphs.Visible;
+        _context.Visible = !compact && !_graphs.Visible && !_scale.Visible;
         _legend.Visible = !compact;
-        _metrics.Visible = !_graphs.Visible && !_territory.Visible;
+        _metrics.Visible = !_graphs.Visible && !_territory.Visible && !_scale.Visible;
         _settlementCard.Visible = !_territory.Visible;
         AddThemeConstantOverride("separation", compact ? 8 : 14);
     }
@@ -123,6 +143,7 @@ public partial class EconomyDashboard : VBoxContainer
 
     public void ShowCommerce(bool commerce)
     {
+        _scale.Visible = false; _scaleTab.SetPressedNoSignal(false); _villageTab.SetPressedNoSignal(false); _powersTab.SetPressedNoSignal(false);
         _territory.Visible = false; _territoryTab.SetPressedNoSignal(false);
         _graphs.Visible = false; _graphsTab.SetPressedNoSignal(false);
         _milestones.Visible = false; _milestonesTab.SetPressedNoSignal(false);
@@ -133,6 +154,7 @@ public partial class EconomyDashboard : VBoxContainer
 
     public void ShowMilestones()
     {
+        _scale.Visible = false; _scaleTab.SetPressedNoSignal(false); _villageTab.SetPressedNoSignal(false); _powersTab.SetPressedNoSignal(false);
         _territory.Visible = false; _territoryTab.SetPressedNoSignal(false);
         _graphs.Visible = false; _graphsTab.SetPressedNoSignal(false);
         _stocks.Visible = _commerce.Visible = false; _milestones.Visible = true;
@@ -142,6 +164,7 @@ public partial class EconomyDashboard : VBoxContainer
 
     public void ShowGraphs()
     {
+        _scale.Visible = false; _scaleTab.SetPressedNoSignal(false); _villageTab.SetPressedNoSignal(false); _powersTab.SetPressedNoSignal(false);
         _territory.Visible = false; _territoryTab.SetPressedNoSignal(false);
         _stocks.Visible = _commerce.Visible = _milestones.Visible = false;
         _graphs.Visible = true;
@@ -152,6 +175,7 @@ public partial class EconomyDashboard : VBoxContainer
 
     public void ShowTerritories()
     {
+        _scale.Visible = false; _scaleTab.SetPressedNoSignal(false); _villageTab.SetPressedNoSignal(false); _powersTab.SetPressedNoSignal(false);
         _stocks.Visible = _commerce.Visible = _graphs.Visible = _milestones.Visible = false;
         _territory.Visible = true; _territoryTab.SetPressedNoSignal(true);
         foreach (Button tab in new[] { _stocksTab, _commerceTab, _graphsTab, _milestonesTab }) tab.SetPressedNoSignal(false);
@@ -160,9 +184,25 @@ public partial class EconomyDashboard : VBoxContainer
 
     public void RefreshGraphs(Colony colony, ResourceHistory? history) => _graphs.Refresh(colony, history);
 
+    public void ShowScale()
+        => ShowScaleSection("scale");
+
+    public void ShowScaleSection(string section)
+    {
+        _stocks.Visible = _commerce.Visible = _graphs.Visible = _milestones.Visible = _territory.Visible = false;
+        _scale.Visible = true;
+        _scale.Section = section;
+        foreach (Button tab in new[] { _stocksTab, _commerceTab, _graphsTab, _milestonesTab, _territoryTab }) tab.SetPressedNoSignal(false);
+        _scaleTab.SetPressedNoSignal(section == "scale");
+        _villageTab.SetPressedNoSignal(section == "village");
+        _powersTab.SetPressedNoSignal(section == "powers");
+        ResizeDashboard();
+    }
+
     public void Refresh(WorldState world, Colony colony)
     {
         _territory.Refresh(world, colony);
+        if (_scale.Visible) _scale.Refresh(world, colony);
         _placeTitle.Text = colony.CurrentSettlement == colony.PrimarySettlement ? "VILLAGE PRINCIPAL" : colony.CurrentSettlement.Name;
         foreach (Milestone milestone in Milestones.All)
         {

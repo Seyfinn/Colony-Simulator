@@ -35,6 +35,18 @@ public sealed record ColonySensors(
     bool FoodWorkshopsReady,
     bool Prospecting)
 {
+    /// <summary>Le gibier de la région, de 0 à 100 : sous 10, on ne chasse plus (voir <see cref="Nature.Hunting"/>).</summary>
+    public float GameAbundance { get; init; } = 100f;
+
+    /// <summary>La menace des prédateurs sur les enclos et les travailleurs, de 0 à 100 (voir <see cref="Nature.Predation"/>).</summary>
+    public float PredatorPressure { get; init; }
+
+    /// <summary>Les dégâts que les herbivores font aux champs, de 0 à 100.</summary>
+    public float CropRaidPressure { get; init; }
+
+    /// <summary>Une bête sauvage domestiquable est en vue et l'enclos a de la place pour elle.</summary>
+    public bool TamingOpportunity { get; init; }
+
     /// <summary>Étage 1 de la pyramide : nourriture et chauffage.</summary>
     public bool SurvivalAssured => Math.Max(FoodPressure, HeatingPressure) <= 60f;
 }
@@ -138,20 +150,24 @@ public static class ColonyBrain
         ColonySensors sensors = Sense(colony, clock);
         if (PlanConstruction(colony, map, sensors, clock) || PlanSpareRoom(colony, map, sensors, clock)
             || PlanWorkshop(colony, map, sensors, clock)
+            || PlanWorkshopExtension(colony, sensors, clock)
             || PlanCanal(colony, map, sensors, clock)
             || PlanCivic(colony, map, sensors, clock))
             sensors = Sense(colony, clock);
         AskForDam(colony, map, sensors, clock);
         colony.Sensors = sensors;
+        Nature.Hunting.PlanGreatHunt(colony, clock);
 
         Dictionary<WorkSector, float> target = DecideShares(sensors);
         Civic.ClaimIdleHands(colony, target);
         if (sensors.SurvivalAssured && sensors.HousingPressure <= ComfortHousingLimit)
         {
-            if (ExtendedIndustry.PickJob(colony) is not null || Offerings.PickSculptJob(colony) is not null) target[WorkSector.Craft] = Math.Max(target[WorkSector.Craft], .1f);
+            if (ExtendedIndustry.PickJob(colony) is not null || Offerings.PickSculptJob(colony) is not null) target[WorkSector.Craft] = Math.Max(target[WorkSector.Craft], .2f);
             bool extraction = colony.DepositReports.Any(k => k.Region == colony.LocalSettlement.RegionTileIndex && k.State != DepositObservation.Depleted
                 && (ExtendedIndustry.Target(colony, k.Material) > colony.Stock.Get(k.Material) || colony.LocalSettlement.Kind == SettlementKind.Camp && colony.Stock.Get(k.Material) < 20));
             if (extraction) target[WorkSector.Stone] = Math.Max(target[WorkSector.Stone], .15f);
+            // Une bête sauvage domestiquable est en vue et la survie est assurée : une petite part des bras capture et apprivoise (au plus 15 %).
+            if (sensors.TamingOpportunity || Nature.Taming.WorkPending(colony)) target[WorkSector.Farm] = Math.Max(target[WorkSector.Farm], TamingShare);
             float sum = target.Values.Sum();
             if (sum > 1) foreach (WorkSector sector in WorkSectors.All) target[sector] /= sum;
         }
@@ -217,13 +233,13 @@ public static class ColonyBrain
             return;
 
         int target = Farming.TargetPlots(colony);
-        if (colony.Fields.Count * Field.Size * Field.Size >= target)
+        if (Farming.PlotCount(colony) >= target)
             return;
 
         // Un champ est une demande persistante : le site se cherche par petits lots hors de la pensée, et la proposition prête s'admet ici (deux champs au plus par pensée).
         PlanRequest request = SettlementPlanner.RequestFor(colony, DevelopmentKind.Field, null, DevelopmentPriority.Production);
         int opened = 0;
-        while (opened < MaxFieldsPerThought && colony.Fields.Count * Field.Size * Field.Size < target
+        while (opened < MaxFieldsPerThought && Farming.PlotCount(colony) < target
                && SettlementPlanner.Poll(colony, request) == PlanningOutcome.Ready && SettlementPlanner.TryCommit(colony, request).Success)
             opened++;
         if (opened == 0)
@@ -232,7 +248,7 @@ public static class ColonyBrain
             return;
         }
 
-        int plots = colony.Fields.Count * Field.Size * Field.Size;
+        int plots = Farming.PlotCount(colony);
         string fields = opened == 1 ? "un champ" : $"{opened} champs";
         Say(colony, clock, colony.Labor.HoursPerUnit(ResourceType.Food) is { } wildCost
             ? $"Baies et poisson nous coûtent {wildCost:0.0} h par unité : nous ouvrons {fields} ({plots} parcelles en tout)."
@@ -347,6 +363,9 @@ public static class ColonyBrain
         int beds = colony.Buildings.Count(b => b.IsHut) * Building.HutCapacity;
         if (beds - colony.PresentMembers.Count >= SpareBedsWanted)
             return false;
+        // Le four (ou le moulin) d'abord : une hutte d'avance ne doit pas retarder la seule vraie nourriture de base.
+        if (Crafting.NextWorkshopToBuild(colony, map) is { } workshop && FoodChain.IsFoodWorkshop(workshop))
+            return false;
 
         PlanRequest request = SettlementPlanner.RequestFor(colony, DevelopmentKind.Housing, BuildingType.Hut, DevelopmentPriority.Comfort);
         if (SettlementPlanner.Poll(colony, request) != PlanningOutcome.Ready || !SettlementPlanner.TryCommit(colony, request).Success)
@@ -361,9 +380,12 @@ public static class ColonyBrain
     /// </summary>
     private static bool PlanWorkshop(Colony colony, LocalMap map, ColonySensors sensors, GameClock clock)
     {
-        if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || colony.ConstructionSites.Any())
+        if (colony.ConstructionSites.Any())
             return false;
         if (Crafting.NextWorkshopToBuild(colony, map) is not { } type)
+            return false;
+        // Le four et le moulin ne sont pas un confort : le grain cru ne nourrit presque pas, le pain est la sortie de la disette.
+        if (!FoodChain.IsFoodWorkshop(type) && (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit))
             return false;
         PlanRequest request = SettlementPlanner.RequestFor(colony, DevelopmentKind.Workshop, type, DevelopmentPriority.Production);
         if (SettlementPlanner.Poll(colony, request) != PlanningOutcome.Ready || !SettlementPlanner.TryCommit(colony, request).Success)
@@ -375,12 +397,64 @@ public static class ColonyBrain
             BuildingType.Forge => "Nous aurons du fer : nous bâtissons une forge pour en faire des outils.",
             BuildingType.Mill => "Nos greniers débordent de grain : nous bâtissons un moulin sur la rivière pour le moudre.",
             BuildingType.MineDepot => "Nous aménageons une grande mine : chevalement, dépôts et aire de tri pour exploiter les métaux, le charbon et les pierres précieuses.",
-            _ => "Nous avons de la farine : nous bâtissons un four pour en faire du pain.",
+            _ => "Le grain cru ne nourrit presque pas : nous bâtissons un four pour en faire du pain.",
         });
         return true;
     }
 
+    /// <summary>
+    /// Une extension d'atelier que le registre quotidien juge rentable (voir <see cref="WorkshopCapacity.ReviewDaily"/>) s'ouvre ici, une fois la survie, le logement et le bois
+    /// assurés et aucun autre chantier en cours : un investissement de prospérité ne passe jamais avant les niveaux précédents. Le site se cherche au plus une fois par jour.
+    /// </summary>
+    private static bool PlanWorkshopExtension(Colony colony, ColonySensors sensors, GameClock clock)
+    {
+        if (!sensors.SurvivalAssured || sensors.HousingPressure > ComfortHousingLimit || sensors.WoodPressure > 70f || colony.ConstructionSites.Any())
+            return false;
+        SettlementScaleLedger ledger = colony.LocalSettlement.ScaleLedger;
+        if (ledger.LastSiteSearchDay == clock.TotalDays)
+            return false;
+        foreach (int id in ledger.Verdicts.Where(v => v.Value == ExtensionVerdict.Wanted).Select(v => v.Key).OrderBy(id => id).ToArray())
+        {
+            if (colony.BuildingById(id) is not { IsComplete: true } principal)
+                continue;
+            ledger.LastSiteSearchDay = clock.TotalDays;
+            if (SettlementPlanner.PlanExtension(colony, principal.Type, principal) is null)
+            {
+                ledger.Verdicts[id] = ExtensionVerdict.NoSite;
+                return false;
+            }
+            ledger.Verdicts[id] = ExtensionVerdict.UnderConstruction;
+            Say(colony, clock, principal.Type == BuildingType.Oven
+                ? "Le four ne désemplit pas : nous lui ajoutons un module pour cuire de plus grandes fournées."
+                : "Le moulin tourne sans relâche : nous lui ajoutons un module pour moudre de plus grandes mesures.");
+            return true;
+        }
+        return false;
+    }
+
     private const float ComfortHousingLimit = 25f;
+
+    /// <summary>Part maximale des bras réservée à la capture et à l'apprivoisement des bêtes sauvages.</summary>
+    private const float TamingShare = 0.15f;
+
+    /// <summary>Bois et pierre d'un enclos renforcé (palissade et fosse) : les prédateurs y entrent bien moins souvent.</summary>
+    private const int ReinforcedPenWood = 15, ReinforcedPenStone = 10;
+
+    /// <summary>
+    /// Étage 3 de la pyramide : si les prédateurs menacent les bêtes (pression forte) et qu'un enclos existe sans renfort, les habitants le renforcent de leurs
+    /// réserves (bois 15, pierre 10).
+    /// </summary>
+    private static bool PlanReinforcedPen(Colony colony, ColonySensors sensors, GameClock clock)
+    {
+        if (sensors.PredatorPressure <= 40f || colony.LocalSettlement.PenReinforced || Husbandry.Pens(colony) == 0 || Husbandry.Animals(colony) == 0
+            || colony.Stock.Available(ResourceType.Wood) < ReinforcedPenWood + 10 || colony.Stock.Available(ResourceType.Stone) < ReinforcedPenStone)
+            return false;
+        if (!colony.Stock.TryTake(ResourceType.Wood, ReinforcedPenWood) || !colony.Stock.TryTake(ResourceType.Stone, ReinforcedPenStone))
+            return false;
+        colony.LocalSettlement.PenReinforced = true;
+        Say(colony, clock, "Les prédateurs rôdent trop près des bêtes : l'enclos est renforcé de pieux et de pierres.");
+        return true;
+    }
 
     /// <summary>
     /// Une fois la survie et le logement assurés, la colonie bâtit ce qui rend la vie meilleure : enclos, puits, métier à tisser,
@@ -393,6 +467,8 @@ public static class ColonyBrain
         // Les ateliers du fer et du blé passent d'abord : on n'occupe pas l'unique chantier avec un confort.
         if (Crafting.NextWorkshopToBuild(colony, map) is not null)
             return false;
+        if (PlanReinforcedPen(colony, sensors, clock))
+            return true;
         BuildingType? next = Civic.NextToBuild(colony);
         if ((next == BuildingType.Pen || next is null && Husbandry.WantsAnotherPen(colony)) && Civic.Has(colony, BuildingType.Pen)
             && SettlementPlanner.PlanExtension(colony, BuildingType.Pen) is not null)
@@ -414,7 +490,9 @@ public static class ColonyBrain
             return false;
         Say(colony, clock, type == BuildingType.Pen && colony.Buildings.Any(b => b.Type == BuildingType.Pen)
             ? "Nos enclos sont pleins de bêtes qu'on ne peut loger : nous en bâtissons un de plus."
-            : Civic.Announcement(type));
+            : type is BuildingType.School or BuildingType.Infirmary or BuildingType.Tavern && colony.Buildings.Count(b => b.Type == type) > 1
+                ? $"{char.ToUpper(Building.Definite(type)[0])}{Building.Definite(type)[1..]} ne suffit plus : nous en bÃ¢tissons un autre, plus prÃ¨s de ceux qui en ont besoin."
+                : Civic.Announcement(type));
         return true;
     }
 
@@ -560,8 +638,11 @@ public static class ColonyBrain
         int population = Math.Max(1, colony.PresentMembers.Count);
 
         float dailyMeals = population * MealsPerColonistPerDay;
-        float foodDays = (float)(colony.Stock.AvailableNutrition / (population * (decimal)Trade.TravelerNutritionPerDay));
-        float foodTarget = clock.Season == Season.Automne ? AutumnFoodTargetDays : FoodTargetDays;
+        // Le pain qui attend à la sortie d'un four est de la nourriture récupérable : il compte pour la survie, bien qu'il ne soit pas encore au dépôt.
+        decimal recoverable = BatchProduction.BufferedFood(colony) * Stockpile.NutritionPerItem(ResourceType.Bread);
+        float foodDays = (float)((colony.Stock.AvailableNutrition + recoverable) / (population * (decimal)Trade.TravelerNutritionPerDay));
+        // Un chef prudent veut de plus gros stocks de vivres (jusqu'à 15 % de jours en plus).
+        float foodTarget = (clock.Season == Season.Automne ? AutumnFoodTargetDays : FoodTargetDays) * (1f + Leadership.StanceEffect * Leadership.Stance(colony).Prudence);
         float foodPressure = Pressure(foodTarget - foodDays, foodTarget - FoodCrisisDays);
 
         // Chauffage : trois nuits d'avance, plus tout l'hiver si l'on est en automne (anticipation).
@@ -592,7 +673,13 @@ public static class ColonyBrain
             homeless, housingPressure, hasSite, stonePressure, farmShare,
             chain, colony.ConstructionSites.Any(b => !b.IsHut), colony.Buildings.Any(b => b.IsComplete && b.Type is BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge), orePressure,
             colony.CanalsInProgress.Any(), FoodChain.Demand(colony), colony.Buildings.Any(b => b.IsComplete && FoodChain.IsFoodWorkshop(b.Type)),
-            !ToolChain.IronDiscovered(colony) && colony.Labor.TotalProduced(ResourceType.Stone) < ProspectBudget);
+            !ToolChain.IronDiscovered(colony) && colony.Labor.TotalProduced(ResourceType.Stone) < ProspectBudget)
+        {
+            GameAbundance = Nature.Wildlife.GameAbundance(colony.LocalSettlement),
+            PredatorPressure = Nature.Predation.Pressure(colony, clock.Season),
+            CropRaidPressure = Nature.Predation.CropRaidPressure(colony),
+            TamingOpportunity = Nature.Taming.Opportunity(colony),
+        };
     }
 
     /// <summary>
@@ -621,8 +708,9 @@ public static class ColonyBrain
         float ironCraft = comfortAssured && sensors.Chain.Active && sensors.WorkshopsReady
             ? Math.Max(0.1f, MaxCraftShare * sensors.Chain.ToolShortfall / Math.Max(1, sensors.Chain.ToolsWanted))
             : 0f;
-        // Le moulin et le four : un ou deux colons y travaillent tant qu'il y a du grain en surplus ou de la farine à cuire.
-        float breadCraft = comfortAssured && sensors.Bread.Active && sensors.FoodWorkshopsReady
+        // Le moulin et le four : un ou deux colons y travaillent tant qu'il y a du grain en surplus ou de la farine à cuire. Le pain est la vraie nourriture de base
+        // (le grain cru ne nourrit presque pas) : cette filière ne se réserve donc pas aux périodes de confort, elle en sort la colonie.
+        float breadCraft = sensors.Bread.Active && sensors.FoodWorkshopsReady
             ? BreadCraftShare * (sensors.Bread.GrainSurplus >= LargeGrainSurplus ? 2f : 1f)
             : 0f;
         float craft = Math.Min(MaxCraftShare, ironCraft + breadCraft);

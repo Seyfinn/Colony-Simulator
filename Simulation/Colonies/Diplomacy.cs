@@ -139,7 +139,9 @@ public static class Diplomacy
 
     public static Pact? PactBetween(WorldState world, Colony a, Colony b) => world.Pacts.FirstOrDefault(p => p.Between(a, b));
 
-    public static bool AreAllied(WorldState world, Colony a, Colony b) => PactBetween(world, a, b) is { Kind: PactKind.Alliance };
+    /// <summary>Alliés par un pacte, ou membres d'un même royaume (qui se traitent en alliés : pas de guerre entre eux, des renforts, le passage libre).</summary>
+    public static bool AreAllied(WorldState world, Colony a, Colony b) =>
+        PactBetween(world, a, b) is { Kind: PactKind.Alliance } || Realms.SameRealm(world, a, b);
     /// <summary>
     /// Le droit de passage d'un voyageur chez un hôte : toujours chez soi et chez ses alliés, jamais en guerre, et refusé à ceux dont l'hôte pense du mal
     /// (opinion au plus égale au seuil du monde). Le droit ne crée pas de marchandise ni ne permet d'installer un camp (propriété distincte).
@@ -150,7 +152,12 @@ public static class Diplomacy
 
     public static bool AtWar(WorldState world, Colony a, Colony b) => PactBetween(world, a, b) is { Kind: PactKind.War };
 
+    /// <summary>Les alliés d'une colonie : ceux de ses pactes et les autres membres de son royaume.</summary>
     public static IEnumerable<Colony> Allies(WorldState world, Colony colony) =>
+        PactAllies(world, colony).Concat(Realms.Of(world, colony) is { } realm ? Realms.Members(world, realm).Where(m => m != colony) : []).Distinct();
+
+    /// <summary>Les alliés d'un pacte d'alliance seulement (les membres d'un royaume ne comptent pas dans la limite d'alliances).</summary>
+    private static IEnumerable<Colony> PactAllies(WorldState world, Colony colony) =>
         world.Pacts.Where(p => p.Kind == PactKind.Alliance && p.Involves(colony)).Select(p => p.Other(colony));
 
     public static IEnumerable<Colony> Enemies(WorldState world, Colony colony) =>
@@ -385,13 +392,15 @@ public static class Diplomacy
 
     private static void ProposeAlliance(WorldState world, Colony colony, List<Colony> living)
     {
-        if (colony.PresentMembers.Count < 6 || Allies(world, colony).Count() >= MaxAlliances || colony.Prayers.IsQuiet(DecisionKind.Alliance, world.Clock))
+        if (colony.PresentMembers.Count < 6 || PactAllies(world, colony).Count() >= MaxAlliances || colony.Prayers.IsQuiet(DecisionKind.Alliance, world.Clock))
             return;
+        // Un chef sociable et curieux s'allie plus volontiers : le seuil d'opinion baisse jusqu'à dix points (voir Leadership).
+        float threshold = AllianceOpinion - 10f * Leadership.Stance(colony).Commerce;
         Colony? partner = living
-            .Where(o => o != colony && o.PresentMembers.Count >= 6 && PactBetween(world, colony, o) is null
-                && colony.OpinionOf(o) >= AllianceOpinion && o.OpinionOf(colony) >= AllianceOpinion - 10f
+            .Where(o => o != colony && o.PresentMembers.Count >= 6 && PactBetween(world, colony, o) is null && !Realms.SameRealm(world, colony, o)
+                && colony.OpinionOf(o) >= threshold && o.OpinionOf(colony) >= AllianceOpinion - 10f
                 && (Knowledge.Has(colony, Discovery.Diplomacy) || Knowledge.Has(o, Discovery.Diplomacy))
-                && Allies(world, o).Count() < MaxAlliances && world.WorldMap.Connected(colony, o))
+                && PactAllies(world, o).Count() < MaxAlliances && world.WorldMap.Connected(colony, o))
             .OrderByDescending(o => colony.OpinionOf(o)).FirstOrDefault();
         if (partner is null)
             return;
@@ -403,7 +412,7 @@ public static class Diplomacy
 
     public static void SealAlliance(WorldState world, Colony a, Colony b)
     {
-        if (PactBetween(world, a, b) is not null || a.PresentMembers.Count == 0 || b.PresentMembers.Count == 0)
+        if (PactBetween(world, a, b) is not null || Realms.SameRealm(world, a, b) || a.PresentMembers.Count == 0 || b.PresentMembers.Count == 0)
             return;
         world.Pacts.Add(new Pact(a, b, PactKind.Alliance, world.Clock.Ticks));
         ColonyBrain.Say(a, world.Clock, $"Nous scellons une alliance avec {b.Name} !");
@@ -424,8 +433,10 @@ public static class Diplomacy
             return;
         float caution = 1f - 0.3f * AverageAxis(colony, Axis.Audace);
         float power = Warfare.DefenseEstimate(world, colony, attacker: null);
+        // Un chef belliqueux se fâche plus vite : le seuil d'hostilité monte jusqu'à dix points (voir Leadership). La décision, elle, reste au joueur (D1).
+        float hostile = HostileOpinion + 10f * Leadership.Stance(colony).Bellicisme;
         Colony? enemy = living
-            .Where(o => o != colony && colony.OpinionOf(o) <= HostileOpinion && PactBetween(world, colony, o) is null
+            .Where(o => o != colony && colony.OpinionOf(o) <= hostile && PactBetween(world, colony, o) is null && !Realms.SameRealm(world, colony, o)
                 && world.WorldMap.Connected(colony, o) && world.WorldMap.TravelDays(colony, o) <= MaxWarTravelDays
                 && power >= caution * Warfare.DefenseEstimate(world, o, colony))
             .OrderBy(o => colony.OpinionOf(o)).FirstOrDefault();
@@ -440,7 +451,7 @@ public static class Diplomacy
 
     public static void DeclareWar(WorldState world, Colony aggressor, Colony target)
     {
-        if (PactBetween(world, aggressor, target) is not null || aggressor.PresentMembers.Count == 0 || target.PresentMembers.Count == 0)
+        if (PactBetween(world, aggressor, target) is not null || Realms.SameRealm(world, aggressor, target) || aggressor.PresentMembers.Count == 0 || target.PresentMembers.Count == 0)
             return;
         world.Pacts.Add(new Pact(aggressor, target, PactKind.War, world.Clock.Ticks));
         aggressor.BattlesWon = aggressor.BattlesLost = target.BattlesWon = target.BattlesLost = 0;

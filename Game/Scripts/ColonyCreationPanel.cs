@@ -47,7 +47,7 @@ public partial class ColonyCreationPanel : CanvasLayer
         _panel.OffsetLeft = -16 - InterfaceLayout.SideWidth(root.Size);
         _panel.OffsetTop = 98;
         var frame = MenuStyle.Column(_panel, 8);
-        MenuStyle.Text(frame, "Fonder une colonie", 24, ArtDirection.Brass);
+        MenuStyle.Text(frame, "Fonder un empire", 24, ArtDirection.Brass);
         var scroll = new ScrollContainer
         {
             HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
@@ -56,7 +56,7 @@ public partial class ColonyCreationPanel : CanvasLayer
         frame.AddChild(scroll);
         var body = MenuStyle.Column(scroll);
         _step = MenuStyle.Text(body, "", 13, ArtDirection.Sage, true);
-        MenuStyle.Text(body, "Nom de la colonie", 14, MenuStyle.Muted);
+        MenuStyle.Text(body, "Nom de l'empire", 14, MenuStyle.Muted);
         _name = new LineEdit { Name = "NomColonie", MaxLength = 40, PlaceholderText = "Ex. : Clairerive" };
         body.AddChild(_name);
         _name.TextChanged += _ => UpdateConfirm();
@@ -72,7 +72,7 @@ public partial class ColonyCreationPanel : CanvasLayer
         _randomSize = new CheckBox
         {
             Name = "ColonieAleatoire",
-            Text = $"Colonie aléatoire ({ColonyFounder.MinRandomFounders} à {ColonyFounder.MaxRandomFounders} habitants)",
+            Text = $"Empire aléatoire ({ColonyFounder.MinRandomFounders} à {ColonyFounder.MaxRandomFounders} habitants)",
         };
         body.AddChild(_randomSize);
         _randomSize.Toggled += _ => UpdateProvisions();
@@ -88,7 +88,7 @@ public partial class ColonyCreationPanel : CanvasLayer
         var confirmRow = new HBoxContainer();
         confirmRow.AddThemeConstantOverride("separation", 8);
         actions.AddChild(confirmRow);
-        _confirm = MenuStyle.Button(confirmRow, "Fonder la colonie", () => ConfirmRequested?.Invoke());
+        _confirm = MenuStyle.Button(confirmRow, "Fonder l'empire", () => ConfirmRequested?.Invoke());
         _confirm.SizeFlagsHorizontal = Control.SizeFlags.ExpandFill;
         _confirm.Name = "ConfirmerFondation";
         MenuStyle.Primary(_confirm);
@@ -98,7 +98,7 @@ public partial class ColonyCreationPanel : CanvasLayer
 
     public void Open(int colonyNumber)
     {
-        _name.Text = $"Colonie {colonyNumber}";
+        _name.Text = $"Empire {colonyNumber}";
         _species.Select(0); _founders.Value = 8; _randomSize.ButtonPressed = false;
         UpdateSpecies(); UpdateProvisions();
         _panel.Show();
@@ -114,7 +114,7 @@ public partial class ColonyCreationPanel : CanvasLayer
         _terrainStage = false; _validSite = false;
         _species.Disabled = false;
         _step.Text = "1 / 2 · Choisissez une région";
-        _site.Text = "Cliquez sur un espace libre de la carte du monde. Chaque colonie dispose de sa propre région.";
+        _site.Text = "Cliquez sur un espace libre de la carte du monde. Chaque empire dispose de sa propre région.";
         _site.AddThemeColorOverride("font_color", MenuStyle.Ink);
         _error.Text = "";
         _region.Text = "Choisir sur la carte du monde";

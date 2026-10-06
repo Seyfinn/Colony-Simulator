@@ -77,6 +77,7 @@ public sealed class BuildingPlacementProfile
         new(BuildingType.Market, DistrictKind.Civic, [], ServiceNeed.Depot),
         new(BuildingType.Infirmary, DistrictKind.Civic, [DistrictKind.Residential], ServiceNeed.Meal, sensitive: true),
         new(BuildingType.Storehouse, DistrictKind.Civic, [DistrictKind.Agricultural, DistrictKind.Industrial, DistrictKind.Residential], ServiceNeed.Depot, followsNeighbourhood: true),
+        new(BuildingType.Silo, DistrictKind.Agricultural, [DistrictKind.Civic, DistrictKind.Industrial], ServiceNeed.Depot),
         new(BuildingType.Well, DistrictKind.Civic, [DistrictKind.Residential], ServiceNeed.None),
         new(BuildingType.Tavern, DistrictKind.Civic, [DistrictKind.Residential], ServiceNeed.Meal, sensitive: true),
         new(BuildingType.School, DistrictKind.Civic, [DistrictKind.Residential], ServiceNeed.Meal, sensitive: true),

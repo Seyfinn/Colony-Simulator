@@ -20,6 +20,7 @@ public partial class EconomicUiPreview : Node2D
     private string? _capture;
     private int _frame;
     private bool _compact;
+    private bool _lower;
     private ScrollContainer _scroll = null!;
     private ulong _childId;
     private int _scrollPosition;
@@ -35,11 +36,14 @@ public partial class EconomicUiPreview : Node2D
                 if (arg.StartsWith("--capture=")) _capture = arg[10..];
                 if (arg.StartsWith("--preview=")) _mode = arg[10..];
                 if (arg == "--compact") _compact = true;
+                if (arg == "--lower") _lower = true;
+                if (arg == "--fallback") AssetLibrary.NativeFallbackForValidation = true;
             }
             if (_compact) { GetWindow().Size = new Vector2I(1100, 700); GetWindow().ContentScaleSize = Vector2I.Zero; }
             _world = new WorldState(42, colonyCount: 4, startingColonists: 24, migration: false, lifecycle: false, trade: false);
             Colony colony = _world.Colonies[0];
             SeedDemonstration(colony);
+            if (_mode is "scale" or "village" or "powers") ScalePreview.SeedMeasures(colony, _world.Clock);
             if (_mode is "territories" or "camp" or "roads") SeedTerritorialDemonstration(colony);
             if (_mode is "camp" or "roads") for (int tick=0;tick<1000;tick++) _world.Step();
             _place = _mode is "camp" or "roads" ? colony.Settlements.Last() : colony.PrimarySettlement;
@@ -67,12 +71,13 @@ public partial class EconomicUiPreview : Node2D
                 AddChild(villagers); villagers.Init(_world,colony);
             }
             _hud.SetStatus(_world.Clock, GameSpeed.Pause); _hud.ShowColony(colony, _world.Clock);
-            bool economy = _mode is "economy" or "commerce" or "suppliers" or "graphs" or "territories" or "camp";
+            bool economy = _mode is "economy" or "commerce" or "suppliers" or "graphs" or "territories" or "camp" or "scale" or "village" or "powers";
             _panel.Open = economy; _hud.SetOverlayState(false, economy);
             if (!economy && _mode != "roads") Named<Button>(_hud, "Production").EmitSignal(BaseButton.SignalName.Pressed);
             if (_mode == "roads") _hud.ToggleJournal();
             if (_mode is "commerce" or "suppliers") Named<EconomyDashboard>(_panel, "TableauEconomie").ShowCommerce(true);
             if (_mode == "territories") Named<EconomyDashboard>(_panel, "TableauEconomie").ShowTerritories();
+            if (_mode is "scale" or "village" or "powers") Named<EconomyDashboard>(_panel, "TableauEconomie").ShowScaleSection(_mode);
             if (_mode == "graphs")
             {
                 var history = new ResourceHistory(); history.Observe(_world);
@@ -103,7 +108,7 @@ public partial class EconomicUiPreview : Node2D
             int x=colony.CampX+dx,y=colony.CampY+dy;
             if (!colony.Map.InBounds(x,y) || !colony.Map.IsWalkable(x,y) || colony.Map.HasWater(x,y)
                 || colony.Buildings.Any(b=>x>=b.X && x<b.X+b.Width && y>=b.Y && y<b.Y+b.Height)
-                || colony.Fields.Any(f=>x>=f.X && x<f.X+Field.Size && y>=f.Y && y<f.Y+Field.Size)) return;
+                || colony.Fields.Any(f=>x>=f.X && x<f.X+f.Size && y>=f.Y && y<f.Y+f.Size)) return;
             colony.Map.ClearFlora(x,y); setter.Invoke(colony.Map.Roads,[y*colony.Map.Width+x,surface]);
         }
         for(int dx=-9;dx<=13;dx++) Road(dx,2,RoadSurface.DirtRoad);
@@ -290,6 +295,7 @@ public partial class EconomicUiPreview : Node2D
                     Named<Button>(_panel, "StocksEconomie").EmitSignal(BaseButton.SignalName.Pressed);
                     if (_mode is "commerce" or "suppliers") Named<Button>(_panel, "CommerceEconomie").EmitSignal(BaseButton.SignalName.Pressed);
                     if (_mode == "territories") Named<EconomyDashboard>(_panel, "TableauEconomie").ShowTerritories();
+                    if (_mode is "scale" or "village" or "powers") Named<EconomyDashboard>(_panel, "TableauEconomie").ShowScaleSection(_mode);
                     if (_mode == "graphs")
                     {
                         _panel.ShowResourceGraphs();
@@ -343,6 +349,7 @@ public partial class EconomicUiPreview : Node2D
                 }
                 _scroll.ScrollVertical = _mode switch { "recipes" or "active" => 440, "costs" => 1100,
                     "fermentation" => 900, "deliveries" => 230, "suppliers" => 300, "territories" => 90, _ => 0 };
+                if (_lower) _scroll.ScrollVertical = 1500;
             }
             if (_frame == 50)
             {

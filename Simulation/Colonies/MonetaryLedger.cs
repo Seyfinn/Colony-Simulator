@@ -4,17 +4,20 @@ namespace GodColony.Simulation.Colonies;
 /// Bilan monétaire du monde : dotations politiques, pièces frappées et quota annuel de frappe partagé entre les colonies.
 /// Le quota est une règle de capacité, pas une banque : il borne l'émission même si l'or devient abondant. Les pièces réellement
 /// présentes restent dans les stocks, les cargaisons et les poches ; le registre ne les possède pas.
-/// Au début de chaque année de jeu, le plafond mondial est de 5 % de la monnaie encore présente, réparti entre les colonies vivantes
+/// Au début de chaque année de jeu, le plafond mondial est de 25 % de la monnaie encore présente, réparti entre les colonies vivantes
 /// selon leur population (plus fort reste, puis identifiant). Un reste de conversion inférieur à une pièce passe à l'année suivante ;
 /// un quota inutilisé expire. Un lot qui traverse la fin d'année garde son engagement dans le budget de son année d'origine.
 /// </summary>
 public sealed class MonetaryLedger
 {
     /// <summary>Part de la monnaie présente qu'on peut frapper chaque année.</summary>
-    public const int CapPercent = 5;
+    public const int CapPercent = 25;
+
+    /// <summary>Pièces versées à chaque village vivant à la fin de chaque année.</summary>
+    public const int YearEndCoins = 10;
 
     /// <summary>Pièces tirées d'une unité d'or affiné.</summary>
-    public const int CoinsPerGold = 2;
+    public const int CoinsPerGold = 40;
 
     /// <summary>L'année du budget en cours (0 : aucun budget établi).</summary>
     public int Year { get; internal set; }
@@ -44,11 +47,14 @@ public sealed class MonetaryLedger
 
     public long AllowanceOf(Colony colony) => Allowances.GetValueOrDefault(colony.Id);
     public long UsedBy(Colony colony) => Used.GetValueOrDefault(colony.Id);
+    /// <summary>Pièces engagées dans le budget courant et qui ne sont pas encore frappées.</summary>
+    public long CommittedThisYear => Math.Max(0, Used.Values.Sum() - MintedThisYear);
     public long RemainingFor(Colony colony) => Math.Max(0, AllowanceOf(colony) - UsedBy(colony));
 
     /// <summary>Somme exacte des pièces du monde : stocks de tous les établissements et pièces embarquées.</summary>
     public static long Mass(WorldState world) =>
-        world.Settlements.Sum(s => (long)s.Stock.Get(ResourceType.Coins)) + world.Caravans.Sum(c => (long)c.Coins);
+        world.Settlements.Sum(s => (long)s.Stock.Get(ResourceType.Coins)) + world.Caravans.Sum(c => (long)c.Coins)
+        + world.WarParties.Sum(p => (long)p.Loot.GetValueOrDefault(ResourceType.Coins));
 
     /// <summary>
     /// Écart entre la monnaie présente et ce que le registre explique (dotations + frappe − pertes). Nul tant que personne n'ajoute
@@ -59,6 +65,13 @@ public sealed class MonetaryLedger
     /// <summary>Établit le budget de l'année : plafond, reste de conversion et parts. Les engagements des années passées ne sont pas redistribués.</summary>
     internal void StartYear(WorldState world)
     {
+        // Fin d'année : chaque village vivant reçoit sa dotation, comptée avec les dotations avant le calcul du plafond.
+        if (Year != 0)
+            foreach (Colony colony in world.Colonies.Where(c => c.Members.Count > 0))
+            {
+                colony.Stock.Add(ResourceType.Coins, YearEndCoins, ResourceFlow.Transfer);
+                Dotations += YearEndCoins;
+            }
         Year = world.Clock.Year;
         long hundredths = Mass(world) * CapPercent + CapRemainderHundredths;
         YearCap = hundredths / 100;

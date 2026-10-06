@@ -15,21 +15,32 @@ public sealed class FieldPlot(int x, int y)
 
     /// <summary>Avancement de la pousse, de 0 (semé) à 1 (mûr).</summary>
     public float Growth { get; internal set; }
+
+    /// <summary>Part de la récolte piétinée par les herbivores (0 à 1) : elle réduit le rendement et repart à zéro aux semailles.</summary>
+    public float Trampled { get; internal set; }
 }
 
-/// <summary>Un champ : un carré de 4 × 4 parcelles défriché près du camp.</summary>
+/// <summary>Un champ : un carré de parcelles défriché près du camp (4 × 4 pour un campement, jusqu'à 8 × 8 pour un village développé).</summary>
 public sealed class Field
 {
-    public const int Size = 4;
+    /// <summary>Côté du plus petit champ : celui d'un campement.</summary>
+    public const int BaseSize = 4;
 
-    public Field(int x, int y)
+    /// <summary>Côté du plus grand champ : celui d'un village développé.</summary>
+    public const int MaxSize = 8;
+
+    public Field(int x, int y, int size = BaseSize)
     {
         X = x;
         Y = y;
+        Size = size;
         for (int dy = 0; dy < Size; dy++)
         for (int dx = 0; dx < Size; dx++)
             Plots.Add(new FieldPlot(x + dx, y + dy));
     }
+
+    /// <summary>Côté du carré, en parcelles.</summary>
+    public int Size { get; }
 
     /// <summary>Case en haut à gauche.</summary>
     public int X { get; }

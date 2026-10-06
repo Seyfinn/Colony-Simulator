@@ -97,6 +97,6 @@ public class NeedsPriorityTests
         }
 
         Assert.Null(famine.Victim);
-        Assert.DoesNotContain(colony.Graves, tombe => tombe.Cause == "faim");
+        Assert.DoesNotContain(colony.Deaths, tombe => tombe.Cause == "faim");
     }
 }

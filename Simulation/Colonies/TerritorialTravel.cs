@@ -61,7 +61,7 @@ public static class TerritorialTravel
         var load = cargo.ToDictionary(p => p.Key, p => p.Value);
         foreach ((ResourceType food, int units) in provisions) load[food] = load.GetValueOrDefault(food) + units;
         if (load.Any(p => p.Value < 0 || source.Stock.Available(p.Key) < p.Value)
-            || ResourceCatalog.WeightOf(load) > 40 * people
+            || ResourceCatalog.WeightOf(load) > 40 * people * (purpose == TerritorialPurpose.Supply ? Trade.SupplyCapacityFactor(owner) : 1)
             || purpose != TerritorialPurpose.Evacuation && source.Stock.AvailableNutrition - load.Sum(p => p.Value * ResourceCatalog.Nutrition(p.Key))
                 < Math.Max(1, source.Population.Count - people) * (decimal)Trade.TravelerNutritionPerDay * 2) return null;
         long now = world.Clock.Ticks;
@@ -211,6 +211,7 @@ public static class TerritorialTravel
             person.Home?.Residents.Remove(person); person.Home = null;
             person.HomeSettlementId = target.Id;
         }
+        SpecialistAssignments.Invalidate(person); // la préférence d atelier est locale
         person.Activity = null; person.TravelId = 0; person.Transit = TransitState.None;
         person.LocationSettlementId = target.Id;
         person.X = person.PrevX = target.CampX + 0.5f; person.Y = person.PrevY = target.CampY + 0.5f;
@@ -259,7 +260,8 @@ public static class TerritorialTravel
         // un camp qui a du surplus utile au village principal le renvoie tous les trois jours.
         if (LogisticsPlanner.PlanSupply(world, owner, settlement) || world.Clock.TotalDays % 3 == 0 && LogisticsPlanner.PlanReturn(world, owner, settlement)) return;
         TerritorialRules rules = world.Territory;
-        if (world.Clock.Ticks - owner.LastTerritorialTicks < rules.ExpeditionCooldownDays * TimeConstants.TicksPerDay) return;
+        // Un chef bâtisseur (ardent et ambitieux) fonde ses camps un peu plus souvent : le délai baisse jusqu'à 15 %.
+        if (world.Clock.Ticks - owner.LastTerritorialTicks < rules.ExpeditionCooldownDays * (1 - Leadership.StanceEffect * Leadership.Stance(owner).Batisseur) * TimeConstants.TicksPerDay) return;
         if (WorldRoadNetwork.PlanImprovement(world, owner, settlement)) return;
         if (ExpansionPlanner.TryRelocateFamily(world, owner, settlement)) return;
         DepositKnowledge? site = settlement.Population.Count >= rules.MinFoundingPopulation

@@ -11,7 +11,8 @@ namespace GodColony.Simulation.Colonies;
 public enum ResourceType { Food, Grain, Wood, Stone, IronOre, Charcoal, Iron, Tools, Flour, Bread, Coins, Fish, Eggs, Wool, Clothes, Salt, Spices, Hardwood, Milk, Chickens, Sheep, Cows, Meat, SaltedMeat, Cake, Stew, Beer,
     MineralCoal = 27, Clay = 28, Pottery = 29, CopperOre = 30, Copper = 31, Copperware = 32,
     Flax = 33, Linen = 34, Hides = 35, Leather = 36, Shoes = 37, Grapes = 38, Wine = 39,
-    GoldOre = 40, Gold = 41, Ruby = 42, Sapphire = 43, Emerald = 44, Diamond = 45, Jewelry = 46 }
+    GoldOre = 40, Gold = 41, Ruby = 42, Sapphire = 43, Emerald = 44, Diamond = 45, Jewelry = 46,
+    Horses = 47, Oxen = 48, Dogs = 49, Honey = 50, Wax = 51, Mushrooms = 52, Herbs = 53, Carts = 54 }
 
 /// <summary>Le stock commun de la colonie : tout appartient à la colonie, rien aux colons.</summary>
 public sealed partial class Stockpile
@@ -23,8 +24,11 @@ public sealed partial class Stockpile
 
     public int Get(ResourceType type) => _amounts.GetValueOrDefault(type);
 
-    /// <summary>Ce que redonne un repas de baies ou de poisson, de céréales, ou de pain (le pain nourrit mieux).</summary>
-    public const float WildMealValue = 0.6f, GrainMealValue = 0.6f, BreadMealValue = 0.85f, MilkMealValue = 0.7f;
+    /// <summary>
+    /// Ce que redonne un repas de baies ou de poisson, de pain (le pain nourrit mieux), ou de céréales crues : celles-ci sont une matière première, qu'on ne mange
+    /// qu'en dernier recours et qui ne rassasient presque pas (un dixième de repas de baies, soit une soixantaine de grains pour une journée).
+    /// </summary>
+    public const float WildMealValue = 0.6f, GrainMealValue = 0.1f, BreadMealValue = 0.85f, MilkMealValue = 0.7f;
 
     /// <summary>Une part de viande, un bol de ragoût, une part de gâteau (celle-ci rassasie entièrement) ; un gâteau fait six parts.</summary>
     public const float MeatMealValue = 0.9f, StewMealValue = 1f, CakeMealValue = 1f;
@@ -33,19 +37,25 @@ public sealed partial class Stockpile
     /// <summary>Parts du gâteau entamé qu'il reste à manger.</summary>
     private int _cakeSlices;
 
-    /// <summary>Tout ce qui se mange : nourriture sauvage, céréales et pain (un repas chacun). La farine ne se mange pas crue.</summary>
-    public int FoodUnits => Get(ResourceType.Food) + Get(ResourceType.Fish) + Get(ResourceType.Eggs) + Get(ResourceType.Milk) + Get(ResourceType.Grain) + Get(ResourceType.Bread)
-        + Get(ResourceType.Meat) + Get(ResourceType.SaltedMeat) + Get(ResourceType.Stew) + Get(ResourceType.Cake) * PortionsPerCake + Get(ResourceType.Grapes) + _cakeSlices;
+    /// <summary>
+    /// Tout ce qui se mange : nourriture sauvage, pain et autres vivres (un repas chacun). La farine ne se mange pas crue ; les céréales crues comptent pour leur très faible
+    /// valeur nutritive (voir <see cref="GrainMealValue"/>), arrondie à l'unité inférieure, pour ne pas surestimer les réserves.
+    /// </summary>
+    public int FoodUnits => Get(ResourceType.Food) + Get(ResourceType.Fish) + Get(ResourceType.Eggs) + Get(ResourceType.Milk) + (int)(Get(ResourceType.Grain) * GrainMealValue) + Get(ResourceType.Bread)
+        + Get(ResourceType.Meat) + Get(ResourceType.SaltedMeat) + Get(ResourceType.Stew) + Get(ResourceType.Cake) * PortionsPerCake + Get(ResourceType.Grapes) + _cakeSlices
+        + Get(ResourceType.Honey) + Get(ResourceType.Mushrooms);
 
     /// <summary>Valeur du stock comestible : 100 points de faim correspondent à une unité de nourriture.</summary>
     public decimal FoodNutrition => Nutrition(ResourceType.Food) + Nutrition(ResourceType.Fish) + Nutrition(ResourceType.Eggs)
         + Nutrition(ResourceType.Milk) + Nutrition(ResourceType.Grain) + Nutrition(ResourceType.Bread)
         + Nutrition(ResourceType.Meat) + Nutrition(ResourceType.SaltedMeat) + Nutrition(ResourceType.Stew) + Nutrition(ResourceType.Cake) + Nutrition(ResourceType.Grapes)
+        + Nutrition(ResourceType.Honey) + Nutrition(ResourceType.Mushrooms)
         + _cakeSlices * (decimal)CakeMealValue;
 
     public static decimal NutritionPerItem(ResourceType type) => type switch
     {
-        ResourceType.Food or ResourceType.Fish or ResourceType.Eggs or ResourceType.Grapes => (decimal)WildMealValue,
+        ResourceType.Food or ResourceType.Fish or ResourceType.Eggs or ResourceType.Grapes or ResourceType.Mushrooms => (decimal)WildMealValue,
+        ResourceType.Honey => (decimal)BreadMealValue,
         ResourceType.Milk => (decimal)MilkMealValue,
         ResourceType.Grain => (decimal)GrainMealValue,
         ResourceType.Bread => (decimal)BreadMealValue,
@@ -57,17 +67,20 @@ public sealed partial class Stockpile
 
     public decimal Nutrition(ResourceType type) => Get(type) * NutritionPerItem(type);
 
+    /// <summary>Y a-t-il de quoi manger, fût-ce des céréales crues en dernier recours ? (<see cref="FoodUnits"/> ne compte pas les grains un à un.)</summary>
+    public bool HasAnyMeal => FoodUnits > 0 || Get(ResourceType.Grain) > 0;
+
     /// <summary>
-    /// Prend un repas : la nourriture sauvage d'abord (elle se garde mal), puis le pain, puis les céréales, puis le lait et les œufs
-    /// (les produits de l'élevage sont gardés pour la vente, et ne se mangent que quand le reste manque).
+    /// Prend un repas : la nourriture sauvage d'abord (elle se garde mal), puis le pain, puis le lait et les œufs
+    /// (les produits de l'élevage sont gardés pour la vente, et ne se mangent que quand le reste manque), et, en tout dernier recours, les céréales crues.
     /// Renvoie ce que le repas redonne à celui qui mange.
     /// </summary>
     public bool TryTakeMeal(out float value) => TryTakeMeal(out value, out _);
 
     /// <summary>
     /// Comme ci-dessus, mais renvoie aussi le plat de fête mangé, le cas échéant (gâteau ou ragoût, qui passent avant tout le reste).
-    /// Ensuite : la nourriture sauvage, la viande fraîche (qui se gâte vite), le pain, les céréales, la viande salée (la réserve de longue durée),
-    /// le lait et les œufs.
+    /// Ensuite : la nourriture sauvage, la viande fraîche (qui se gâte vite), le pain, la viande salée (la réserve de longue durée),
+    /// le lait et les œufs, puis les céréales crues.
     /// </summary>
     public bool TryTakeMeal(out float value, out ResourceType? dish)
     {
@@ -84,12 +97,14 @@ public sealed partial class Stockpile
         else if (TryTake(ResourceType.Food, 1)) value = WildMealValue;
         else if (TryTake(ResourceType.Fish, 1)) value = WildMealValue;
         else if (TryTake(ResourceType.Grapes, 1)) value = WildMealValue;
+        else if (TryTake(ResourceType.Mushrooms, 1)) value = WildMealValue;
+        else if (TryTake(ResourceType.Honey, 1)) value = BreadMealValue;
         else if (TryTake(ResourceType.Meat, 1)) value = MeatMealValue;
         else if (TryTake(ResourceType.Bread, 1)) value = BreadMealValue;
-        else if (TryTake(ResourceType.Grain, 1)) value = GrainMealValue;
         else if (TryTake(ResourceType.SaltedMeat, 1)) value = MeatMealValue;
         else if (TryTake(ResourceType.Milk, 1)) value = MilkMealValue;
         else if (TryTake(ResourceType.Eggs, 1)) value = WildMealValue;
+        else if (TryTake(ResourceType.Grain, 1)) value = GrainMealValue;
         return value > 0f;
     }
 
@@ -103,6 +118,8 @@ public sealed partial class Stockpile
         ResourceAccounting.Record(this, type, flow, amount);
         if (type == ResourceType.Meat && amount > 0)
             _meatByAge[0] = _meatByAge.GetValueOrDefault(0) + amount;
+        if (type == ResourceType.Grain && amount > 0)
+            AddGrain(amount, 0);
     }
 
     /// <summary>Retire une quantité si elle est disponible (la viande la plus vieille d'abord). Renvoie false sinon, sans rien retirer.</summary>
@@ -116,6 +133,8 @@ public sealed partial class Stockpile
         ResourceAccounting.Record(this, type, flow, amount);
         if (type == ResourceType.Meat)
             RemoveMeat(amount, 0);
+        if (type == ResourceType.Grain)
+            RemoveGrain(amount);
         if (flow == ResourceFlow.Loss)
             ReconcileReservations(type);
         return true;

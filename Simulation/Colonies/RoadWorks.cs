@@ -25,7 +25,7 @@ public static class RoadWorks
 
     /// <summary>Un seul aménagement facultatif actif à la fois.</summary>
     public static DevelopmentProject? ActiveProject(Colony colony) =>
-        colony.Layout.Projects.FirstOrDefault(p => p.Kind == DevelopmentKind.RoadImprovement && p.State is ProjectState.Accepted or ProjectState.Working);
+        colony.Layout.Projects.FirstOrDefault(p => p.Kind is DevelopmentKind.RoadImprovement or DevelopmentKind.RoadShortcut && p.State is ProjectState.Accepted or ProjectState.Working);
 
     /// <summary>
     /// Chaque jour, une demande d'amélioration bornée : si la prospérité le permet et qu'aucun aménagement n'est en cours, l'axe le plus fréquenté (usure moyenne par
@@ -73,13 +73,13 @@ public static class RoadWorks
         best.TargetSurface = RoadSurface.DirtRoad;
     }
 
-    /// <summary>La cellule peut recevoir un chemin de terre : terre nue ou arbres à abattre, hors des bâtiments, cultures, tombes, canaux et eau.</summary>
+    /// <summary>La cellule peut recevoir un chemin de terre : terre nue ou arbres à abattre, hors des bâtiments, cultures, canaux et eau.</summary>
     private static bool Buildable(Colony colony, LocalMap map, int cell)
     {
         int x = cell % map.Width, y = cell / map.Width;
         if (!map.IsWalkable(x, y) || map.IsWaterway(x, y) || map.IsMountain(x, y))
             return false;
-        return !colony.Spatial.Has(x, y, CellUse.Building | CellUse.Field | CellUse.Grave | CellUse.Canal);
+        return !colony.Spatial.Has(x, y, CellUse.Building | CellUse.Field | CellUse.Canal);
     }
 
     /// <summary>

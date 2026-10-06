@@ -88,14 +88,14 @@ public sealed class OfferingTests
         // Ignorer n'a aucun effet.
         Run(world, 2);
         Assert.Equal(DivineWishStatus.AwaitingResponse, wish.Status);
-        // Accorder est retenu mais n'exauce rien.
+        // Accorder applique le pouvoir à sa cible : l'exaucement naît avec un effet réel, jamais sans.
         world.AnswerPrayer(prayer, approve: true);
-        Assert.Equal(DivineWishStatus.AwaitingResponse, wish.Status);
         Assert.NotNull(wish.AcceptedTicks);
-        Assert.False(DivineWishes.TryFulfill(colony, wish, effectApplied: false));
-        Assert.Equal(DivineWishStatus.AwaitingResponse, wish.Status);
-        Assert.True(DivineWishes.TryFulfill(colony, wish, effectApplied: true));
         Assert.Equal(DivineWishStatus.Fulfilled, wish.Status);
+        DivineEffect effect = Assert.Single(colony.DivineEffects);
+        Assert.Equal(wish.Id, effect.WishId);
+        // Un appel externe ne peut pas fabriquer un second exaucement.
+        Assert.False(DivineWishes.TryFulfill(colony, wish, effect));
     }
 
     [Fact]
@@ -126,16 +126,16 @@ public sealed class OfferingTests
         Assert.Contains(OfferingTemplate.All, t => new[] { ResourceType.Ruby, ResourceType.Sapphire, ResourceType.Emerald }.All(g => t.Materials.Any(m => m.Type == g)));
         var (world, colony) = Prepared();
         // Un peu plus que le strict nécessaire : l'orfèvrerie du village peut prélever un bijou entre-temps.
-        colony.Stock.Add(ResourceType.Gold, 4);
-        colony.Stock.Add(ResourceType.Emerald, 2);
-        colony.Stock.Add(ResourceType.Sapphire, 2);
+        colony.Stock.Add(ResourceType.Gold, 8);
+        colony.Stock.Add(ResourceType.Emerald, 4);
+        colony.Stock.Add(ResourceType.Sapphire, 4);
         colony.Stock.Add(ResourceType.Coins, 2000);
         RunUntil(world, () => colony.Monuments.Any(m => m.Model == OfferingModel.SimpleAltar), 24 * 20);
         // La statue des récoltes ne se lance que si ses fournisseurs sont plausibles : ici les pierres sont déjà en stock.
         RunUntil(world, () => colony.Monuments.Any(m => m.Model == OfferingModel.HarvestStatue), 24 * 90);
         Monument statue = Assert.Single(colony.Monuments, m => m.Model == OfferingModel.HarvestStatue);
         Assert.Equal(1, statue.Materials[ResourceType.Emerald]);
-        Assert.InRange(colony.Stock.Get(ResourceType.Emerald), 0, 1); // une pierre est incorporée : elle ne peut plus être vendue
+        Assert.InRange(colony.Stock.Get(ResourceType.Emerald), 0, 3); // une des quatre pierres est incorporée : elle ne peut plus être vendue
         Assert.Empty(colony.Offerings.Single(p => p.Model == OfferingModel.HarvestStatue).Delivered);
         Assert.Equal(1, colony.Monuments.Count(m => m.Model == OfferingModel.HarvestStatue));
     }

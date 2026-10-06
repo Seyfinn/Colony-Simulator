@@ -44,14 +44,13 @@ public sealed record MapStyle(float MountainShare, float WaterShare, float Fores
 /// </summary>
 public sealed class Species
 {
-    private Species(string name, string plural, string adjective, float lifespanScale, float fertility, MapStyle biome,
+    private Species(string name, string plural, string adjective, float lifespanScale, MapStyle biome,
         Biome[] homeBiomes, Relief homeRelief, Dictionary<SkillType, float> talents, Dictionary<Axis, float> tendencies)
     {
         Name = name;
         Plural = plural;
         Adjective = adjective;
         LifespanScale = lifespanScale;
-        Fertility = fertility;
         Biome = biome;
         _homeBiomes = homeBiomes;
         HomeRelief = homeRelief;
@@ -71,8 +70,8 @@ public sealed class Species
     /// </summary>
     public float LifespanScale { get; }
 
-    /// <summary>Multiplie la chance de concevoir : les peuples qui vivent longtemps ont moins d'enfants.</summary>
-    public float Fertility { get; }
+    /// <summary>Fécondité inverse de la longévité : à prospérité égale, chaque peuple suit le même rythme par génération.</summary>
+    public float Fertility => 1f / LifespanScale;
 
     /// <summary>Terrain local typique du peuple (pour une carte sans case du monde, dans les tests).</summary>
     public MapStyle Biome { get; }
@@ -109,10 +108,10 @@ public sealed class Species
     public float Talent(SkillType skill) => TalentBias.GetValueOrDefault(skill, 1f);
     public float Tendency(Axis axis) => PersonalityBias.GetValueOrDefault(axis);
 
-    public static readonly Species Human = new("Humain", "Humains", "humaine", 1f, 1f, MapStyle.Temperate,
+    public static readonly Species Human = new("Humain", "Humains", "humaine", 1f, MapStyle.Temperate,
         [World.Biome.Grassland, World.Biome.TemperateForest], Relief.Flat, [], []);
 
-    public static readonly Species Dwarf = new("Nain", "Nains", "naine", 2f, 0.6f, MapStyle.Highlands,
+    public static readonly Species Dwarf = new("Nain", "Nains", "naine", 2f, MapStyle.Highlands,
         [World.Biome.TemperateForest, World.Biome.BorealForest, World.Biome.Grassland, World.Biome.Steppe], Relief.Mountains,
         new()
         {
@@ -123,7 +122,7 @@ public sealed class Species
             [Axis.Ardeur] = 0.25f, [Axis.Attachement] = 0.35f, [Axis.Audace] = -0.25f,
         });
 
-    public static readonly Species Elf = new("Elfe", "Elfes", "elfe", 4f, 0.4f, MapStyle.Woodlands,
+    public static readonly Species Elf = new("Elfe", "Elfes", "elfe", 4f, MapStyle.Woodlands,
         [World.Biome.TemperateForest, World.Biome.BorealForest, World.Biome.TropicalForest], Relief.Flat,
         new()
         {
@@ -134,7 +133,7 @@ public sealed class Species
             [Axis.Curiosite] = 0.3f, [Axis.Piete] = 0.35f, [Axis.Temperament] = -0.3f,
         });
 
-    public static readonly Species Orc = new("Orque", "Orques", "orque", 0.6f, 1.5f, MapStyle.Steppe,
+    public static readonly Species Orc = new("Orque", "Orques", "orque", 0.6f, MapStyle.Steppe,
         [World.Biome.Steppe, World.Biome.Savanna, World.Biome.Grassland], Relief.Hills,
         new()
         {

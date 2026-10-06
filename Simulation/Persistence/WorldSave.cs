@@ -16,8 +16,8 @@ public sealed record LoadedWorld(WorldState World, SaveInfo Info);
 public static class WorldSave
 {
     private static readonly byte[] Magic = Encoding.ASCII.GetBytes("GODCOLONY");
-    /// <summary>Format courant : monnaie frappée, offrandes et souhaits, prospection progressive, routes mondiales, règles territoriales.</summary>
-    private const int Version = 10;
+    /// <summary>Format courant : faune sauvage, apprivoisement, royaumes et chefs, équipement des caravanes, monnaie frappée, offrandes, routes mondiales, règles territoriales.</summary>
+    private const int Version = 12;
     private const int LegacyVersion = 1;
     private const int MaxFileBytes = 32 * 1024 * 1024;
     private const int MaxStateBytes = 128 * 1024 * 1024;

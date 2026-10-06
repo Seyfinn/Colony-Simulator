@@ -3,13 +3,14 @@ using GodColony.Simulation.Time;
 
 namespace GodColony.Simulation.Tests;
 
-/// <summary>La reprise d'une partie longue, à des instants où des missions, des gisements et des offrandes sont en cours, redonne exactement la même suite.</summary>
-public sealed class ResumeTests
+/// <summary>
+/// La reprise d'une partie longue, à des instants où des missions, des gisements et des offrandes sont en cours, redonne exactement la même suite.
+/// Un instant par classe : xUnit exécute les classes en parallèle, jamais les cas d'une même classe, et ces parties sont parmi les plus longues de la suite.
+/// </summary>
+public abstract class ResumeTests(int seed, int dayOfSave)
 {
-    [Theory]
-    [InlineData(101, 90)]
-    [InlineData(101, 150)]
-    public void Une_partie_sauvegardee_a_n_importe_quel_instant_reprend_exactement(int seed, int dayOfSave)
+    [Fact]
+    public void Une_partie_sauvegardee_a_n_importe_quel_instant_reprend_exactement()
     {
         var world = new WorldState(seed, startingColonists: 8, colonyCount: 2);
         for (long tick = 0; tick < dayOfSave * (long)TimeConstants.TicksPerDay; tick++) world.Step();
@@ -25,7 +26,14 @@ public sealed class ResumeTests
         }
         finally { if (File.Exists(path)) File.Delete(path); }
     }
+}
 
+public sealed class ResumeAtDay90Tests() : ResumeTests(101, 90);
+
+public sealed class ResumeAtDay150Tests() : ResumeTests(101, 150);
+
+public sealed class DeterminismTests
+{
     [Fact]
     public void Deux_executions_identiques_donnent_exactement_le_meme_etat()
     {

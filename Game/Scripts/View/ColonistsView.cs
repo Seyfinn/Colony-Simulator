@@ -82,6 +82,7 @@ public partial class ColonistsView : Node2D
     {
         using var scope = _settlement.Observe();
         _time += delta;
+        RefreshServiceCoverage();
         foreach (var (colony, light) in _fireLights)
         {
             light.Enabled = AmbientEffectsEnabled && HasFire(colony);
@@ -99,6 +100,7 @@ public partial class ColonistsView : Node2D
         foreach (Colony colony in new[] { _colony })
         {
             DrawPublicPlaces(colony);
+            DrawShortcutWorks();
             // Au sol, sans épaisseur : les champs passent sous tout le reste.
             foreach (Field field in colony.Fields)
                 DrawField(field);
@@ -112,21 +114,16 @@ public partial class ColonistsView : Node2D
                     known.State == GodColony.Simulation.Map.DepositObservation.Depleted ? new Color(.5f,.5f,.5f,.6f) : Colors.White);
             }
 
-            // Tout ce qui se dresse (tombes, bâtiments, feu, colons, plantes proches) est dessiné du nord au sud,
+            // Tout ce qui se dresse (bâtiments, feu, colons, plantes proches) est dessiné du nord au sud,
             // d'après la position de ses pieds : un colon passe derrière un arbre ou une hutte plus au sud que lui.
             _standing.Clear();
             _nearby.Clear();
-            foreach (Grave grave in colony.Graves)
-                if (grave.X >= 0)
-                {
-                    Grave g = grave;
-                    _standing.Add((g.Y * Tile + 28, () => DrawGrave(g)));
-                }
             foreach (Building building in colony.Buildings)
             {
                 Building b = building;
-                _standing.Add(((b.Y + b.Height) * Tile - (b.IsComplete && b.Type == BuildingType.Pen ? 29 : 4), () => DrawBuilding(b)));
-                if (b.IsComplete && b.Type == BuildingType.Pen) AddPenAnimals(b);
+                // Le sol et l'abri précèdent toutes les bêtes, quelle que soit la hauteur de l'enclos ; sa clôture avant revient ensuite.
+                _standing.Add((b.Y * Tile + (b.IsComplete && b.Type == BuildingType.Pen ? 35 : b.Height * Tile - 4), () => DrawBuilding(b)));
+                if (b.IsComplete && b.Type == BuildingType.Pen) { AddPenAnimals(b); AddPenExtras(b); }
                 CollectFlora(b.X - 1, b.Y, b.X + b.Width, b.Y + b.Height + 2);
             }
             _standing.Add(((colony.CampY + 0.5f) * Tile + 9, () => DrawCampfire(colony)));
@@ -137,6 +134,16 @@ public partial class ColonistsView : Node2D
                     AddColonist(colonist);
             foreach (Colonist traveler in colony.Transients)
                 AddColonist(traveler);
+
+            AddHerds();
+            AddWildResources();
+            DrawBridges();
+            AddTransportMarks(colony);
+            foreach (Monument monument in colony.Monuments.Where(m => m.SettlementId == _settlement.Id))
+            {
+                Monument ouvrage = monument;
+                _standing.Add(((ouvrage.Y + 1) * Tile, () => DrawMonument(ouvrage)));
+            }
 
             // Les plantes à portée des colons et des bâtiments sont redessinées dans l'ordre, par-dessus ce qui est derrière elles.
             foreach ((int x, int y) in _nearby)
@@ -160,6 +167,8 @@ public partial class ColonistsView : Node2D
             }
             foreach (Colonist speaker in speakers) DrawBubble(speaker);
             foreach (Colonist member in colony.PresentMembers) DrawVillageStatus(member);
+            UpdateHover();
+            DrawHoverLabel();
         }
     }
 
@@ -209,6 +218,10 @@ public partial class ColonistsView : Node2D
         {
             Vector2 origin = new Vector2(plot.X, plot.Y) * Tile;
             DrawRect(new Rect2(origin, new Vector2(Tile, Tile)), Color.Color8(118, 88, 61));
+            if (_colony.DivineEffects.Any(e => e.Kind == DivineEffectKind.HarvestYield && e.Status == DivineEffectStatus.Active
+                && e.SettlementId == _settlement.Id && e.TargetId == field.Id && _world.Clock.Ticks < e.ExpiresTicks
+                && e.Plots.Any(p => p.X == plot.X && p.Y == plot.Y && p.State == BlessedPlotState.Pending)))
+                DrawRect(new Rect2(origin + new Vector2(2, 2), new Vector2(Tile - 4, Tile - 4)), new Color(ArtDirection.Brass, .65f), false, 1);
             if (_colony.DroughtDaysLeft > 0)
             {
                 DrawLine(origin + new Vector2(4, 1), origin + new Vector2(12, 6), Color.Color8(76, 61, 43));
@@ -260,19 +273,12 @@ public partial class ColonistsView : Node2D
             }
         }
         Vector2 corner = new Vector2(field.X, field.Y) * Tile;
-        Vector2 size = new(Field.Size * Tile, Field.Size * Tile);
+        Vector2 size = new(field.Size * Tile, field.Size * Tile);
         DrawRect(new Rect2(corner + new Vector2(0, size.Y - 2), new Vector2(size.X, 3)), Color.Color8(81, 66, 46));
         DrawLine(corner, corner + new Vector2(size.X, 0), Color.Color8(179, 135, 82), 2);
         DrawLine(corner, corner + new Vector2(0, size.Y), Color.Color8(167, 123, 75), 2);
         foreach (Vector2 offset in new[] { Vector2.Zero, new Vector2(size.X - 3, 0), new Vector2(0, size.Y - 3), size - new Vector2(3, 3) })
             DrawRect(new Rect2(corner + offset, new Vector2(3, 3)), Color.Color8(203, 167, 104));
-    }
-
-    private void DrawGrave(Grave grave)
-    {
-        Vector2 origin = new Vector2(grave.X, grave.Y) * Tile;
-        DrawGroundShadow(origin + new Vector2(17, 28), 11, 3, 0.25f);
-        DrawTexture(SpriteFactory.Grave, origin);
     }
 
     private void DrawBubble(Colonist colonist)
@@ -327,6 +333,16 @@ public partial class ColonistsView : Node2D
         DrawTexture(sprite, basePoint - new Vector2(0, sprite.GetHeight()));
     }
 
+    private void DrawMillWheel(Building building, bool behind)
+    {
+        (float flow, MillSide? side) = Hydrology.MillWater(_colony.Map, building);
+        if ((side == MillSide.North) != behind) return;
+        var previous = _wheelPhases.GetValueOrDefault(building, (WaterAnimationTime, 0d));
+        double phase = WaterEffects.MillPhase(previous.Item2, WaterAnimationTime - previous.Item1, flow);
+        _wheelPhases[building] = (WaterAnimationTime, phase);
+        WaterEffects.DrawMill(this, _colony.Map, building, flow, side, phase);
+    }
+
     private void DrawBuilding(Building building)
     {
         if (building.IsDam)
@@ -342,6 +358,7 @@ public partial class ColonistsView : Node2D
             DrawGroundShadow(basePoint + new Vector2(footprint.Size.X / 2, -1), (int)footprint.Size.X / 2 - 3, 5, 0.22f);
             Texture2D sprite = building.Type == BuildingType.Cask ? WorkshopArt.Cask(building, _world.Clock.Ticks)
                 : BuildingSprites.For(building, BiomeVisuals.At(_colony.Map, building.X, building.Y));
+            if (building.Type == BuildingType.Mill && !building.IsExtension) DrawMillWheel(building, behind: true);
             // Les états du fût partagent une source ; l'équipement garde sa petite emprise même pendant la fermentation.
             if (building.Type == BuildingType.Cask)
                 DrawTextureRect(sprite, new Rect2(basePoint - new Vector2(0, footprint.Size.Y + 16), new Vector2(footprint.Size.X, footprint.Size.Y + 16)), false);
@@ -350,20 +367,17 @@ public partial class ColonistsView : Node2D
             if (building.Type == BuildingType.Cask && WorkshopArt.CaskState(building, _world.Clock.Ticks) == "brewing")
                 foreach (Vector2 bubble in WorkshopArt.Bubbles(_world.Clock.Ticks))
                     DrawRect(new Rect2(basePoint - new Vector2(0, 48) + bubble * new Vector2(0.5f, 0.6f), new Vector2(1, 1)), ArtDirection.Cream);
-            if (building.Type == BuildingType.Mill)
-            {
-                float flow = Hydrology.MillFlow(_colony.Map, building);
-                // Intégrer le débit évite un saut de pose quand le courant change ; le temps se fige en pause.
-                var previous = _wheelPhases.GetValueOrDefault(building, (WaterAnimationTime, 0d));
-                double phase = (previous.Item2 + Math.Max(0, WaterAnimationTime - previous.Item1) * Math.Clamp(flow, 0, 1) * 6) % 4;
-                _wheelPhases[building] = (WaterAnimationTime, phase);
-                DrawTexture(RemainingArt.WheelFrame((int)phase), basePoint + new Vector2(footprint.Size.X - 24, -40));
-            }
+            if (building.Type == BuildingType.Mill && !building.IsExtension)
+                DrawMillWheel(building, behind: false);
+            DrawWorkshopOutput(building, basePoint);
+            DrawWorkshopConnection(building);
+            DrawServiceGap(building, basePoint);
             return;
         }
         if (!building.IsHut)
         {
             DrawWorkshopSite(building, footprint, basePoint);
+            DrawWorkshopConnection(building);
             return;
         }
         // Fondations de pierre, plancher, ossature puis charpente selon les travaux réels.
@@ -426,11 +440,19 @@ public partial class ColonistsView : Node2D
         }
         else DrawRect(footprint.Grow(-5), Color.Color8(117, 118, 102), false, 2);
         Texture2D sprite = BuildingSprites.For(building, BiomeVisuals.At(_colony.Map, building.X, building.Y));
-        // La maçonnerie et les équipements apparaissent du sol vers le toit ; chaque atelier garde sa forme.
-        int rows = Math.Clamp((int)(building.Progress * sprite.GetHeight()), 4, sprite.GetHeight());
         int width = sprite.GetWidth();
-        DrawTextureRectRegion(sprite, new Rect2(basePoint - new Vector2(0, rows), new Vector2(width, rows)),
-            new Rect2(0, sprite.GetHeight() - rows, width, rows));
+        if (building.Type == BuildingType.MineDepot)
+        {
+            sprite = BuildingSprites.MineSite(building, BiomeVisuals.At(_colony.Map, building.X, building.Y));
+            DrawTexture(sprite, basePoint - new Vector2(0, sprite.GetHeight()));
+        }
+        else
+        {
+            // Les petits ateliers restent dévoilés du sol vers le toit ; la mine assemble des ouvrages entiers.
+            int rows = Math.Clamp((int)(building.Progress * sprite.GetHeight()), 4, sprite.GetHeight());
+            DrawTextureRectRegion(sprite, new Rect2(basePoint - new Vector2(0, rows), new Vector2(width, rows)),
+                new Rect2(0, sprite.GetHeight() - rows, width, rows));
+        }
         if (building.Type == BuildingType.MineDepot && building.Progress > .12f)
         {
             // Les échafaudages montent avec l'ouvrage ; leurs planches et leur échelle rendent le chantier lisible avant la pose de la roue.
@@ -514,11 +536,13 @@ public partial class ColonistsView : Node2D
         DrawSetTransform(Vector2.Zero, 0, Vector2.One);
 
         DrawVillageGesture(colonist, feet);
+        if (DivinePowers.IsBlessed(_colony, DivineEffectKind.ChampionStrength, 0, colonist.Id))
+            DrawArc(feet + new Vector2(0, -32), 5, Mathf.Pi, Mathf.Tau, 12, ArtDirection.Brass, 1);
         if (warrior) CivilizationArt.DrawEquipment(this, feet, appearance, colonist.X < colonist.PrevX, frame);
         if (colonist.Ailment == Ailment.Injured) DrawRect(new Rect2(feet + new Vector2(-3, -22), new Vector2(5, 2)), ArtDirection.Cream);
 
         // Ce qu'il rapporte au camp, en petit sous le bras.
-        if (colonist.Carrying is { } load)
+        if (!colonist.UsingCart && colonist.Carrying is { } load)
         {
             Vector2 parcel = feet + PeoplesSprites.CarryOffset(appearance.People) * scale;
             DrawRect(new Rect2(parcel - Vector2.One, new Vector2(12, 12) * scale), ArtDirection.Charcoal);

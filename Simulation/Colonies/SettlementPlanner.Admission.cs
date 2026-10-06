@@ -118,6 +118,11 @@ public static partial class SettlementPlanner
     /// <summary>Une recherche terminée remet son résultat à sa demande (appelé par le planificateur du monde).</summary>
     internal static void Deliver(PlanningJob job)
     {
+        if (job.Kind == DevelopmentKind.RoadShortcut)
+        {
+            RoadShortcuts.Deliver(job);
+            return;
+        }
         Colony colony = job.Owner;
         PlanRequest? request = colony.Layout.Requests.FirstOrDefault(r => r.Key == job.RequestKey);
         if (request is null || request.JobId != job.Id)
@@ -211,7 +216,7 @@ public static partial class SettlementPlanner
 
         bool isField = proposal.Kind == DevelopmentKind.Field;
         PlacementChecks.Verdict verdict = isField
-            ? PlacementChecks.Field(map, index, proposal.X, proposal.Y)
+            ? PlacementChecks.Field(map, index, proposal.X, proposal.Y, proposal.Width)
             : PlacementChecks.Building(map, index, proposal.X, proposal.Y, proposal.Width, proposal.Height);
         if (verdict != PlacementChecks.Verdict.Ok)
             return false;
@@ -323,7 +328,7 @@ public static partial class SettlementPlanner
         Field? field = null;
         if (isField)
         {
-            field = Farming.OpenField(map, colony, p.X, p.Y);
+            field = Farming.OpenField(map, colony, p.X, p.Y, p.Width);
             field.Id = layout.NextObjectId++;
             field.DistrictId = district.Id;
             field.ParcelId = parcel.Id;

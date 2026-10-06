@@ -7,7 +7,7 @@ namespace GodColony.Simulation.Colonies;
 /// L'enclos abrite les bêtes, le métier à tisser fait des vêtements de laine, le marché troque la denrée de la région.
 /// L'infirmerie soigne, l'entrepôt protège les vivres, le puits donne de l'eau saine, la taverne délasse, l'école instruit.
 /// </summary>
-public enum BuildingType { Hut, Kiln, Bloomery, Forge, Dam, Mill, Oven, Pen, Loom, Market, Infirmary, Storehouse, Well, Tavern, School, Cask, MineDepot = 16, PotteryKiln = 17, Tannery = 18, Goldsmith = 19, Mint = 20, Shrine = 21 }
+public enum BuildingType { Hut, Kiln, Bloomery, Forge, Dam, Mill, Oven, Pen, Loom, Market, Infirmary, Storehouse, Well, Tavern, School, Cask, MineDepot = 16, PotteryKiln = 17, Tannery = 18, Goldsmith = 19, Mint = 20, Shrine = 21, Silo = 22 }
 
 /// <summary>
 /// Un bâtiment de la colonie, du chantier à l'achèvement. Son emprise et son coût dépendent de sa fonction :
@@ -62,7 +62,7 @@ public sealed class Building
 
     /// <summary>Les bâtiments de la vie du village (hors ateliers) : enclos, infirmerie, entrepôt, puits, taverne, école.</summary>
     public bool IsCivic => Type is BuildingType.Pen or BuildingType.Infirmary or BuildingType.Storehouse or BuildingType.Well
-        or BuildingType.Tavern or BuildingType.School or BuildingType.Cask or BuildingType.Shrine;
+        or BuildingType.Tavern or BuildingType.School or BuildingType.Cask or BuildingType.Shrine or BuildingType.Silo;
 
     /// <summary>Case en haut à gauche du bâtiment.</summary>
     public int X { get; }
@@ -81,7 +81,7 @@ public sealed class Building
     {
         BuildingType.Well or BuildingType.Cask => (1, 1),
         BuildingType.Forge or BuildingType.Infirmary or BuildingType.Tavern or BuildingType.School => (3, 2),
-        BuildingType.Mill or BuildingType.Shrine => (3, 3),
+        BuildingType.Mill or BuildingType.Shrine or BuildingType.Silo => (3, 3),
         BuildingType.Pen or BuildingType.Storehouse or BuildingType.Market => (4, 3),
         BuildingType.MineDepot => (6, 4),
         BuildingType.Dam => (5, 3),
@@ -91,6 +91,7 @@ public sealed class Building
     /// <summary>Matériaux et travail suivent la surface des ateliers et des bâtiments de service.</summary>
     private float CostScale => Type switch
     {
+        BuildingType.Oven or BuildingType.Mill when IsExtension => Width * Height / 4f, // un module de six cases, au prorata de l'emprise
         BuildingType.Forge or BuildingType.Infirmary or BuildingType.Tavern or BuildingType.School => 1.5f,
         BuildingType.Mill => 2.25f,
         BuildingType.Pen or BuildingType.Market => Width * Height / 4f,
@@ -104,16 +105,20 @@ public sealed class Building
         BuildingType.Bloomery => 6,
         BuildingType.Forge => 10,
         BuildingType.Dam => 100,
-        BuildingType.MineDepot => 120,
+        BuildingType.MineDepot => 72,
+        BuildingType.PotteryKiln => 8,
+        BuildingType.Tannery => 12,
+        BuildingType.Goldsmith => 10,
         BuildingType.Mill => 14,
         BuildingType.Mint => 10,
         BuildingType.Shrine => 6,
         BuildingType.Oven => 6,
         BuildingType.Pen => 10,
         BuildingType.Loom => 8,
-        BuildingType.Market => 14,
+        BuildingType.Market => 8,
         BuildingType.Infirmary => 12,
-        BuildingType.Storehouse => 18,
+        BuildingType.Storehouse => 12,
+        BuildingType.Silo => 10,
         BuildingType.Well => 4,
         BuildingType.Tavern => 16,
         BuildingType.School => 14,
@@ -127,14 +132,18 @@ public sealed class Building
         BuildingType.Bloomery => 24,
         BuildingType.Forge => 12,
         BuildingType.Dam => 240,
-        BuildingType.MineDepot => 100,
+        BuildingType.MineDepot => 72,
+        BuildingType.PotteryKiln => 16,
+        BuildingType.Tannery => 4,
+        BuildingType.Goldsmith => 12,
         BuildingType.Mill => 20,
         BuildingType.Mint => 16,
         BuildingType.Shrine => 30,
         BuildingType.Oven => 16,
-        BuildingType.Market => 6,
+        BuildingType.Market => 4,
         BuildingType.Infirmary => 8,
-        BuildingType.Storehouse => 10,
+        BuildingType.Storehouse => 8,
+        BuildingType.Silo => 14,
         BuildingType.Well => 14,
         BuildingType.Tavern => 4,
         BuildingType.School => 6,
@@ -147,16 +156,20 @@ public sealed class Building
         BuildingType.Bloomery => 26f,
         BuildingType.Forge => 24f,
         BuildingType.Dam => 480f,
-        BuildingType.MineDepot => 260f,
+        BuildingType.MineDepot => 160f,
+        BuildingType.PotteryKiln => 18f,
+        BuildingType.Tannery => 16f,
+        BuildingType.Goldsmith => 24f,
         BuildingType.Mint => 26f,
         BuildingType.Shrine => 30f,
         BuildingType.Mill => 26f,
         BuildingType.Oven => 18f,
         BuildingType.Pen => 14f,
         BuildingType.Loom => 14f,
-        BuildingType.Market => 24f,
+        BuildingType.Market => 16f,
         BuildingType.Infirmary => 24f,
-        BuildingType.Storehouse => 28f,
+        BuildingType.Storehouse => 20f,
+        BuildingType.Silo => 22f,
         BuildingType.Well => 20f,
         BuildingType.Tavern => 26f,
         BuildingType.School => 24f,
@@ -175,6 +188,41 @@ public sealed class Building
 
     /// <summary>Le fût contient une fournée, qu'elle fermente encore ou qu'elle attende d'être tirée.</summary>
     public bool IsBrewing => BrewReadyTicks > 0;
+
+    /// <summary>
+    /// La sortie physique d'un atelier à lots : les produits finis qui attendent d'être portés au dépôt. Ils sont comptés dans l'inventaire total mais indisponibles au stock
+    /// commun. Null tant qu'aucun lot n'a abouti (une lecture n'alloue jamais).
+    /// </summary>
+    public Stockpile? OutputStock { get; private set; }
+
+    /// <summary>Le travail (en heures) attaché à chaque produit de la sortie : il suit les unités retirées, au prorata.</summary>
+    public Dictionary<ResourceType, double>? OutputHours { get; private set; }
+
+    internal void StoreOutput(ResourceType type, int amount, double hours)
+    {
+        (OutputStock ??= new Stockpile()).Add(type, amount, ResourceFlow.Transfer);
+        OutputHours ??= [];
+        OutputHours[type] = OutputHours.GetValueOrDefault(type) + hours;
+    }
+
+    /// <summary>Retire des produits de la sortie ; le travail suit proportionnellement, le reste exact demeure attaché au solde. Renvoie les heures emportées (0 si rien n'est retiré).</summary>
+    internal double TakeOutput(ResourceType type, int amount, out int taken)
+    {
+        taken = 0;
+        int held = OutputStock?.Get(type) ?? 0;
+        amount = Math.Min(amount, held);
+        if (amount <= 0 || !OutputStock!.TryTake(type, amount, ResourceFlow.Transfer))
+            return 0;
+        taken = amount;
+        double total = OutputHours?.GetValueOrDefault(type) ?? 0;
+        double share = amount == held ? total : total * amount / held;
+        if (OutputHours is not null)
+            if (amount == held) OutputHours.Remove(type); else OutputHours[type] = total - share;
+        return share;
+    }
+
+    /// <summary>Unités d'un produit qui attendent à la sortie.</summary>
+    public int OutputUnits(ResourceType type) => OutputStock?.Get(type) ?? 0;
 
     public int WoodDelivered { get; internal set; }
     public int StoneDelivered { get; internal set; }
@@ -278,6 +326,7 @@ public sealed class Building
         BuildingType.Market => "marché",
         BuildingType.Infirmary => "infirmerie",
         BuildingType.Storehouse => "entrepôt",
+        BuildingType.Silo => "silo",
         BuildingType.Well => "puits",
         BuildingType.Tavern => "taverne",
         BuildingType.School => "école",

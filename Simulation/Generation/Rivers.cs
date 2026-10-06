@@ -1,4 +1,5 @@
 using GodColony.Simulation.Map;
+using GodColony.Simulation.Pathfinding;
 
 namespace GodColony.Simulation.Generation;
 
@@ -62,6 +63,7 @@ public static class Rivers
         int margin = Math.Max(4, (int)(EdgeMargin * scale));
 
         var center = new bool[width * height];
+        var scratch = new FlowScratch(width * height);
         var sources = new List<(int X, int Y)>();
         var rivers = new List<(List<(int X, int Y)> Path, (int X, int Y) Mouth)>();
 
@@ -82,7 +84,7 @@ public static class Rivers
                 if (sources.Any(s => Math.Max(Math.Abs(s.X - x), Math.Abs(s.Y - y)) < spacing))
                     continue;
 
-                List<(int X, int Y)>? path = Flow(elevation, center, width, height, x, y, seed + attempt, out (int X, int Y) mouth);
+                List<(int X, int Y)>? path = Flow(elevation, center, width, height, x, y, seed + attempt, out (int X, int Y) mouth, scratch);
                 if (path is null || path.Count < minLength)
                     continue;
                 candidates++;
@@ -292,15 +294,15 @@ public static class Rivers
     }
 
     /// <summary>Le chemin le moins coûteux de la source jusqu'à l'eau, sans jamais remonter.</summary>
-    private static List<(int X, int Y)>? Flow(int[] elevation, bool[] river, int width, int height, int sourceX, int sourceY, int seed, out (int X, int Y) mouth)
+    private static List<(int X, int Y)>? Flow(int[] elevation, bool[] river, int width, int height, int sourceX, int sourceY, int seed, out (int X, int Y) mouth, FlowScratch scratch)
     {
         mouth = (-1, -1);
-        int n = width * height;
-        var cost = new float[n];
-        var parent = new int[n];
+        (float[] cost, int[] parent, float[] wanders, OpenList open) = (scratch.Cost, scratch.Parent, scratch.Wanders, scratch.Open);
         Array.Fill(cost, float.MaxValue);
         Array.Fill(parent, -1);
-        var open = new PriorityQueue<int, float>();
+        // Le hasard du lit ne dépend que de la case : calculé une fois par case (0 : pas encore), il ne l'est plus à chacune de ses huit voisines.
+        Array.Clear(wanders);
+        open.Clear();
         int start = sourceY * width + sourceX;
         cost[start] = 0f;
         open.Enqueue(start, 0f);
@@ -328,7 +330,9 @@ public static class Rivers
                     continue;
 
                 // L'eau préfère descendre ; sur un replat, un hasard qui varie doucement la fait serpenter en larges courbes.
-                float wander = 1f + 2.4f * Noise.Value2D(nx / 6f, ny / 6f, seed + 93) + 0.3f * Noise.Hash01(nx, ny, 93, seed);
+                float wander = wanders[next];
+                if (wander == 0f)
+                    wanders[next] = wander = 1f + 2.4f * Noise.Value2D(nx / 6f, ny / 6f, seed + 93) + 0.3f * Noise.Hash01(nx, ny, 93, seed);
                 float slope = elevation[next] < elevation[current] ? 0.6f : 1f;
                 float total = cost[current] + step * wander * slope;
                 if (total < cost[next])
@@ -353,4 +357,13 @@ public static class Rivers
             path.RemoveAt(path.Count - 1);
         return path;
     }
+}
+
+/// <summary>Les tableaux d'une recherche de lit, réutilisés d'une source à l'autre : une carte essaie des dizaines de sources.</summary>
+internal sealed class FlowScratch(int cells)
+{
+    public readonly float[] Cost = new float[cells];
+    public readonly int[] Parent = new int[cells];
+    public readonly float[] Wanders = new float[cells];
+    public readonly OpenList Open = new();
 }

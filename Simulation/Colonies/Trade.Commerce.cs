@@ -120,7 +120,7 @@ public static partial class Trade
     private static Clearing KnownClearing(WorldState world, Colony mine, MarketOffer offer, bool sale, int maxUnits, bool emergency)
     {
         int units = 0;
-        double gain = 0, price = 0;
+        double mineTotal = 0, price = 0;
         SupplyForecast forecast = Forecast(world, mine, offer.Good);
         int limit = sale ? Math.Min(offer.Wanted, Economy.Surplus(mine, offer.Good))
             : Math.Min(offer.Available, emergency ? Economy.Shortage(mine, offer.Good) : forecast.PurchaseNeed);
@@ -131,9 +131,11 @@ public static partial class Trade
             double sellerValue = sale ? mineValue : offer.SellPrice, buyerValue = sale ? offer.BuyPrice : mineValue;
             if (!emergency && buyerValue <= sellerValue * (1 + MinValueGap) + 0.01) break;
             if (sellerValue <= 0 || buyerValue <= 0) break;
-            units++; gain += Math.Max(0, buyerValue - sellerValue); price = (sellerValue + buyerValue) / 2;
+            units++; mineTotal += mineValue; price = (sellerValue + buyerValue) / 2;
         }
-        return units == 0 ? Clearing.None : new(units, price, gain);
+        // L'expéditeur paie le voyage : seul son propre gain peut le justifier, pas celui offert au partenaire.
+        double gain = sale ? units * price - mineTotal : mineTotal - units * price;
+        return units == 0 ? Clearing.None : new(units, price, Math.Max(0, gain));
     }
 
     /// <summary>Bilan des biens réellement revenus et des pièces payées, aux coûts connus au départ. Les pertes restent à charge du voyage.</summary>

@@ -30,7 +30,7 @@ Poids initiaux : ressource ordinaire 1, pierre/minerai de fer/fer 2, poule 2, mo
 | 4. Expansion | Décisions autonomes de départ, camp fondé sans dotation, ravitaillement, retour de surplus, évolution et fermeture avec conservation du terrain. |
 | 5. Filières | Vingt ressources supplémentaires, quatre ateliers, cuivre/or, poterie, lin, cuir, chaussures, vigne/vin, gemmes/bijoux, équipement et usure. |
 | 6. Commerce | Offres datées, fournisseurs remplaçables, importations urgentes, engagements réels, échanges industriels et accès aux régions ennemies. |
-| 7. Frappe | Atelier de frappe, quota annuel partagé (5 % de la monnaie présente), engagements par lot, registre des émissions. Voir [Monnaie-offrandes.md](Monnaie-offrandes.md). |
+| 7. Frappe | Atelier de frappe, quota annuel partagé (20 % de la monnaie présente), engagements par lot, registre des émissions. Voir [Monnaie-offrandes.md](Monnaie-offrandes.md). |
 | 8. Offrandes | Sanctuaire, projets à matériaux réellement livrés, sculpture, monuments, souhaits typés sans faux exaucement. Voir [Monnaie-offrandes.md](Monnaie-offrandes.md). |
 
 Les contrats des ajouts du 5 octobre 2026 (prospection progressive, expansion, logistique, spécialisation, routes, passage, hydrologie, schisme d'un établissement, finitions des filières) sont dans [Territoires-filieres.md](Territoires-filieres.md).

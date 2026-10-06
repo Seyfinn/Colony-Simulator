@@ -9,7 +9,7 @@ namespace GodColony.Simulation.Tests;
 public sealed class StarvationWatch
 {
     private const float Starving = 0.02f;
-    private HashSet<Colonist> _previous = [];
+    private Dictionary<Colonist, long> _previous = [];
 
     /// <summary>Le premier colon trouvé affamé deux observations de suite, s'il y en a un.</summary>
     public Colonist? Victim { get; private set; }
@@ -18,7 +18,7 @@ public sealed class StarvationWatch
     public void Observe(Colony colony)
     {
         var now = colony.Members.Where(m => m.Needs.Food <= Starving).ToHashSet();
-        Victim ??= now.FirstOrDefault(_previous.Contains);
-        _previous = now;
+        Victim ??= now.FirstOrDefault(c => _previous.TryGetValue(c, out long meal) && c.LastMealTicks == meal);
+        _previous = now.ToDictionary(c => c, c => c.LastMealTicks);
     }
 }

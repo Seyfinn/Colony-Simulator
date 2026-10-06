@@ -46,13 +46,23 @@ enclos, marché et entrepôt 4 × 3 ; mine 6 × 4 ; barrage 5 × 3 ou 3 × 5 sel
 |---|---|---|
 | `well_small.png`, `cask_small.png` | 32 × 48 | `BuildingSprites.Large.cs` |
 | `forge_large.png`, `infirmary_large.png`, `tavern_large.png`, `school_large.png` | 96 × 80 | Aile ajoutée au noyau du PNG original |
-| `mill_large.png` | 96 × 112 | Bâtiment et aile ; roue indépendante |
+| `mill_body_<milieu>_large.png` | 96 × 112 | Bâtiment et aile sans coursier fixe ; roue orientée indépendante |
 | `pen_large.png`, `market_large.png`, `storehouse_large.png` | 128 × 112 | Cour clôturée, trois étals ou grand hangar |
+| `pen_extension.png`, `market_extension.png` | 64 × 112 | Parcelle avec mangeoire et abreuvoir ; deux étals avec auvents |
+| `oven_<milieu>_extension.png`, `mill_body_<milieu>_extension.png` | 64 × 112 | PNG pour les cinq biomes ; module sans roue propre, cheminée ou sacs, secours dans `BuildingSprites.Scale.cs` |
+| `mint_<milieu>.png` | 64 × 80 | PNG pour les cinq biomes ; presse, table et enseigne monétaire, secours propre |
+| `shrine_<milieu>_large.png` | 96 × 112 | PNG pour les cinq biomes ; colonnes, autel et marches, secours propre |
 | `minedepot_large.png` | 192 × 144 | Chevalement, entrée de galerie, hangars, aire de tri |
 | `dam_large.png` | 160 × 112 | Mur de pierre, culées, vannes et passerelle |
 | `dam_side_large.png` | 96 × 176 | Ouvrage orienté selon le courant |
 
 Ces variantes sont procédurales tant qu'aucun PNG conforme n'est fourni ; aucune image n'est nécessaire à la simulation.
+
+Monuments d'offrande : les cinq modèles sont dessinés depuis `Colony.Monuments` par `ColonistsView.Scale.cs` (Code). Les sorties d'atelier restent sur une étagère devant le bâtiment et ne sont jamais peintes comme un stock de dépôt. Les bénédictions sont des liserés et un marqueur de champion ; elles suivent les parcelles et les échéances du backend. Les captures des panneaux et des silhouettes sont répertoriées dans [validation/ECHELLE.md](validation/ECHELLE.md).
+Les mines, enclos et marchés sont détaillés dans `BuildingSprites.Large.cs` et `BuildingSprites.RuralDetails.cs` : roche et galerie profonde,
+treuil, charpentes, wagonnet, clôtures rivetées, paille, eau, toiles plissées et mobilier de marché. L'entrée de galerie est protégée par un auvent à une pente adossé à la roche. Le chantier de mine affiche des éléments entiers selon son avancement : fondations, ossatures, puis couverture et mécanismes, avec ses échafaudages ; sa silhouette n'est plus découpée horizontalement.
+La galerie de contrôle est `validation/mines_enclos_marche_details.png` ; les extensions sans PNG sont visibles dans `validation/extensions_detaillees_secours.png`.
+La correction de la mine est visible dans `validation/mine_toit_chantier_corriges.png` ; ses stades de construction dans `validation/mine_etapes_construction.png` (`--mine-stages`).
 Les PNG ci-dessous restent les sources des noyaux et des petits ateliers.
 
 | Fichier | Représente | Taille | État |
@@ -61,8 +71,9 @@ Les PNG ci-dessous restent les sources des noyaux et des petits ateliers.
 | `kiln.png` | Charbonnière (tas de bois couvert de terre) | 64 × 80 | PNG (T-025) |
 | `bloomery.png` | Bas fourneau (four de pierre à minerai) | 64 × 80 | PNG (T-025) |
 | `forge.png` | Forge (foyer, enclume) | 64 × 80 | PNG (T-025) |
-| `mill.png` | Moulin à eau (bâtiment sans la roue) | 64 × 80 | PNG (T-025) |
-| `mill_wheel_0.png` … `mill_wheel_3.png` | Roue à aubes, 4 images en boucle, posée contre le mur **est** du moulin | 24 × 40 | PNG (T-005), vitesse liée au débit réel |
+| `mill_body_<milieu>.png` | Moulin à eau sans roue ni coursier fixe, cinq milieux | 64 × 80 | PNG et source procédurale ; ancien `mill.png` conservé mais inutilisé |
+| `mill_wheel_east_0.png` … `_3.png`, `mill_wheel_west_0.png` … `_3.png` | Roue à aubes de profil, côté de l'eau motrice | 24 × 40 | PNG et secours ; quatre poses, phase intégrée selon le débit |
+| `mill_wheel_north_0.png` … `_3.png`, `mill_wheel_south_0.png` … `_3.png` | Roue de face, derrière au nord ou devant au sud | 40 × 32 | PNG et secours ; vanne, coursier et écume assemblés en code |
 | `oven.png` | Four à pain | 64 × 80 | PNG (T-025) |
 | `dam.png` | Barrage vu de face (franchit un cours d'eau est-ouest) | 32 × 48 | PNG (T-025) |
 | `dam_side.png` | Barrage vu de côté (franchit un cours d'eau nord-sud) | 32 × 48 | PNG (T-025) |
@@ -141,7 +152,7 @@ colonie (`world/colony_*.png`) et les caravanes (`world/caravan_*.png`) restent 
 
 ### 4.6 Autres éléments du monde (déjà dessinés en code)
 
-Arbres, buissons, souches (`flora/`), parcelles de champ, tombes, feu de camp animé (4 images), bulles de discussion, symbole de sommeil.
+Arbres, buissons, souches (`flora/`), parcelles de champ, feu de camp animé (4 images), bulles de discussion, symbole de sommeil.
 Ils n'ont pas de PNG demandé pour l'instant ; les noms ci-dessus s'appliquent si on décide de les livrer.
 
 Ambiance du crépuscule : **Code (T-011)**, teinte rose légèrement mauve et halo/rayons assortis dans `ArtDirection.cs` et `DayNightAmbience.cs`.
@@ -180,3 +191,18 @@ Les vingt nouvelles icônes 16 × 16 utilisent `ResourceIcons.cs`, avec transpar
 `potterykiln.png`, `tannery.png` et `goldsmith.png` attendent chacun 64 × 80 ; leurs secours sont dans `BuildingSprites.Industries.cs`. La mine suit le contrat `minedepot_large.png` ci-dessus. Le catalogue visuel contrôlé est `validation/territoires-filieres.png`.
 
 Établissements, gisements reconnus et observation locale : `TerritoryOverview.cs`, `WorldMapView.cs` et `ColonistsView.cs` (Code). Cultures de lin et de vigne : `ColonistsView.cs` (Code). Sentiers/chemins, espaces publics et accès : `TerrainPainter.Roads.cs`, `ColonistsView.Places.cs` (Code, T-031/T-032), aperçu `validation/village-chemins-places.png`. Ces vues lisent les données de simulation et ne posent aucun ouvrage.
+
+### 4.11 Faune sauvage, transport et cueillette
+
+Sprites dessinés pixel par pixel en C# dans `NatureArt.cs`, puis exportés en PNG transparent ; aucune génération d'image par IA. Une pose par espèce, miroir selon le déplacement. Les formes procédurales des hardes restent disponibles en secours.
+
+| Fichier | Représente | Taille | État |
+|---|---|---|---|
+| `animals/wild_<espece>_0.png` | `rabbit`, `deer`, `boar`, `wolf`, `bear`, `junglefowl`, `mouflon`, `aurochs`, `horse` | 32 × 32 | 9 PNG branchés |
+| `animals/dog_0.png`, `animals/cart_0.png` | Chien du chasseur, charrette du porteur | 32 × 32 | PNG branchés |
+| `terrain/bridge_deck_1.png` … `bridge_deck_6.png` | Tablier continu avec garde-corps, orienté par `BridgeSite.Horizontal` | (32 × longueur) × 32 | PNG et secours identique ; chantier procédural selon `BuiltCells` |
+| `terrain/bridge_landing.png` | Culée de pierre et raccord évasé au sentier de berge | 32 × 32 | PNG et secours ; placé selon les deux `Landings` |
+| `icons/honey.png`, `wax.png`, `mushrooms.png`, `herbs.png`, `horses.png`, `oxen.png`, `dogs.png`, `carts.png` | Huit ressources, exportées de `ResourceIcons.cs` | 16 × 16 | PNG branchés |
+
+Ruches et chantier de pont : code dans `ColonistsView.Nature.cs`. Champignons et herbes utilisent les icônes des ressources réellement disponibles. Légende des royaumes et informations de chef/roi/loyauté : `WorldMapView.cs`.
+Contrôle reproductible : `validation/nature_transport.tscn` ; captures `nature_transport.png`, `nature_secours.png`, `nature_infobulle.png`, `porteur_infobulle.png`, `caravane_infobulle.png`, `royaumes_legende.png`, `colonie_infobulle.png` dans `validation/`.

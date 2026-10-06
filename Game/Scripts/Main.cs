@@ -158,6 +158,7 @@ public partial class Main : Node2D
         _hud.SelectionClosed += () => Select(null);
         _hud.MenuRequested += () => { _hud.CancelRename(); OpenPauseMenu(); };
         _hud.RecenterRequested += RecenterCamera;
+        _hud.PlaceRequested += ObserveSettlement;
         _hud.HelpRequested += ToggleHelp;
         _hud.ColonistRenameRequested += (colonist, name, surname) =>
         {
@@ -317,7 +318,7 @@ public partial class Main : Node2D
             {
                 // Centre la caméra sur les champs.
                 Field field = Observed.Fields[0];
-                camera.Position = new Vector2(field.X + Field.Size / 2f, field.Y + Field.Size / 2f) * TerrainPainter.TileSize;
+                camera.Position = new Vector2(field.X + field.Size / 2f, field.Y + field.Size / 2f) * TerrainPainter.TileSize;
             }
             else if (arg == "--demo-quarry")
             {
@@ -547,6 +548,9 @@ public partial class Main : Node2D
 
     private void UpdateHud()
     {
+        // Une colonie fermée n'est plus un lieu à observer : on revient au village d'origine de l'empire plutôt que de rester sur une navigation invalide.
+        if (_world.Colonies.Count > 0 && _observedSettlementId != 0 && !_foundingPanel.IsOpen && ObservedSettlement.Status == SettlementStatus.Closed)
+            ObserveLocation(_observed, null);
         using var scope = _world.Colonies.Count == 0 ? null : ObservedSettlement.Observe();
         bool mapOverlay = _worldPanel.MapOpen || _foundingPanel.IsOpen;
         bool stocksVisible = _world.Colonies.Count > 0 && !_foundingPanel.IsOpen && _foundingMap is null && !_statsShown;
@@ -565,17 +569,17 @@ public partial class Main : Node2D
         LocalMap map = ActiveMap;
         if (!stocksVisible)
         {
-            _hud.ShowUnsettled(_foundingMap is not null ? "Nouvelle région" : _foundingPanel.IsOpen ? "Fonder une colonie" : "Monde vierge",
+            _hud.ShowUnsettled(_foundingMap is not null ? "Nouvelle région" : _foundingPanel.IsOpen ? "Fonder un empire" : "Monde vierge",
                 _foundingMap is not null ? "Choisissez l'emplacement du camp, puis confirmez la fondation."
                     : _foundingPanel.IsOpen ? "Choisissez une région libre sur la carte du monde."
-                    : "Cliquez sur « Fonder une colonie » pour peupler votre monde.");
+                    : "Cliquez sur « Fonder un empire » pour peupler votre monde.");
             (int tx, int ty) = TileUnderMouse();
             _hud.SetTileInfo(map.InBounds(tx, ty) ? $"Case ({tx}, {ty}) · {SurfaceName(map.GetSurface(tx, ty))}" : " ");
             return;
         }
 
         Colony colony = Observed;
-        _hud.ShowColony(colony, clock);
+        _hud.ShowColony(colony, clock, Realms.Of(_world, colony) is { } realm ? Realms.Members(_world, realm).ToList() : null);
 
         (int x, int y) = TileUnderMouse();
         _hud.SetTileInfo(map.InBounds(x, y)

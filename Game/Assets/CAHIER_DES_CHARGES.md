@@ -81,6 +81,33 @@ puis le note dans le section 6.
 
 ## 4. Catalogue
 
+Ponts et moulins : les nouveaux contrats remplacent l'assemblage de tuiles de pont et le coursier fixe à l'est.
+`terrain/bridge_deck_<longueur>.png` fait (32 × longueur) × 32, pour 1 à 6 cases ; `bridge_landing.png` fait 32 × 32.
+Le tablier est continu, orienté par `BridgeSite.Horizontal`, les culées sont placées sur `Landings` et le chantier suit uniquement `BuiltCells`.
+Les sources pixel art de `NatureArt` restent utilisées en secours, y compris pour le pont complet.
+`buildings/mill_body_<milieu>.png` fait 64 × 80 et sa variante `_large.png` 96 × 112, sans roue ni eau peinte.
+`mill_wheel_<côté>_<image>.png` comporte quatre poses : est/ouest en 24 × 40, nord/sud en 40 × 32.
+Le montage de `WaterEffects` raccorde la roue à l'eau du côté renvoyé par `Hydrology.MillWater`, avec un coursier sec à débit nul.
+La roue nord passe derrière le bâtiment, les autres devant ; sa phase intégrée se conserve au changement de débit.
+La scène `validation/waterworks.tscn` propose `--preview=bridges`, `--preview=mills` et `--preview=places`,
+avec `--fallback`, `--scroll` (menu) et `--capture=<chemin>` ; `--export-waterworks` exporte uniquement ces nouveaux éléments.
+Le menu conserve les lieux fermés grisés, place la mention d'évacuation en tête, tronque avec points de suspension
+et donne le libellé complet au survol ; son volet de 340 px défile au-delà de huit entrées.
+
+Validation du 2026-10-05 : compilation sans avertissement ; contrôles de phase (pause, débit nul, variation de débit),
+orientations issues d'Hydrology, progression des chantiers et absence de mutation des ouvrages par le dessin.
+Captures dans `validation/` : `bridges_continuous.png`, `bridges_continuous_fallback.png`,
+`mills_oriented.png`, `mills_oriented_fallback.png`, `colonies_menu.png` et `colonies_menu_scroll.png`.
+Le menu montre quinze établissements de trois empires, trois évacuations et trois lieux fermés ; le rafraîchissement garde le volet ouvert.
+
+Le contrôle global `--smoke-menu` s'arrête sur « Sans sélection, C doit rejoindre le camp »
+(`InterfaceSmokeTest`, recentrage) ; les six contrôles ciblés ci-dessus passent indépendamment.
+
+Contrat nature et transport : `animals/wild_<espèce>_0.png` (les neuf noms de `WildSpecies` en minuscules),
+`animals/dog_0.png`, `animals/cart_0.png` et `terrain/bridge.png` font 32 × 32 pixels RGBA.
+Les huit nouvelles icônes (`honey`, `wax`, `mushrooms`, `herbs`, `horses`, `oxen`, `dogs`, `carts`) font 16 × 16.
+Les sources sont dessinées pixel par pixel dans `NatureArt`, selon la méthode procédurale demandée par l'utilisateur.
+
 Les emprises différenciées demandées par l'utilisateur emploient désormais des variantes `*_large.png` (ateliers, entrepôts, marché, enclos, mine et barrage)
 et `*_small.png` (puits et fût). Leurs dimensions suivent l'emprise réelle : largeur × 32, hauteur × 32 + 16. Les sources de secours sont dans
 `BuildingSprites.Large.cs` ; les anciens PNG servent aussi de noyaux aux ailes des bâtiments agrandis. Le catalogue détaille ces nouveaux contrats.
@@ -96,10 +123,8 @@ Priorité : **P1** utile tout de suite, **P2** utile bientôt, **P3** confort.
 
 | N° | Priorité | Tâche | Détail | Qui | État |
 |---|---|---|---|---|---|
-| T-033 | P1 | Atelier de frappe et sanctuaire | Deux nouveaux types de bâtiment (`BuildingType.Mint`, emprise 2 × 2 ; `BuildingType.Shrine`, emprise 3 × 3) n'ont que le rendu de secours (chaumière). Prévoir leur silhouette procédurale puis les variantes de biome, selon le catalogue. | Codex (graphismes) | Ouverte |
-| T-034 | P1 | Monuments d'offrande | `Colony.Monuments` expose chaque autel ou statue achevé (modèle `OfferingModel`, matériaux investis, case `X`/`Y` du sanctuaire). Dessiner l'autel simple et les statues (récoltes, champion, couronnée) sur la carte du village ; ils ne produisent rien. | Codex (graphismes) | Ouverte |
-| T-035 | P2 | Interface : monnaie, offrandes, souhaits | Afficher dans Économie le quota de frappe (`WorldState.Money` : plafond, parts, frappé, engagé) ; dans les prières, le souhait (`DecisionKind.Wish`, `DivineWish`) avec l'offrande qui l'accompagne ; dans Territoires, les indices (`DepositObservation.Hint`, `Confidence`), la prospection, les priorités de ravitaillement (`LogisticsPlanner.Needs`) et les routes (`WorldMap.Roads.Built`). Les vues lisent ces faits, elles n'en calculent aucun. | Codex (interface) | Ouverte |
-| T-036 | P3 | Routes et missions sur la carte du monde | Tracer les arêtes aménagées (`WorldRoadNetwork.Built`, niveaux 1 et 2) et distinguer les missions territoriales (`TerritorialPurpose` : prospection, fondation, ravitaillement, déménagement, évacuation, travaux de route). | Codex (graphismes) | Ouverte |
+
+T-033 à T-036 livrées le 2026-10-06 : extensions de four et moulin, silhouettes de frappe et sanctuaire, monuments, économies d'échelle, village, monnaie et pouvoirs, territoires et routes. Contrats et captures : [catalogue](CATALOGUE_GRAPHIQUE.md), [validation](validation/ECHELLE.md). Les tâches sont archivées dans [TACHES_TERMINEES.md](TACHES_TERMINEES.md).
 
 
 T-031 et T-032 terminées en code le 2026-10-05 ; les validations sont dans [TACHES_TERMINEES.md](TACHES_TERMINEES.md). Les travaux T-014 à T-030 y sont également archivés.

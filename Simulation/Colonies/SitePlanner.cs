@@ -67,7 +67,7 @@ public static class SitePlanner
     }
 
     internal static (int Width, int Height) FootprintOf(PlanningJob job) =>
-        job.Kind == DevelopmentKind.Field ? (Field.Size, Field.Size) : (BuildingPlacementProfile.For(job.Type ?? BuildingType.Hut).Width, BuildingPlacementProfile.For(job.Type ?? BuildingType.Hut).Height);
+        job.Kind == DevelopmentKind.Field ? (Farming.FieldSizeFor(job.Owner), Farming.FieldSizeFor(job.Owner)) : (BuildingPlacementProfile.For(job.Type ?? BuildingType.Hut).Width, BuildingPlacementProfile.For(job.Type ?? BuildingType.Hut).Height);
 
     // --- L'avancement d'une recherche ---
 
@@ -76,6 +76,11 @@ public static class SitePlanner
     /// </summary>
     internal static void Advance(PlanningJob job, Budget budget)
     {
+        if (job.Kind == DevelopmentKind.RoadShortcut)
+        {
+            RoadShortcuts.Advance(job, budget); // une recherche de raccord : même file, même budget, même reprise
+            return;
+        }
         while (!job.IsFinished)
         {
             bool progressed = job.Stage == PlanStage.Candidates ? AdvanceCandidates(job, budget) : AdvancePaths(job, budget);
@@ -288,7 +293,7 @@ public static class SitePlanner
         BuildingType type = job.Type ?? BuildingType.Hut;
         BuildingPlacementProfile profile = BuildingPlacementProfile.For(type);
 
-        PlacementChecks.Verdict verdict = isField ? PlacementChecks.Field(map, index, x, y) : PlacementChecks.Building(map, index, x, y, width, height);
+        PlacementChecks.Verdict verdict = isField ? PlacementChecks.Field(map, index, x, y, width) : PlacementChecks.Building(map, index, x, y, width, height);
         if (verdict != PlacementChecks.Verdict.Ok)
         {
             if (verdict == PlacementChecks.Verdict.Terrain) job.RejectedTerrain++; else job.RejectedSpace++;
@@ -372,7 +377,7 @@ public static class SitePlanner
         float bestDistance = float.MaxValue;
         if (job.Kind == DevelopmentKind.Field)
         {
-            foreach ((int ax, int ay) in PlacementChecks.FieldAccesses(map, index, x, y))
+            foreach ((int ax, int ay) in PlacementChecks.FieldAccesses(map, index, x, y, width))
             {
                 float d = TraversalCost.Octile(ax - gx, ay - gy);
                 if (d < bestDistance)
@@ -609,7 +614,7 @@ public static class SitePlanner
                 return job.HintX >= 0 ? Math.Clamp(1f - Math.Max(Math.Abs(x - job.HintX), Math.Abs(y - job.HintY)) / 8f, 0f, 1f) : 0.5f;
             case BuildingType.Pen:
             {
-                int best = colony.Fields.Select(f => PlacementChecks.Gap(x, y, width, height, f.X, f.Y, Field.Size, Field.Size)).DefaultIfEmpty(12).Min();
+                int best = colony.Fields.Select(f => PlacementChecks.Gap(x, y, width, height, f.X, f.Y, f.Size, f.Size)).DefaultIfEmpty(12).Min();
                 return 0.5f * Math.Clamp(1f - best / 12f, 0f, 1f) + 0.5f * partners;
             }
             default:
@@ -789,10 +794,10 @@ public static class SitePlanner
 
         // Le monde a pu changer depuis le balayage : l'emprise et la porte sont revérifiées avant de dépenser un A*.
         PlacementChecks.Verdict verdict = job.Kind == DevelopmentKind.Field
-            ? PlacementChecks.Field(map, index, x, y)
+            ? PlacementChecks.Field(map, index, x, y, width)
             : PlacementChecks.Building(map, index, x, y, width, height);
         bool doorFree = job.Kind == DevelopmentKind.Field
-            ? PlacementChecks.FieldAccesses(map, index, x, y).Any(a => a.AccessX == ax && a.AccessY == ay)
+            ? PlacementChecks.FieldAccesses(map, index, x, y, width).Any(a => a.AccessX == ax && a.AccessY == ay)
             : PlacementChecks.FreeDoors(map, index, x, y, width, height).Any(d => d.AccessX == ax && d.AccessY == ay);
         if (verdict != PlacementChecks.Verdict.Ok || !doorFree)
         {

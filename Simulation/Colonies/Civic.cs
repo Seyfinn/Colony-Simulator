@@ -13,8 +13,14 @@ public static class Civic
     /// <summary>Capacité de stockage de base des vivres qui se gâtent, par habitant et en tout.</summary>
     private const int BaseStorage = 60;
     private const int StoragePerColonist = 8;
-    private const int StoragePerStorehouse = 150;
+    private const int StoragePerStorehouse = 240;
     private const float SpoilRate = 0.15f;
+
+    /// <summary>Grain qu'un silo garde à l'abri de la pourriture : une réserve immense face à un entrepôt.</summary>
+    public const int SiloGrain = 5000;
+
+    /// <summary>Âge (un an de jeu) à partir duquel le grain qui dépasse la capacité peut pourrir ; plus jeune, il est protégé.</summary>
+    public const int GrainShelfDays = TimeConstants.DaysPerYear;
 
     /// <summary>Vitesse d'apprentissage gagnée par une colonie qui a une école.</summary>
     public const float SchoolLearningBonus = 1.25f;
@@ -45,7 +51,7 @@ public static class Civic
         if (people < 6)
             yield break;
 
-        if (!Planned(colony, BuildingType.Pen) && (colony.Fields.Count > 0 || colony.Stock.Get(ResourceType.Grain) >= 10))
+        if (!Planned(colony, BuildingType.Pen) && (colony.Fields.Count > 0 || colony.Stock.Get(ResourceType.Grain) >= 10 || Nature.Taming.SeesDomesticable(colony)))
             yield return BuildingType.Pen;
         if (!Planned(colony, BuildingType.Well) && people >= 8)
             yield return BuildingType.Well;
@@ -54,15 +60,25 @@ public static class Civic
             yield return BuildingType.Loom;
         if (!Planned(colony, BuildingType.Storehouse) && (people >= 14 || Perishables(colony) >= StorageCapacity(colony) / 2))
             yield return BuildingType.Storehouse;
+        // Un silo quand le grain remplit déjà les entrepôts : il le garde sans pourriture.
+        if (!Planned(colony, BuildingType.Silo) && colony.Stock.Get(ResourceType.Grain) >= StorageCapacity(colony))
+            yield return BuildingType.Silo;
         if (!Planned(colony, BuildingType.Infirmary) && ((colony.IllnessCases >= 2 && people >= 7) || people >= 12))
+            yield return BuildingType.Infirmary;
+        // Un service qui sature ou qui laisse des logements hors d'atteinte appelle un bÃ¢timent de plus ; les soins (vitaux) passent avant le confort.
+        if (CivicServices.NeedsAdditionalSite(colony, CivicUse.Recover))
             yield return BuildingType.Infirmary;
         if (!Planned(colony, BuildingType.Market) && people >= 8 && (colony.Trades.Count > 0 || people >= 14))
             yield return BuildingType.Market;
         if (!Planned(colony, BuildingType.Tavern) && people >= 12)
             yield return BuildingType.Tavern;
+        if (CivicServices.NeedsAdditionalSite(colony, CivicUse.Relax))
+            yield return BuildingType.Tavern;
         if (Cuisine.WantsCask(colony))
             yield return BuildingType.Cask;
         if (!Planned(colony, BuildingType.School) && (colony.Children >= 3 || people >= 16))
+            yield return BuildingType.School;
+        if (CivicServices.NeedsAdditionalSite(colony, CivicUse.Study))
             yield return BuildingType.School;
         if (Offerings.WantsShrine(colony))
             yield return BuildingType.Shrine;
@@ -77,6 +93,7 @@ public static class Civic
         BuildingType.Well => "Nous creusons un puits : de l'eau saine, contre les fièvres, le feu et la sécheresse.",
         BuildingType.Loom => "Nous avons de la laine : nous bâtissons un métier à tisser pour en faire des vêtements.",
         BuildingType.Storehouse => "Nos vivres commencent à se gâter faute de place : nous bâtissons un entrepôt.",
+        BuildingType.Silo => "Le grain s'entasse : nous bâtissons un silo où il se gardera sans pourrir.",
         BuildingType.Infirmary => "Les fièvres et les blessures nous coûtent cher : nous bâtissons une infirmerie.",
         BuildingType.Market => "Le commerce prospère : nous bâtissons un marché pour y troquer avec les nomades de la région.",
         BuildingType.Tavern => "Les habitants méritent de souffler : nous bâtissons une taverne.",
@@ -87,9 +104,13 @@ public static class Civic
 
     // --- Stockage ---
 
-    /// <summary>Vivres qui se gâtent quand on les entasse.</summary>
+    /// <summary>Le grain que les silos achevés gardent sans qu'il pourrisse jamais.</summary>
+    public static int SiloCapacity(Colony colony) =>
+        SiloGrain * colony.Buildings.Count(b => b.Type == BuildingType.Silo && b.IsComplete);
+
+    /// <summary>Vivres qui se gâtent quand on les entasse (le grain des silos n'en fait pas partie).</summary>
     public static int Perishables(Colony colony) =>
-        colony.Stock.Get(ResourceType.Grain) + colony.Stock.Get(ResourceType.Flour)
+        Math.Max(0, colony.Stock.Get(ResourceType.Grain) - SiloCapacity(colony)) + colony.Stock.Get(ResourceType.Flour)
         + colony.Stock.Get(ResourceType.Bread) + colony.Stock.Get(ResourceType.Eggs) + colony.Stock.Get(ResourceType.Milk);
 
     public static int StorageCapacity(Colony colony)
@@ -99,9 +120,13 @@ public static class Civic
         return Specialties.Salted(colony) ? capacity * 13 / 10 : capacity;
     }
 
-    /// <summary>Chaque matin, ce qui dépasse la capacité de stockage pourrit en partie (grain d'abord, puis farine et pain).</summary>
+    /// <summary>
+    /// Chaque matin, ce qui dépasse la capacité de stockage pourrit en partie (lait, grain, puis farine, œufs et pain). Le grain ne pourrit que s'il a au moins
+    /// <see cref="GrainShelfDays"/> jours (les plus vieux lots d'abord) et hors des silos ; tant qu'il reste du grain protégé, la perte n'est pas reportée sur les autres vivres.
+    /// </summary>
     public static void Daily(Colony colony, GameClock clock)
     {
+        colony.Stock.AgeGrain();
         PreserveMeat(colony, clock);
         int excess = Perishables(colony) - StorageCapacity(colony);
         if (excess <= 0)
@@ -110,10 +135,13 @@ public static class Civic
         int lost = 0;
         foreach (ResourceType good in new[] { ResourceType.Milk, ResourceType.Grain, ResourceType.Flour, ResourceType.Eggs, ResourceType.Bread })
         {
-            int take = Math.Min(rot - lost, colony.Stock.Get(good));
+            int available = good == ResourceType.Grain
+                ?Math.Min(colony.Stock.GrainAtLeast(GrainShelfDays), colony.Stock.Get(good) - SiloCapacity(colony))
+                : colony.Stock.Get(good);
+            int take = Math.Min(rot - lost, available);
             if (take > 0 && colony.Stock.TryTake(good, take, ResourceFlow.Loss))
                 lost += take;
-            if (lost >= rot)
+            if (lost >= rot || (good == ResourceType.Grain && colony.Stock.Get(good) > SiloCapacity(colony)))
                 break;
         }
         if (lost > 0 && clock.TotalDays != colony.LastSpoilageThoughtDay)
@@ -162,8 +190,9 @@ public static class Civic
 
     // --- Effets ---
 
-    /// <summary>L'école accélère l'apprentissage de tous.</summary>
-    public static float LearningBonus(Colony colony) => Has(colony, BuildingType.School) ? SchoolLearningBonus : 1f;
+    /// <summary>L école accélère l apprentissage de celui qui y étudie réellement : une activité d étude dans une école achevée. Jamais un bonus donné à tous par la simple existence du bâtiment.</summary>
+    public static float LearningBonus(Colony colony, Activity? activity) =>
+        activity is { Kind: ActivityKind.Study, Building: { Type: BuildingType.School, IsComplete: true } } ? SchoolLearningBonus : 1f;
 
     /// <summary>Les enfants vont à l'école de 9 h à 13 h : ils y exercent le métier où ils sont les plus doués.</summary>
     public static bool IsSchoolTime(GameClock clock) => clock.Hour is >= 9 and < 13;
@@ -203,6 +232,7 @@ public static class Civic
     {
         colony.RecordEvent(new(ColonyEventKind.Fire, building.X, building.Y, clock.Ticks, ColonyEventOutcome.Ruined, building.Type));
         colony.Buildings.Remove(building);
+        BatchProduction.OnBuildingDestroyed(colony, building);
         SettlementPlanner.OnObjectRemoved(colony, building);
         foreach (Colonist resident in building.Residents.ToList())
             resident.Home = null;

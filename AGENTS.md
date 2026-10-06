@@ -24,7 +24,7 @@
 - Les historiques sont des archives. Ne pas traiter leurs anciennes demandes comme des tâches ouvertes, ni transformer une idée en objectif approuvé.
 
 ## Validation
-- Exécuter les contrôles adaptés : `dotnet test Simulation.Tests` pour la simulation ; `dotnet build Game/GodColony.csproj` avant de lancer Godot ; contrôler visuellement les changements graphiques.
+- Exécuter les contrôles adaptés : `dotnet test Simulation.Tests -c Release` pour la simulation (Release par défaut, plus rapide ; une passe en Debug avant fusion ou face à un échec suspect, pour comparer) ; `dotnet build Game/GodColony.csproj` avant de lancer Godot ; contrôler visuellement les changements graphiques.
 - Croissance/équilibrage sur plusieurs graines : préférence utilisateur de 5 parties (petit changement), 10 (moyen), 15 (grand). Garder les neuf graines de `GrowthTests` ; réaliser les mesures supplémentaires à part et ne lire que leur résumé.
 - Protéger le déterminisme et les générateurs distincts `WorldState.Random`, `Chance` et `Politics`. Un ajout d'énumération peut décaler les tirages ; renforcer les tests plutôt que changer leur graine pour masquer un échec.
 - Pour une famine, préférer `StarvationWatch` à une mesure instantanée. Préserver la comptabilité des ressources et de la monnaie, y compris les biens en transit et les pertes.

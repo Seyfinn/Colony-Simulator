@@ -48,6 +48,18 @@ public enum ActivityKind
     Extract = 27,
     /// <summary>Travailler la pierre d'une offrande au sanctuaire (un chantier collectif d'offrande, voir <see cref="Offerings"/>).</summary>
     Sculpt = 28,
+    /// <summary>Chasser une harde sauvage pour sa viande et ses peaux (voir <see cref="Nature.Hunting"/>).</summary>
+    Hunt = 29,
+    /// <summary>Capturer une bête sauvage domesticable pour l'apprivoiser (voir <see cref="Nature.Taming"/>).</summary>
+    Capture = 30,
+    /// <summary>Soigner à l'enclos une bête capturée jusqu'à ce qu'elle soit apprivoisée.</summary>
+    Tame = 31,
+    /// <summary>Récolter une ressource sauvage : miel, champignons, plantes médicinales.</summary>
+    Gather = 32,
+    /// <summary>Se joindre à la grande chasse d'un alpha qui terrorise la région.</summary>
+    GreatHunt = 33,
+    /// <summary>Retirer à la sortie d'un atelier les produits finis qui y attendent, pour les porter vers un dépôt (voir <see cref="BatchProduction"/>).</summary>
+    CollectWorkshopOutput = 34,
 }
 
 /// <summary>
@@ -81,7 +93,7 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
 
     /// <summary>Activité qui produit une ressource : on mesure son coût en travail.</summary>
     public bool IsHarvest => Kind is ActivityKind.Forage or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Harvest
-            or ActivityKind.Craft or ActivityKind.Tend or ActivityKind.Slaughter or ActivityKind.Extract;
+            or ActivityKind.Craft or ActivityKind.Tend or ActivityKind.Slaughter or ActivityKind.Extract or ActivityKind.Hunt or ActivityKind.Gather;
 
     /// <summary>Pour un repas : ce qu'il redonne à celui qui mange (selon qu'on a pris du pain, du grain ou des baies).</summary>
     public float MealValue { get; set; } = Stockpile.GrainMealValue;
@@ -92,6 +104,9 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     /// <summary>Pour un travail de chemin : le tracé concerné (0 si l'activité n'est pas un travail routier).</summary>
     public int SegmentId { get; init; }
     public int DepositId { get; init; }
+
+    /// <summary>Pour une chasse, une capture ou une grande chasse : la harde visée (0 sinon).</summary>
+    public int HerdId { get; init; }
 
     /// <summary>Pour un lot de frappe : l'année du quota engagé et les pièces attendues (0 hors frappe ou une fois les pièces créées).</summary>
     public int MintYear { get; set; }
@@ -115,6 +130,15 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
     /// <summary>Pour une fabrication : le coût en heures de travail des matières premières consommées.</summary>
     public double InputLaborHours { get; set; }
 
+    /// <summary>Pour un lot d'atelier : le nombre de répétitions de la recette de référence (1 hors lot).</summary>
+    public int BatchCount { get; init; } = 1;
+
+    /// <summary>Pour un lot d'atelier : le poste de travail réservé par l'activité, du départ jusqu'à sa fin (-1 hors lot).</summary>
+    public int WorkshopSlotId { get; init; } = -1;
+
+    /// <summary>La recette concrète proposée au départ ; elle est revalidée à l'arrivée, puis <see cref="CommittedRecipe"/> en devient la vérité.</summary>
+    public Recipe? PlannedRecipe { get; init; }
+
     /// <summary>Vrai une fois que le colon est arrivé et a commencé l'action.</summary>
     public bool Started { get; set; }
 
@@ -127,7 +151,9 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
         ActivityKind.Mine => SkillType.Mining,
         ActivityKind.Build or ActivityKind.Dig or ActivityKind.BuildRoad or ActivityKind.ClearAccess or ActivityKind.Sculpt => SkillType.Construction,
         ActivityKind.Craft => Building is { } workshop ? Crafting.SkillFor(workshop.Type) : SkillType.Smithing,
-        ActivityKind.Tend or ActivityKind.Slaughter => SkillType.Husbandry,
+        ActivityKind.Tend or ActivityKind.Slaughter or ActivityKind.Capture or ActivityKind.Tame => SkillType.Husbandry,
+        ActivityKind.Hunt or ActivityKind.GreatHunt => SkillType.Hunting,
+        ActivityKind.Gather => SkillType.Foraging,
         ActivityKind.Extract => SkillType.Mining,
         ActivityKind.Heal => SkillType.Medicine,
         ActivityKind.Sow or ActivityKind.Harvest => SkillType.Farming,
@@ -136,6 +162,6 @@ public sealed class Activity(ActivityKind kind, int targetX, int targetY, float 
 
     /// <summary>Cette action réserve-t-elle sa case cible (pour éviter que deux colons visent le même arbre) ?</summary>
     public bool ReservesTarget =>
-        Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine
+        Kind is ActivityKind.Forage or ActivityKind.ForageToEat or ActivityKind.Fish or ActivityKind.Chop or ActivityKind.Mine or ActivityKind.Gather
             or ActivityKind.Sow or ActivityKind.Harvest or ActivityKind.Dig or ActivityKind.BuildRoad or ActivityKind.ClearAccess;
 }

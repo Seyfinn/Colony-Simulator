@@ -24,22 +24,22 @@ public partial class ColonistsView
     private void AddPenAnimals(Building pen)
     {
         var origin = new Vector2(pen.X, pen.Y) * Tile;
-        foreach (ResourceType species in Husbandry.Species)
+        int slot = 0;
+        foreach (ResourceType species in new[] { ResourceType.Chickens, ResourceType.Sheep, ResourceType.Cows })
         {
             string kind = species == ResourceType.Chickens ? "chicken" : species == ResourceType.Sheep ? "sheep" : "cow";
             int count = AnimalsInPen(_colony, pen, species);
-            for (int rank = 0; rank < count; rank++)
+            for (int rank = 0; rank < Math.Min(count, PenDisplayLimit(pen)); rank++)
             {
                 int ordinal = rank; string animal = kind;
                 int lane = species == ResourceType.Chickens ? 0 : species == ResourceType.Sheep ? 1 : 2;
-                Vector2 feet = origin + new Vector2(14 + (rank * 19 + lane * 23) % (pen.Width * Tile - 28), 51 + lane * 12 + rank % 2 * 3);
-                feet += new Vector2((float)Math.Sin(VillageTime * 0.7 + ordinal * 2 + lane) * 1.5f, 0);
-                Vector2 stableFeet = feet.Round();
+                Vector2 stableFeet = PenAnimalPosition(pen, slot++);
                 _standing.Add((stableFeet.Y, () =>
                 {
                     var sprite = VillageArt.Animal(animal, (int)(VillageTime * 2 + ordinal) % 4);
                     bool left = Math.Sin(VillageTime * 0.18 + ordinal + lane) < 0;
-                    DrawSetTransform(stableFeet, 0, new Vector2(left ? -1 : 1, 1));
+                    float size = animal == "cow" ? .75f : 1f;
+                    DrawSetTransform(stableFeet, 0, new Vector2(left ? -size : size, size));
                     DrawTexture(sprite, new Vector2(-sprite.GetWidth() / 2f, -sprite.GetHeight()));
                     DrawSetTransform(Vector2.Zero, 0, Vector2.One);
                 }));
@@ -115,7 +115,13 @@ public partial class ColonistsView
         float bob = (float)Math.Round(Math.Sin(VillageTime * 4 + colonist.Id));
         Vector2 hand = feet + new Vector2(7, -10 + bob);
         Color wood = Color.Color8(161, 115, 66);
-        if (activity.Kind == ActivityKind.Tend)
+        if (activity.Kind == ActivityKind.CollectWorkshopOutput)
+        {
+            Vector2 pickup = feet + new Vector2(8, -5 + bob * 2);
+            DrawLine(feet + new Vector2(3, -14), pickup, ArtDirection.Cream, 2);
+            DrawTextureRect(ResourceIcons.Get(activity.Building?.Type == BuildingType.Oven ? ResourceType.Bread : ResourceType.Flour), new Rect2(pickup, new Vector2(9, 9)), false);
+        }
+        else if (activity.Kind == ActivityKind.Tend)
         {
             DrawTextureRect(ResourceIcons.Get(_colony.WoolReady > _colony.EggsReady ? ResourceType.Wool : ResourceType.Eggs), new Rect2(hand, new Vector2(10, 10)), false);
         }

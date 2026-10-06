@@ -10,8 +10,7 @@ public enum CellUse : byte
     /// <summary>L'emprise d'un bâtiment (ou d'un barrage) : les chemins extérieurs la contournent.</summary>
     Building = 1,
     Field = 2,
-    Grave = 4,
-    /// <summary>Un canal creusé ou prévu.</summary>
+        /// <summary>Un canal creusé ou prévu.</summary>
     Canal = 8,
     /// <summary>La place initiale : la clairière du feu et ses accès.</summary>
     Plaza = 16,
@@ -41,7 +40,7 @@ public sealed class LocalSpatialIndex
     private readonly int _regionsX;
 
     // L'état dont le cache a été tiré : un changement de l'un d'eux le périme.
-    private int _buildings = -1, _fields = -1, _graves = -1, _canals = -1, _layoutRevision = -1, _parcels = -1, _segments = -1;
+    private int _buildings = -1, _fields = -1, _canals = -1, _layoutRevision = -1, _parcels = -1, _segments = -1;
 
     internal LocalSpatialIndex(int width, int height)
     {
@@ -79,9 +78,9 @@ public sealed class LocalSpatialIndex
 
     public bool IsLegacyOpen(int x, int y) => _legacy[y * _width + x] != 0;
 
-    /// <summary>La cellule est occupée par quelque chose qui interdit d'y poser un bâtiment (emprise, champ, tombe, canal, place, espace public).</summary>
+    /// <summary>La cellule est occupée par quelque chose qui interdit d'y poser un bâtiment (emprise, champ, canal, place, espace public).</summary>
     public bool IsSolid(int x, int y) =>
-        (_use[y * _width + x] & (CellUse.Building | CellUse.Field | CellUse.Grave | CellUse.Canal | CellUse.Plaza | CellUse.PublicSpace)) != 0;
+        (_use[y * _width + x] & (CellUse.Building | CellUse.Field | CellUse.Canal | CellUse.Plaza | CellUse.PublicSpace)) != 0;
 
     /// <summary>
     /// Les cellules de la grille ont-elles changé depuis le dernier calcul ? Reconstruit le cache si un objet a été ajouté ou retiré :
@@ -90,14 +89,14 @@ public sealed class LocalSpatialIndex
     internal void Refresh(Colony colony)
     {
         SettlementLayout? layout = colony.Layout;
-        int buildings = colony.Buildings.Count, fields = colony.Fields.Count, graves = colony.Graves.Count, canals = colony.CanalTiles.Count;
+        int buildings = colony.Buildings.Count, fields = colony.Fields.Count, canals = colony.CanalTiles.Count;
         int revision = layout?.Revision ?? 0, parcels = layout?.Parcels.Count ?? 0, segments = layout?.RoadSegments.Count ?? 0;
-        if (buildings == _buildings && fields == _fields && graves == _graves && canals == _canals
+        if (buildings == _buildings && fields == _fields && canals == _canals
             && revision == _layoutRevision && parcels == _parcels && segments == _segments)
             return;
         Rebuild(colony);
-        (_buildings, _fields, _graves, _canals, _layoutRevision, _parcels, _segments) =
-            (buildings, fields, graves, canals, revision, parcels, segments);
+        (_buildings, _fields, _canals, _layoutRevision, _parcels, _segments) =
+            (buildings, fields, canals, revision, parcels, segments);
     }
 
     internal void Rebuild(Colony colony)
@@ -114,12 +113,9 @@ public sealed class LocalSpatialIndex
                 Mark(x, y, CellUse.Building, building.Id, legacy);
         }
         foreach (Field field in colony.Fields)
-            for (int y = field.Y; y < field.Y + Field.Size; y++)
-            for (int x = field.X; x < field.X + Field.Size; x++)
+            for (int y = field.Y; y < field.Y + field.Size; y++)
+            for (int x = field.X; x < field.X + field.Size; x++)
                 Mark(x, y, CellUse.Field, field.Id, false);
-        foreach (Grave grave in colony.Graves)
-            if (grave.X >= 0)
-                Mark(grave.X, grave.Y, CellUse.Grave, -1, false);
         foreach ((int x, int y) in colony.CanalTiles)
             Mark(x, y, CellUse.Canal, -1, false);
 

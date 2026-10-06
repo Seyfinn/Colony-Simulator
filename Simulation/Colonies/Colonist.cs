@@ -80,6 +80,8 @@ public sealed class Colonist
 
     /// <summary>Heures de suite sans rien manger du tout ; au bout de deux jours, c'est la mort.</summary>
     internal int StarvedHours { get; set; }
+    /// <summary>Dernière prise de nourriture effective ; distingue un réveil affamé d'un jeûne continu.</summary>
+    public long LastMealTicks { get; internal set; } = -1;
     internal bool StarvationWarned { get; set; }
 
     /// <summary>Deux colons sont de la même famille proche : parent et enfant, ou frère et sœur.</summary>
@@ -102,6 +104,15 @@ public sealed class Colonist
 
     /// <summary>Le secteur auquel la colonie l'a affecté. Il y travaille en priorité, sans y être limité.</summary>
     public WorkSector Sector { get; internal set; }
+
+    /// <summary>
+    /// L'atelier (bâtiment principal) et le produit que ce colon pratique de préférence, depuis quand, et depuis quand ce travail lui est impossible (0 : jamais).
+    /// Une préférence guide le choix à l'intérieur du secteur ; elle cède devant les besoins, la survie et les urgences (voir <see cref="SpecialistAssignments"/>).
+    /// </summary>
+    public int PreferredWorkshopId { get; internal set; }
+    public ResourceType? PreferredProduct { get; internal set; }
+    public long SpecialtyChosenTicks { get; internal set; }
+    public long SpecialtyBlockedSinceTicks { get; internal set; }
 
     public int Id { get; }
     public string Name { get; private set; }
@@ -164,6 +175,27 @@ public sealed class Colonist
     /// <summary>Ce que le colon transporte (null s'il a les mains vides).</summary>
     public (ResourceType Type, int Amount)? Carrying { get; internal set; }
 
+    /// <summary>Le renom du colon : grandes chasses, victoires, ouvrages d'offrande, maîtrise d'un métier. Il pèse dans l'élection du chef (voir <see cref="Leadership"/>).</summary>
+    public float Renown { get; internal set; }
+
+    /// <summary>Le danger de mort propre à la blessure en cours (null : celui d'un accident de travail).</summary>
+    internal float? AilmentDeathChance { get; set; }
+
+    /// <summary>Le colon pousse une charrette de la colonie pour rapporter sa charge (voir <see cref="TransportView"/>).</summary>
+    public bool UsingCart { get; internal set; }
+
+    /// <summary>Le dernier geste de récolte, et la charge d'une prise : avec une charrette, le colon enchaîne les mêmes récoltes jusqu'à quatre charges avant de rentrer.</summary>
+    internal ActivityKind? LastHarvest { get; set; }
+
+    /// <summary>Une fabrication longue interrompue pour un repas : ses matières restent engagées, elle reprend là où elle s'est arrêtée (voir <see cref="ColonistAI"/>).</summary>
+    internal Activity? PausedCraft { get; set; }
+
+    /// <summary>Le cycle de travail (début et heures annexes) au moment de la pause, et le moment de la pause : la reprise décale le début du temps passé à manger ou à dormir.</summary>
+    internal long PausedCycleStart { get; set; } = -1;
+    internal long PausedAtTicks { get; set; }
+    internal double PausedExtraHours { get; set; }
+    internal int CartUnit { get; set; }
+
     /// <summary>Le chantier auquel est destiné ce qu'il transporte ; null s'il le rapporte au stock.</summary>
     public Building? CarryingTo { get; internal set; }
 
@@ -187,6 +219,8 @@ public sealed class Colonist
     /// </summary>
     internal int PathStartBuilding { get; set; }
     internal int PathGoalBuilding { get; set; }
+    /// <summary>Quand le chemin en cours a été confié au colon : la durée d'un trajet terminé se mesure de là à l'arrivée (voir <see cref="RoadShortcuts"/>).</summary>
+    internal long PathCommittedTicks { get; set; }
     internal int PathStartX { get; set; }
     internal int PathStartY { get; set; }
     internal int PathRevision { get; set; }

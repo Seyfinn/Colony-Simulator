@@ -10,6 +10,11 @@ public static partial class TerrainPainter
     private static void PaintRoad(LocalMap map, int x, int y, byte[] pixels, int stride, int ox, int oy)
     {
         RoadSurface surface = map.Roads.SurfaceAt(y * map.Width + x);
+        if (surface == RoadSurface.Bridge)
+        {
+            // Le pont entier est dessiné par ColonistsView depuis BridgeSite, au-dessus de l'eau.
+            return;
+        }
         if (surface == RoadSurface.None || map.HasWater(x,y) || map.IsCanal(x,y)) return;
         int mask = 0, ordinal = 0;
         for (int dy=-1;dy<=1;dy++) for (int dx=-1;dx<=1;dx++)
@@ -44,4 +49,5 @@ public static partial class TerrainPainter
             pixels[index]=color.R; pixels[index+1]=color.G; pixels[index+2]=color.B;
         }
     }
+
 }

@@ -1,4 +1,5 @@
 using GodColony.Simulation.Colonies;
+using GodColony.Simulation.Persistence;
 using GodColony.Simulation.Time;
 using Xunit.Abstractions;
 
@@ -65,7 +66,7 @@ public class LifecycleTests(ITestOutputHelper output)
                 Assert.NotEmpty(m.Surname);
             });
             Assert.Equal(0, colony.Children);
-            Assert.Empty(colony.Graves);
+            Assert.Empty(colony.Deaths);
         }
     }
 
@@ -301,10 +302,9 @@ public class LifecycleTests(ITestOutputHelper output)
 
         Assert.DoesNotContain(woman, colony.Members);
         Assert.Equal(before - 1, colony.Members.Count);
-        Grave grave = Assert.Single(colony.Graves);
+        Death grave = Assert.Single(colony.Deaths);
         Assert.Contains(woman.Name, grave.FullName);
         Assert.Equal("vieillesse", grave.Cause);
-        Assert.True(grave.X >= 0, "Le cimetière doit avoir trouvé une place.");
         Assert.Null(man.Partner);
         Assert.Equal(1f, man.Needs.Grief);
         Assert.True(friend.Needs.Grief > 0.3f);
@@ -332,7 +332,7 @@ public class LifecycleTests(ITestOutputHelper output)
             Lifecycle.Hourly(world, colony);
         }
         Assert.DoesNotContain(starving, colony.Members);
-        Assert.Equal("faim", colony.Graves.Single().Cause);
+        Assert.Equal("faim", colony.Deaths.Single().Cause);
 
         // Un repas remet les compteurs à zéro.
         Colonist other = colony.Members[0];
@@ -346,19 +346,27 @@ public class LifecycleTests(ITestOutputHelper output)
     }
 
     [Fact]
-    public void Les_tombes_restent_a_l_ecart_et_ne_se_touchent_pas()
+    public void Un_deces_ne_laisse_aucune_tombe_mais_alimente_le_cumul_de_l_empire()
     {
         WorldState world = Colony(8);
         Colony colony = world.Colonies[0];
         foreach (Colonist colonist in colony.Members.Take(5).ToList())
             Lifecycle.Die(world, colonist, "vieillesse");
 
-        Assert.Equal(5, colony.Graves.Count);
-        Assert.All(colony.Graves, g => Assert.True(g.X >= 0));
-        foreach (Grave a in colony.Graves)
-        foreach (Grave b in colony.Graves.Where(g => g != a))
-            Assert.True(Math.Max(Math.Abs(a.X - b.X), Math.Abs(a.Y - b.Y)) >= 2);
-        Assert.All(colony.Graves, g => Assert.True(Math.Max(Math.Abs(g.X - colony.CampX), Math.Abs(g.Y - colony.CampY)) >= 8));
+        Assert.Equal(5, colony.Deaths.Count);
+        Assert.Equal(5, colony.TotalDeaths);
+        Assert.DoesNotContain(typeof(Death).Assembly.GetTypes(), t => t.Name == "Grave"); // plus aucun objet de tombe : seul le registre des décès demeure
+
+        // Le cumul de l'empire et le détail local survivent à la sauvegarde.
+        string file = Path.Combine(Path.GetTempPath(), Guid.NewGuid() + ".gcsave");
+        try
+        {
+            WorldSave.Save(file, world);
+            Colony loaded = WorldSave.Load(file).World.Colonies[0];
+            Assert.Equal(5, loaded.TotalDeaths);
+            Assert.Equal(5, loaded.Deaths.Count);
+        }
+        finally { File.Delete(file); }
     }
 
     [Fact]
@@ -412,7 +420,7 @@ public class LifecycleTests(ITestOutputHelper output)
             seen.UnionWith(colony.Members.Select(m => m.Id));
             if (day % 20 == 0)
                 output.WriteLine($"An {day / 20}: colons {colony.Members.Count} (enfants {colony.Children}), couples {colony.Members.Count(m => m.Sex == Sex.Female && m.Partner is not null)}, " +
-                                 $"naissances {births}, tombes {colony.Graves.Count}, nourriture {colony.Stock.FoodUnits}, humeur {colony.AverageMood:P0}, huttes {colony.Buildings.Count(b => b.IsComplete)}");
+                                 $"naissances {births}, tombes {colony.Deaths.Count}, nourriture {colony.Stock.FoodUnits}, humeur {colony.AverageMood:P0}, huttes {colony.Buildings.Count(b => b.IsComplete)}");
         }
         foreach (Thought thought in colony.Thoughts.TakeLast(10))
             output.WriteLine($"  J{thought.Ticks / TimeConstants.TicksPerDay + 1} {thought.Text}");

@@ -155,9 +155,23 @@ public static class Health
                 $"{colonist.Name} s'est blessé{(colonist.Sex == Sex.Female ? "e" : "")} en travaillant.");
     }
 
+    /// <summary>
+    /// Une blessure reçue de la faune sauvage : la nature la tire au sort (durée comprise) sans toucher au hasard des maladies, et le danger de mort est propre à la cause
+    /// (un prédateur : 1 %, contre 4 % pour un accident de travail non soigné).
+    /// </summary>
+    internal static void Injure(WorldState world, Colonist colonist, string cause, float deathChance)
+    {
+        if (colonist.Ailment == Ailment.Injured)
+            return;
+        Fall(colonist.Colony, colonist, Ailment.Injured, 60 + world.Nature.Next(0, 36), world.Clock,
+            $"{colonist.Name} a été {cause}.");
+        colonist.AilmentDeathChance = deathChance;
+    }
+
     public static void Fall(Colony colony, Colonist colonist, Ailment kind, int hours, GameClock clock, string thought)
     {
         colonist.Ailment = kind;
+        colonist.AilmentDeathChance = null;
         colonist.AilmentHours = hours;
         colonist.Treated = false;
         colonist.Needs.Illness = kind == Ailment.Sick ? 0.6f : 0.8f;
@@ -184,7 +198,8 @@ public static class Health
             Ailment kind = colonist.Ailment;
             colonist.Ailment = Ailment.None;
             colonist.Needs.Illness = 0f;
-            float death = colonist.Treated ? 0f : kind == Ailment.Sick ? SickDeathChance : InjuryDeathChance;
+            float death = colonist.Treated ? 0f : kind == Ailment.Sick ? SickDeathChance : colonist.AilmentDeathChance ?? InjuryDeathChance;
+            colonist.AilmentDeathChance = null;
             if (colonist.Stage is LifeStage.Elder or LifeStage.Child)
                 death *= 2f;
             if (colonist.Needs.Food < 0.3f)
@@ -195,13 +210,18 @@ public static class Health
         }
     }
 
-    /// <summary>Un guérisseur passe à l'infirmerie : tous les malades sont soignés, leur convalescence raccourcit.</summary>
-    public static void Treat(Colony colony)
+    /// <summary>Un guérisseur passe à l infirmerie : les patients qui y sont réellement accueillis (voir <see cref="CivicServices.PatientsAt"/>) sont soignés, leur convalescence raccourcit. Ceux qui restent ailleurs ne profitent de rien.</summary>
+    public static void Treat(Colony colony, IEnumerable<Colonist> patients)
     {
-        foreach (Colonist patient in Patients(colony))
+        List<Colonist> present = patients.ToList();
+        if (present.Count == 0)
+            return; // personne à soigner : rien n est consommé
+        // Les plantes médicinales cueillies dans la région (voir WildResources) doublent l effet des soins ; une portion par visite.
+        int bonus = colony.Stock.TryTake(ResourceType.Herbs, 1) ? TreatmentHours : 0;
+        foreach (Colonist patient in present)
         {
             patient.Treated = true;
-            patient.AilmentHours = Math.Max(1, patient.AilmentHours - TreatmentHours);
+            patient.AilmentHours = Math.Max(1, patient.AilmentHours - TreatmentHours - bonus);
         }
     }
 

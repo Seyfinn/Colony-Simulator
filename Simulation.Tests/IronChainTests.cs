@@ -142,7 +142,7 @@ public class IronChainTests(ITestOutputHelper output)
         int uses = 0;
         while (!ToolChain.RecordUse(colony, SkillType.Mining))
             uses++;
-        Assert.InRange(uses, 140, 150);
+        Assert.InRange(uses, (int)ToolChain.ToolLifeUses - 1, (int)ToolChain.ToolLifeUses);
         Assert.Equal(4, colony.Stock.Get(ResourceType.Tools));
     }
 

@@ -71,7 +71,7 @@ public partial class Main
             }
             await UiFrames(3);
             SaveSmokeCapture("fondation");
-            Click(_foundingPanel, "Fonder la colonie");
+            Click(_foundingPanel, "Fonder l'empire");
             Require(_world.Colonies.Count == 1 && !_foundingPanel.IsOpen, "La confirmation doit installer une seule colonie.");
             Colony colony = _world.Colonies[0];
             Require(colony.Name == "Clairerive" && colony.Species == Species.Elf && colony.Members.Count == 12,
@@ -121,7 +121,7 @@ public partial class Main
             _worldPanel.MapOpen = false;
             GetViewport().GuiReleaseFocus();
             PressObservationKey(Key.Tab);
-            Require(_observed == 1, "Tab doit observer la colonie suivante.");
+            Require(_observed == 1, "Tab doit observer l'empire suivant.");
             PressObservationKey(Key.Tab);
             Require(_observed == 0, "Tab doit revenir à la première colonie après la dernière.");
             GD.Print("INTERFACE_SMOKE_OK : menus, fondation, sauvegarde des paramètres, reprise, remplacement, raccourcis, saisie protégée, panneaux, économie stable et vue chiffrée.");
@@ -152,9 +152,25 @@ public partial class Main
         Observed.Stock.Add(ResourceType.Bread, 1);
         Observed.Stock.Add(ResourceType.Flour, 5);
         await UiFrames(3);
-        Require(FindNamed<Label>(_hud, "FoodTotal").Text == 10.45m.ToString("0.##"), "Le total doit pondérer les aliments par leur valeur nutritive.");
+        Require(FindNamed<Label>(_hud, "FoodTotal").Text == 8.45m.ToString("0.##"), "Le total doit pondérer les aliments par leur valeur nutritive (les céréales crues comptent à peine).");
         Require(!Descendants(_hud).Any(n => n.Name == "ResourceGrain" || n.Name == "ResourceBread" || n.Name == "ResourceFlour" || n.Name == "ResourceFish"),
             "Tous les aliments doivent partager une seule case.");
+        // L'empire, ses colonies et le cumul des décès se lisent en haut à gauche ; minéraux et cultures ont leur groupe.
+        Require(FindNamed<Label>(_hud, "DecesEmpire").Text == $"☠ {Observed.TotalDeaths} décès (empire, depuis le début)", "Le compteur de décès de l'empire doit s'afficher.");
+        var places = FindNamed<OptionButton>(_hud, "ColoniesEmpire");
+        Require(places.ItemCount == Observed.Settlements.Count && places.Selected >= 0, "Le menu doit lister les colonies de l'empire, y compris les lieux fermés grisés.");
+        Require(Descendants(_hud).Any(n => n.Name == "ResourceStone" || n.Name == "ResourceIronOre") == false, "Les minéraux doivent former un groupe unique.");
+        var mineralToggle = FindNamed<Button>(_hud, "BasculerMinerals");
+        var mineralDetails = FindNamed<PanelContainer>(_hud, "DetailMinerals");
+        Require(!mineralDetails.Visible && FindNamed<Label>(_hud, "TotalMinerals").Text == ResourceCatalog.Minerals.Sum(t => Observed.Stock.Get(t)).ToString("N0"),
+            "Le groupe minéral doit totaliser les minéraux du stock, détail replié.");
+        mineralToggle.EmitSignal(BaseButton.SignalName.Pressed);
+        _hudCooldown = 0;
+        await UiFrames(3);
+        Require(mineralDetails.Visible && FindNamed<Label>(_hud, "DetailStone").Text == Observed.Stock.Get(ResourceType.Stone).ToString("N0"), "Le détail des minéraux doit s'ouvrir.");
+        SaveSmokeCapture("mineraux");
+        _hud._Input(new InputEventKey { Pressed = true, Keycode = Key.Escape });
+        Require(!mineralDetails.Visible, "Échap doit fermer le détail des minéraux.");
         var foodToggle = FindNamed<Button>(_hud, "ToggleFoodDetails");
         var foodDetails = FindNamed<PanelContainer>(_hud, "FoodDetails");
         Require(!foodDetails.Visible, "Le détail doit démarrer replié.");
@@ -164,8 +180,9 @@ public partial class Main
         Require(foodDetails.GlobalPosition.Y >= foodToggle.GlobalPosition.Y + foodToggle.Size.Y, "Le détail doit s'ouvrir sous la case.");
         SaveSmokeCapture("nourriture");
         Observed.Stock.Add(ResourceType.Fish, 1);
+        _hudCooldown = 0;
         await UiFrames(3);
-        Require(FindNamed<Label>(_hud, "FoodTotal").Text == 11.05m.ToString("0.##")
+        Require(FindNamed<Label>(_hud, "FoodTotal").Text == 9.05m.ToString("0.##")
             && FindNamed<Label>(_hud, "FoodDetailFish").Text.StartsWith("3 ×"), "Le total et le détail doivent suivre les variations du stock.");
         foodToggle.EmitSignal(BaseButton.SignalName.Pressed);
         Require(!foodDetails.Visible, "Un second clic doit replier le stock.");

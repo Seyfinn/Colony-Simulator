@@ -7,6 +7,9 @@ namespace GodColony.Simulation;
 public sealed partial class WorldState
 {
     internal bool TerritorialDevelopment => _trade;
+
+    /// <summary>Le royaume dont une case du monde fait partie (celui du propriétaire de la région), ou null : lecture pure pour dessiner les frontières.</summary>
+    public Realm? RealmOfTile(int tile) => GodColony.Simulation.Colonies.Realms.OfTile(this, tile);
     [NonSerialized] private HashSet<int>? _permanentIronRegions;
     private HashSet<int> PermanentIronRegions()
     {

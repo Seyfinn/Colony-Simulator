@@ -4,14 +4,13 @@ using GodColony.Simulation.World;
 namespace GodColony.Simulation.Colonies;
 
 /// <summary>
-/// Le schisme : dans un village devenu grand (ou à l'étroit et morose), un colon ambitieux et peu attaché à sa terre rêve d'en fonder
+/// Le schisme : dans un village qui a une raison durable de se séparer (voir <see cref="GrowthPolicy"/>), un colon ambitieux et peu attaché à sa terre rêve d'en fonder
 /// une à lui. Ses amis, son conjoint et leurs enfants le suivraient, avec leur part des réserves. La colonie en prie le joueur :
 /// accordé, le groupe part s'installer sur une région libre voisine et fonde une colonie sœur, qui garde les savoirs et l'affection
 /// de sa mère ; refusé, la foi vacille et l'on n'en reparle pas avant longtemps.
 /// </summary>
 public static class Schism
 {
-    public const int MinPopulation = 30;
     public const int MinCrampedPopulation = 20;
     public const int MinFollowers = 5;
     public const float ChancePerDay = 0.04f;
@@ -135,32 +134,46 @@ public static class Schism
         var wishes = mother.Wishes.Where(w => w.SettlementId == place.Id).ToList();
         mother.Offerings.RemoveAll(projects.Contains); mother.Monuments.RemoveAll(monuments.Contains); mother.Wishes.RemoveAll(wishes.Contains);
         daughter.AdoptOfferings(projects, monuments, wishes);
+        var effects = mother.DivineEffects.Where(e => e.Kind == DivineEffectKind.HarvestYield ? e.SettlementId == place.Id : people.Any(p => p.Id == e.TargetId)).ToList();
+        mother.DivineEffects.RemoveAll(effects.Contains);
+        daughter.AdoptEffects(effects); // l'identitÃ© source (colonie, souhait) reste figÃ©e
         mother.Prayers.WithdrawFor(place.Id);
         world.Money.Split(mother, daughter, share);
         mother.Opinions[daughter] = 40f; daughter.Opinions[mother] = 40f;
         ColonyBrain.Say(mother, world.Clock, $"{place.Name} se détache : {leader.Name} et {people.Count - 1} habitants forment {daughter.Name}. Nous leur souhaitons bonne fortune.");
         ColonyBrain.Say(daughter, world.Clock, $"Menés par {leader.Name}, les {people.Count} habitants de {place.Name} fondent {daughter.Name}.");
+        Realms.OnDaughter(world, mother, daughter);
         return daughter;
     }
 
-    /// <summary>Chaque matin : un grand village où couve un schisme prie le joueur de laisser partir les dissidents.</summary>
+    /// <summary>
+    /// Chaque matin : un village qui a une raison durable de se séparer (plus de place pour loger, mécontentement soutenu, installation nettement moins chère ailleurs)
+    /// prie le joueur de laisser partir un groupe. Un village prospère, même grand, n'en demande aucun ; sans raison recevable, aucun tirage n'est fait.
+    /// </summary>
     public static void Daily(WorldState world, Colony colony)
     {
         SecessionDaily(world, colony);
-        int people = colony.PresentMembers.Count;
-        bool cramped = people >= MinCrampedPopulation && (colony.AverageMood < 0.5f || colony.Homeless >= 4);
-        if ((people < MinPopulation && !cramped) || world.Colonies.Count >= WorldState.MaxPlayerColonies
-            || Diplomacy.AtWarWithAnyone(world, colony) || colony.Prayers.IsQuiet(DecisionKind.Schism, world.Clock))
-            return;
-        if (world.Politics.NextSingle() >= ChancePerDay || Leader(colony) is not { } leader)
+        if (world.Colonies.Count >= WorldState.MaxPlayerColonies || colony.PresentMembers.Count < MinCrampedPopulation
+            || Diplomacy.AtWarWithAnyone(world, colony) || colony.Prayers.IsQuiet(DecisionKind.Schism, world.Clock)
+            || Leader(colony) is not { } leader)
             return;
         List<Colonist> group = Followers(colony, leader);
         if (group.Count < MinFollowers || FindRegion(world, colony) < 0)
             return;
+        GrowthDecision decision = GrowthPolicy.EvaluateDeparture(world, colony, group.Count);
+        if (decision.Reason == GrowthReason.None || world.Politics.NextSingle() >= ChancePerDay)
+            return;
+        SettlementGrowthState state = colony.PrimarySettlement.GrowthState;
+        int days = decision.Reason switch
+        {
+            GrowthReason.PersistentDiscontent => state.DiscontentDays,
+            GrowthReason.LocalCapacityBlocked => state.BlockedDays,
+            _ => state.HousingDays,
+        };
         bool female = leader.Sex == Sex.Female;
         colony.Prayers.Ask(DecisionKind.Schism, leader.Id.ToString(),
             $"Laisser {leader.Name} fonder une nouvelle colonie avec {group.Count - 1} fidèles ?",
-            (cramped ? "Le village est à l'étroit et l'humeur s'en ressent. " : "Le village a beaucoup grandi. ")
+            GrowthPolicy.Explain(decision, days)
             + $"{leader.Name}, {(female ? "ambitieuse" : "ambitieux")}, rêve d'une terre à {(female ? "elle" : "lui")} et "
             + $"{group.Count - 1} habitants le suivraient, avec leur part de nos réserves. Ils resteraient nos proches parents.",
             () => Split(world, colony, leader.Id), world.Clock, RefusalCooldownDays);
@@ -181,15 +194,35 @@ public static class Schism
     {
         if (mother.PresentMembers.FirstOrDefault(m => m.Id == leaderId) is not { } leader || world.Colonies.Count >= WorldState.MaxPlayerColonies)
             return null;
+        // L'accord arrive parfois longtemps après la prière : le groupe, la place restante et le trajet se revérifient, sans rien retirer si le départ est devenu impossible.
         List<Colonist> group = Followers(mother, leader);
+        string? obstacle = group.Count < MinFollowers ? "le groupe n'est plus assez nombreux"
+            : mother.PresentMembers.Count - group.Count < ScaleRules.MinRemaining ? "le village serait trop dépeuplé"
+            : FindRegion(world, mother) < 0 ? "aucune région libre n'est plus à portée"
+            : Diplomacy.AtWarWithAnyone(world, mother) ? "la guerre retient chacun"
+            : null;
+        if (obstacle is not null)
+        {
+            ColonyBrain.Say(mother, world.Clock, $"Le départ de {leader.Name} est reporté : {obstacle}.");
+            return null;
+        }
+        return FoundFrom(world, mother, leader, group, refugees: false);
+    }
+
+    /// <summary>
+    /// Un groupe d'habitants fonde une colonie sur une région libre voisine. Pour un schisme, la colonie fille naît dans le royaume de sa mère (voir <see cref="Realms.OnDaughter"/>) ;
+    /// des réfugiés d'une conquête fondent au contraire une colonie indépendante, sans mère.
+    /// </summary>
+    internal static Colony? FoundFrom(WorldState world, Colony mother, Colonist leader, List<Colonist> group, bool refugees)
+    {
         int tile = FindRegion(world, mother);
-        if (group.Count < MinFollowers || tile < 0)
+        if (group.Count < (refugees ? 1 : MinFollowers) || tile < 0)
             return null;
 
         LocalMap map = world.GenerateColonyMap(tile);
         (int campX, int campY) = ColonyFounder.FindCampSite(map);
         Colony daughter = ColonyFounder.CreateCamp(map, UniqueName(world, leader, world.WorldMap.Grid[tile]), world.Clock, mother.Species, campX, campY);
-        daughter.Parent = mother;
+        daughter.Parent = refugees ? null : mother;
         foreach ((Discovery discovery, long ticks) in mother.Known)
             daughter.Known[discovery] = ticks;
 
@@ -225,14 +258,24 @@ public static class Schism
                 partner.Needs.Grief = Math.Max(partner.Needs.Grief, 0.5f);
                 colonist.Needs.Grief = Math.Max(colonist.Needs.Grief, 0.5f);
             }
+        // La faveur d'un champion suit la personne, jamais le lieu.
+        var carried = mother.DivineEffects.Where(e => e.Kind == DivineEffectKind.ChampionStrength && group.Any(g => g.Id == e.TargetId)).ToList();
+        mother.DivineEffects.RemoveAll(carried.Contains);
+        daughter.AdoptEffects(carried);
         daughter.AssignSectors();
 
         world.AddColony(daughter, tile);
         world.Money.Split(mother, daughter, share);
-        mother.Opinions[daughter] = 40f;
-        daughter.Opinions[mother] = 40f;
-        ColonyBrain.Say(mother, world.Clock, $"{leader.Name} et {group.Count - 1} fidèles nous quittent pour fonder {daughter.Name}. Nous leur souhaitons bonne fortune.");
-        ColonyBrain.Say(daughter, world.Clock, $"Menés par {leader.Name}, {group.Count} anciens habitants de {mother.Name} fondent {daughter.Name}.");
+        mother.Opinions[daughter] = refugees ? -40f : 40f;
+        daughter.Opinions[mother] = refugees ? -40f : 40f;
+        ColonyBrain.Say(mother, world.Clock, refugees
+            ? $"{leader.Name} et {group.Count - 1} habitants fuient la conquête et fondent {daughter.Name}."
+            : $"{leader.Name} et {group.Count - 1} fidèles nous quittent pour fonder {daughter.Name}. Nous leur souhaitons bonne fortune.");
+        ColonyBrain.Say(daughter, world.Clock, refugees
+            ? $"Chassés par la conquête de {mother.Name}, {group.Count} réfugiés menés par {leader.Name} fondent {daughter.Name}."
+            : $"Menés par {leader.Name}, {group.Count} anciens habitants de {mother.Name} fondent {daughter.Name}.");
+        if (!refugees)
+            Realms.OnDaughter(world, mother, daughter);
         return daughter;
     }
 

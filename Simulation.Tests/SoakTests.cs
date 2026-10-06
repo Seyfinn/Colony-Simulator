@@ -15,6 +15,7 @@ public class SoakTests(ITestOutputHelper output)
     {
         var world = new WorldState(2026, startingColonists: 8, colonyCount: 4);
         int coins = Coins(world);
+        long dotationsAtStart = world.Money.Dotations;
         var watches = world.Colonies.ToDictionary(c => c, _ => new StarvationWatch());
 
         for (long i = 0; i < 2 * TimeConstants.TicksPerYear; i++)
@@ -23,7 +24,7 @@ public class SoakTests(ITestOutputHelper output)
             if (i % TimeConstants.TicksPerDay != 0)
                 continue;
 
-            Assert.Equal(coins + world.Money.Minted, Coins(world) + world.CoinsLostToEvents); // hors pillards, colporteurs et frappe enregistrée
+            Assert.Equal(coins + world.Money.Minted + world.Money.Dotations - dotationsAtStart, Coins(world) + world.CoinsLostToEvents); // hors colporteurs et frappe enregistrée
             foreach (Colony colony in world.Colonies)
             {
                 watches[colony].Observe(colony);
@@ -47,7 +48,7 @@ public class SoakTests(ITestOutputHelper output)
         foreach (Colony colony in world.Colonies)
         {
             output.WriteLine($"{colony.Name} ({colony.Species.Plural}) : {colony.Members.Count} colons, {colony.Buildings.Count(b => b.IsComplete)} bâtiments, " +
-                             $"{colony.Stock.Get(ResourceType.Coins)} pièces, {colony.Trades.Count} voyages, naissances/tombes {colony.Graves.Count}");
+                             $"{colony.Stock.Get(ResourceType.Coins)} pièces, {colony.Trades.Count} voyages, naissances/tombes {colony.Deaths.Count}");
             Assert.NotEmpty(colony.Members);
             Assert.Null(watches[colony].Victim);
         }

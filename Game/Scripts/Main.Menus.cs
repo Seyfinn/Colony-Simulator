@@ -154,7 +154,7 @@ public partial class Main
     private void BeginFounding()
     {
         if (_menu.IsOpen || _foundingPanel.IsOpen) return;
-        if (_world.Colonies.Count >= WorldState.MaxPlayerColonies) { Notify("Le monde accueille déjà 16 colonies."); return; }
+        if (_world.Colonies.Count >= WorldState.MaxPlayerColonies) { Notify("Le monde accueille déjà 16 empires."); return; }
         // On choisit le camp sur le terrain : la vue chiffrée laisse d'abord la place à la carte.
         ReturnToMap();
         Select(null);

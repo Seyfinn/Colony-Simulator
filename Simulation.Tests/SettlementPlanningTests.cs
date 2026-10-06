@@ -99,7 +99,6 @@ public sealed class SettlementPlanningTests
         }
         foreach (Building b in colony.Buildings) foreach ((int x, int y) in b.Tiles) Take(x, y, $"{b.Type}#{b.Id}");
         foreach (Field f in colony.Fields) foreach (FieldPlot p in f.Plots) Take(p.X, p.Y, $"champ#{f.Id}");
-        foreach (Grave g in colony.Graves.Where(g => g.X >= 0)) Take(g.X, g.Y, "tombe");
 
         foreach (int cell in layout.PlazaCells)
         {
@@ -113,7 +112,7 @@ public sealed class SettlementPlanningTests
             Assert.False(b.Contains(b.AccessX, b.AccessY));
             Assert.NotNull(LocalNavigation(colony, b.AccessX, b.AccessY));
         }
-        foreach (Building mill in colony.Buildings.Where(b => b.Type == BuildingType.Mill))
+        foreach (Building mill in colony.Buildings.Where(b => b.Type == BuildingType.Mill && !b.IsExtension)) // une extension partage la roue du moulin principal
             Assert.True(Hydrology.MillFlow(map, mill) > 0f, "Un moulin sans débit.");
         foreach (Field f in colony.Fields)
             Assert.NotNull(LocalNavigation(colony, f.AccessX, f.AccessY));

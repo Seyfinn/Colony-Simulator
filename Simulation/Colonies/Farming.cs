@@ -73,6 +73,22 @@ public static class Farming
         return Math.Clamp(warmth * drought * damp, 0f, 1f);
     }
 
+    /// <summary>Habitants présents au-delà desquels les nouveaux champs passent à 6 × 6, puis à 8 × 8 : un campement défriche petit, un village développé voit grand.</summary>
+    private const int MediumFieldPopulation = 16;
+    private const int LargeFieldPopulation = 32;
+
+    /// <summary>
+    /// Le côté des nouveaux champs de la colonie : il croît avec sa population (les bras disponibles pour semer et moissonner), les champs déjà ouverts gardent le leur.
+    /// </summary>
+    public static int FieldSizeFor(Colony colony)
+    {
+        int people = colony.PresentMembers.Count;
+        return people > LargeFieldPopulation ? Field.MaxSize : people > MediumFieldPopulation ? 6 : Field.BaseSize;
+    }
+
+    /// <summary>Le nombre de parcelles cultivables de la colonie, tous champs confondus.</summary>
+    public static int PlotCount(Colony colony) => colony.Fields.Sum(f => f.Plots.Count);
+
     public static IEnumerable<FieldPlot> Plots(Colony colony) => colony.Fields.SelectMany(f => f.Plots);
 
     public static FieldPlot? PlotAt(Colony colony, int x, int y) =>
@@ -90,7 +106,7 @@ public static class Farming
     }
 
     /// <summary>
-    /// Place libre pour un champ de 4 × 4 : plat, de bonne terre (la fertilité des berges et l'irrigation comptent), le moins boisé possible, à portée d'un dépôt (le camp
+    /// Place libre pour un champ (4 × 4 à 8 × 8, voir <see cref="FieldSizeFor"/>) : plat, de bonne terre (la fertilité des berges et l'irrigation comptent), le moins boisé possible, à portée d'un dépôt (le camp
     /// ou un entrepôt achevé) : un aller-retour parcelle → dépôt de 4 secondes visé, 6 au plus. La recherche va de groupe de champs en groupe de champs. Sonde pure.
     /// </summary>
     public static (int X, int Y)? FindFieldSite(LocalMap map, Colony colony)
@@ -105,15 +121,15 @@ public static class Farming
         // L'emplacement est revalidé (terrain, accès, tracé) ; un outil qui insiste sur un site refusé obtient son champ, enregistré comme un écart historique.
         if (SettlementPlanner.PlanAt(colony, DevelopmentKind.Field, null, x, y).Field is { } planned)
             return planned;
-        Field field = OpenField(map, colony, x, y);
+        Field field = OpenField(map, colony, x, y, FieldSizeFor(colony));
         SettlementPlanner.Adopt(colony, field);
         return field;
     }
 
     /// <summary>La création brute : défrichage des parcelles (arbres, buissons, souches) et ouverture du champ. Seule l'admission d'un projet (ou une migration) l'appelle.</summary>
-    internal static Field OpenField(LocalMap map, Colony colony, int x, int y)
+    internal static Field OpenField(LocalMap map, Colony colony, int x, int y, int size = Field.BaseSize)
     {
-        var field = new Field(x, y);
+        var field = new Field(x, y, size);
         foreach (FieldPlot plot in field.Plots)
             map.ClearFlora(plot.X, plot.Y);
         colony.Fields.Add(field);
@@ -141,7 +157,7 @@ public static class Farming
         if (IsSowingSeason(clock.Season) && fallow > 0)
         {
             float daysLeft = Math.Max(1, TimeConstants.DaysPerSeason - clock.DayOfYear);
-            seconds += fallow * (secondsPerPlotSowing + roundTrip / Field.Size / Field.Size) / (daysLeft * workSecondsPerDay);
+            seconds += fallow * (secondsPerPlotSowing + roundTrip / Math.Max(1, PlotCount(colony) / Math.Max(1, colony.Fields.Count))) / (daysLeft * workSecondsPerDay);
         }
         if (ripe > 0 && clock.Season != Season.Hiver)
         {
@@ -160,8 +176,8 @@ public static class Farming
         float total = 0f;
         foreach (Field field in colony.Fields)
         {
-            ServicePoint? depot = SettlementServices.Nearest(colony, ServiceUse.Stock, field.X + Field.Size / 2, field.Y + Field.Size / 2);
-            total += depot is null ? 0f : 2f * 1.2f * SettlementServices.DistanceTo(colony, depot, field.X + Field.Size / 2, field.Y + Field.Size / 2) / SettlementRules.WalkTilesPerSecond;
+            ServicePoint? depot = SettlementServices.Nearest(colony, ServiceUse.Stock, field.X + field.Size / 2, field.Y + field.Size / 2);
+            total += depot is null ? 0f : 2f * 1.2f * SettlementServices.DistanceTo(colony, depot, field.X + field.Size / 2, field.Y + field.Size / 2) / SettlementRules.WalkTilesPerSecond;
         }
         return total / colony.Fields.Count;
     }

@@ -15,10 +15,10 @@ public static partial class SettlementPlanner
             && (colony.Trades.Count > 0 || colony.ExportInterest.GetValueOrDefault(Specialties.NativeOf(colony)) > 0);
     }
 
-    /// <summary>Un chantier de six cases prolonge un enclos ou un marché achevé, sans fermer le bâtiment principal.</summary>
+    /// <summary>Un chantier de six cases prolonge un enclos, un marché, un four ou un moulin achevé, sans fermer le bâtiment principal.</summary>
     internal static Building? PlanExtension(Colony colony, BuildingType type, Building? principalChoisi = null)
     {
-        if (type is not (BuildingType.Pen or BuildingType.Market) || colony.ConstructionSites.Any()) return null;
+        if (type is not (BuildingType.Pen or BuildingType.Market or BuildingType.Oven or BuildingType.Mill) || colony.ConstructionSites.Any()) return null;
         Sync(colony);
         LocalMap map = colony.Map;
         LocalSpatialIndex index = colony.Spatial;
@@ -26,7 +26,8 @@ public static partial class SettlementPlanner
             && (principalChoisi is null || b == principalChoisi)).ToArray())
         {
             Building[] ensemble = colony.Buildings.Where(b => b == principal || b.ExtensionOfId == principal.Id).ToArray();
-            if (ensemble.Length > MaxExtensions) continue;
+            // Un atelier à lots n'a aucun gain au-delà de deux extensions : jamais de module sans capacité ni usage défini.
+            if (ensemble.Length > (type is BuildingType.Oven or BuildingType.Mill ? WorkshopCapacity.MaxExtensions : MaxExtensions)) continue;
             // Chaque ajout touche un module déjà achevé ; aucun tirage aléatoire ne déplace les décisions du village.
             foreach (Building voisin in ensemble.Where(b => b.IsComplete))
             foreach ((int x, int y) in new[] {
@@ -44,6 +45,7 @@ public static partial class SettlementPlanner
                         EntryX = porte.EntryX, EntryY = porte.EntryY, AccessX = porte.AccessX, AccessY = porte.AccessY };
                     colony.Buildings.Add(extension);
                     Adopt(colony, extension);
+                    if (type is BuildingType.Oven or BuildingType.Mill) AttachExtensionProject(colony, extension);
                     return extension;
                 }
             }
@@ -70,11 +72,22 @@ public static partial class SettlementPlanner
             if (x < parcelle.X + parcelle.Width + marge && x + 2 > parcelle.X - marge
                 && y < parcelle.Y + parcelle.Height + marge && y + 3 > parcelle.Y - marge) return false;
         }
-        // Les tombes peuvent ne pas avoir de parcelle ; on garde aussi leur passage libre.
         for (int ty = y - 1; ty <= y + 3; ty++)
         for (int tx = x - 1; tx <= x + 2; tx++)
-            if (index.Has(tx, ty, CellUse.Grave | CellUse.Field)
+            if (index.Has(tx, ty, CellUse.Field)
                 || (index.Has(tx, ty, CellUse.Building) && !ensemble.Any(b => b.Contains(tx, ty)))) return false;
         return true;
+    }
+
+    /// <summary>L'extension d'un atelier est un développement à part entière : un projet <see cref="DevelopmentKind.WorkshopExtension"/> suit son chantier jusqu'à l'achèvement.</summary>
+    private static void AttachExtensionProject(Colony colony, Building extension)
+    {
+        SettlementLayout layout = colony.Layout;
+        if (layout.ParcelById(extension.ParcelId) is not { } parcel)
+            return;
+        var project = new DevelopmentProject(layout.NextProjectId++, DevelopmentKind.WorkshopExtension, DevelopmentPriority.Production, parcel.Id, colony.Clock.Ticks,
+            "extension:" + extension.Type) { OccupantId = extension.Id };
+        layout.Projects.Add(project);
+        parcel.ProjectId = project.Id;
     }
 }

@@ -3,6 +3,13 @@
 Un sandbox où l'on observe plusieurs peuples vivre, commercer et grandir, et où l'on intervient en dieu.
 Référence détaillée à consulter selon le besoin. Vérifier les comportements et paramètres dans le code actuel ; ce guide ne constitue pas une mémoire de session.
 
+## Vocabulaire
+
+Un **empire** est l'ensemble qu'on fonde et qu'on observe (classe `Colony`) : son peuple, son chef, ses savoirs, sa monnaie et tous ses lieux habités. Une **colonie** est un lieu habité de l'empire,
+village d'origine ou campement (classe `Settlement`) : elle a ses propres stocks, champs, bâtiments et habitants. Le **royaume** (`Realm`) réunit plusieurs empires alliés ; il garde son nom actuel.
+Dans le bandeau, le menu déroulant à côté du nom de l'empire liste ses colonies habitées ; choisir une entrée ouvre la vue locale de ce lieu (carte, habitants, stocks).
+Les stocks et la population « présente » sont ceux de la colonie observée ; les citoyens et le cumul des décès sont ceux de l'empire.
+
 ## Organisation
 
 | Dossier | Rôle |
@@ -31,15 +38,75 @@ Règle d'or : **la simulation ne connaît pas l'affichage**. Godot lit `WorldSta
   - la santé et le climat : `Health` (fièvres, blessures, soins), `Climate` (hivers rigoureux des biomes froids, sécheresses des biomes arides) ;
   - la cuisine : `Cuisine` (gâteau et ragoût) ;
   - la vie du village : `Civic` (enclos, puits, entrepôt, infirmerie, marché, taverne, école : ce que la colonie bâtit ensuite, et ce que chacun apporte) ;
-  - les événements et les objectifs : `Events` (incendie, pillards, colporteur) et `Milestones` (jalons que chaque colonie atteint) ;
+  - les événements et les objectifs : `Events` (incendie, colporteur) et `Milestones` (jalons que chaque colonie atteint) ;
   - le progrès : `Knowledge` (savoirs, âges, étude, savoirs qui circulent avec les caravanes) ;
   - les relations entre colonies : `Diplomacy` (opinions, querelles, présents, alliances, guerre et paix), `Warfare` (bandes de guerriers, batailles, butin),
     `Schism` (un groupe part fonder une colonie sœur) ;
-  - les grandes décisions : `Prayers` (la colonie demande l'accord du joueur : barrage, alliance, guerre, paix, schisme).
+  - les grandes décisions : `Prayers` (la colonie demande l'accord du joueur : barrage, alliance, guerre, paix, schisme) ;
+  - la nature sauvage (`Simulation/Nature/`) : `Wildlife` (populations par région, hardes visibles, migrations d'hiver, alphas), `Hunting` (chasse et grande chasse),
+    `Taming` (capture, apprivoisement, lignées), `Predation` (enclos, travailleurs isolés, champs piétinés), `WildResources` (miel, champignons, plantes) ;
+    son hasard est `WorldState.Nature`, distinct de `Random`, `Chance` et `Politics` ;
+  - le transport : `TransportView` (contenu et destination d'un porteur ou d'une caravane), `Carts` (charrettes locales), `Bridges` (gués et ponts),
+    `Trade.Gear` (équipement des caravanes, risque de route et interception) ;
+  - la politique : `Leadership` (chef élu par les adultes), `Realms` (royaumes, roi, loyauté, entretien, sécession), `Conquest` (conquête après une bataille gagnée sans appel).
+
+### Nature sauvage
+
+Tous les animaux sont sauvages au départ : l'enclos achevé est **vide**. Chaque région porte une population par espèce (lapin, cerf, sanglier, loup, ours, coq sauvage, mouflon, aurochs, cheval) qui croît
+jusqu'à la capacité d'accueil de son biome, réduite par la présence humaine et par l'hiver ; une partie prend la forme de **hardes visibles** (huit au plus, dont deux de prédateurs) qui empruntent leurs bêtes
+à la région. Les habitants **chassent** quand la viande rapportée par heure l'emporte sur la cueillette et la pêche (jamais sous 30 % de gibier), **capturent** de préférence des jeunes et les **apprivoisent** à l'enclos
+(un loup devient un chien, qui aide à la chasse et protège les enclos), et leurs lignées deviennent plus dociles et plus productives. Les **prédateurs** attaquent les enclos, blessent rarement à mort les travailleurs isolés
+et rendent un alpha (ours, loup meneur) redoutable : les adultes les plus téméraires partent alors pour une **grande chasse**, qui rapporte prestige et renom. Les herbivores piétinent les champs proches.
+Le miel (et la cire), les champignons et les plantes médicinales sont des ressources sauvages épuisables.
+Chaque espèce a son sprite ; un contour doré signale un alpha et « ! » un prédateur qui traque. Le survol d'une harde donne ses effectifs et son état.
+Les ruches, champignons et herbes encore disponibles apparaissent sur le terrain. Dans les enclos, les silhouettes représentent les espèces présentes ; le survol donne les effectifs réels, y compris les bêtes en apprivoisement attachées par une longe.
+
+### Transport
+
+Le stock reste commun à l'établissement, on y accède au dépôt achevé le plus proche. Une **charrette** (10 bois, 1 fer, à la forge) permet à un porteur loin du dépôt de charger quatre fois plus.
+Traverser une rivière à gué est lent (×3, ×6 pour un grand fleuve) : un passage fréquent fait bâtir un **pont** (8 bois et 6 pierre par case). Une colonie équipe ses **caravanes** quand elle en a besoin et les moyens :
+charrette de bois (capacité ×2), charrette de fer (×3), bêtes de trait (×4, plus rapides, nourries au grain). Une **interception** reste très rare : elle dépend de la distance aux colonies, des prédateurs et de l'état de la route,
+et ne retire qu'une part comptée de la cargaison. Au survol, un porteur, une charrette ou une caravane dit son contenu et sa destination.
+Les ponts achevés portent un tablier de bois ; les chantiers montrent les matériaux sur les cases restant à construire. Un chien accompagne visuellement le chasseur qui en bénéficie.
+
+### Chefs, royaumes et conquête
+
+Chaque colonie a un **chef élu par tous ses adultes** (réélu tous les deux ans, à sa mort ou après une crise) ; sa personnalité infléchit de 15 % au plus les seuils habituels (vivres visés, gain minimal d'une caravane,
+délai entre fondations, seuils d'opinion pour l'alliance et la guerre) mais n'impose rien : alliance, guerre et paix restent des prières au joueur. Une colonie fille naît dans le **royaume** de sa mère ; les membres sont alliés et élisent
+un roi parmi leurs chefs. La capitale paie un entretien (consommé, jamais transféré), la loyauté des membres baisse avec la distance et la taille du royaume, et une colonie peu attachée fait sécession. Une **conquête**
+(victoire sans appel, après deux batailles gagnées, contre une colonie presque sans défenseurs) tue, fait fuir ou assujettit : la colonie garde son nom et son peuple mais entre dans le royaume du vainqueur.
+Sur la carte du monde, chaque région possédée prend la couleur de son royaume et les frontières se tracent entre royaumes.
+La légende associe les couleurs aux noms des royaumes. Le survol d'une colonie affiche son chef, son roi et sa loyauté ; son bouton dans l'interface indique aussi son prestige.
+
+### Pause d'un artisan pour manger
+
+Un artisan affamé peut interrompre sa fabrication pour prendre un repas, puis reprendre son ouvrage avec sa progression et ses matières déjà engagées.
+Les matières restent réservées pendant la pause ; elles sont rendues si l'artisan meurt, quitte la colonie ou perd son atelier. Les aliments périssables continuent de vieillir pendant cette interruption.
 
 ### Agriculture
 
 En climat doux, les cultures demandent **8,75 jours de pousse** (maturité à la neuvième mise à jour quotidienne), soit 25 % de plus que le cycle de référence de 7 jours. Leur rendement est augmenté du même facteur : **5 céréales par parcelle ordinaire au lieu de 4**. La fertilité du sol, les berges, l'irrigation et l'assolement sont inclus avant l'arrondi final en céréales entières. Le froid et les sécheresses ralentissent toujours la pousse ; les cultures non moissonnées gèlent au début de l'hiver.
+
+Les **champs** sont des carrés de parcelles dont le côté croît avec la population présente de la colonie (`Farming.FieldSizeFor`) : **4 × 4** pour un campement (moins de 16 habitants), **6 × 6** de 16 à 32, **8 × 8** au-delà.
+Un champ garde le côté qu'il avait à son ouverture ; les nouveaux champs profitent de la croissance. Le planificateur, l'accès, le travail et le rendu suivent la surface réelle (`Field.Size`).
+Les **céréales crues** sont une matière première : en dernier recours seulement, elles rassasient très peu (`Stockpile.GrainMealValue`, un dixième de repas de baies) et n'entrent que pour cette valeur dans les réserves,
+les provisions de voyage et le ravitaillement. Le pain est la vraie nourriture de base : le **four** (qui moud à bras s'il n'y a pas de moulin : 3 céréales + 1 bois → 2 pains) est bâti dès les premières récoltes ;
+le **moulin** (3 céréales → 3 farines, puis 3 farines + 1 bois → 4 pains) vient quand le grain s'accumule et améliore le rendement. Les habitants cueillent avant de manger du grain cru.
+
+### Natalité et longévité
+
+La fécondité est l'inverse de la longévité : à prospérité égale, les peuples à vie courte ont plus de naissances par année de jeu.
+Les humains servent de référence. La gestation et l'intervalle minimal entre naissances suivent aussi l'échelle de vie du peuple.
+
+| Peuple | Longévité relative | Fécondité relative | Gestation | Intervalle minimal entre naissances |
+| --- | ---: | ---: | ---: | ---: |
+| Orques | 0,6 | 1,67 | 3 jours | 0,6 an |
+| Humains | 1 | 1 | 5 jours | 1 an |
+| Nains | 2 | 0,5 | 10 jours | 2 ans |
+| Elfes | 4 | 0,25 | 20 jours | 4 ans |
+
+Les couples conçoivent selon les réserves alimentaires, le logement et l'humeur. Le manque de vivres freine toujours les naissances.
+Les âges de maturité et de vieillesse gardent la même échelle de longévité.
 
 ### Ce que la colonie bâtit
 
@@ -52,7 +119,7 @@ une **école** (3 enfants ou 16 habitants). Elle passe ceux dont elle ignore enc
 
 Les emprises sont différenciées : puits et fût **1 × 1**, huttes et petits ateliers **2 × 2**, forge et services **3 × 2**, moulin **3 × 3**,
 enclos, marché et entrepôt **4 × 3**. Les matériaux et le travail des constructions agrandies suivent leur surface.
-Une **mine de 6 × 4** demande **120 bois, 100 pierres et 260 secondes de travail** : elle permet d'exploiter cuivre, or, charbon minéral et gemmes.
+Une **mine de 6 × 4** demande **72 bois, 72 pierres et 160 secondes de travail** : elle permet d'exploiter cuivre, or, charbon minéral et gemmes.
 Le fer de surface et les carrières restent accessibles sans mine. Le **barrage de 5 × 3** (ou 3 × 5 selon le courant) coûte **100 bois, 240 pierres et
 480 secondes de travail** ; il ferme jusqu'à trois cases de rivière et retient jusqu'à **160 cases d'eau**, avec pêche, berges fertiles et irrigation.
 Les habitants choisissent les parcelles, les portes et les chemins selon ces emprises ; la demande de barrage conserve son passage par une prière.
@@ -105,7 +172,7 @@ faible pour un peuple belliqueux, alliance (+25), guerre (−40), trêve (−10)
 - **Bêtes rares et abondantes** : chaque espèce est plus ou moins répandue selon le biome (`Husbandry.Abundance`) : les poules abondent en prairie, en forêt tempérée
   et en jungle, les moutons dans la steppe, la toundra et la taïga, les vaches en prairie ; le désert, la glace, la jungle et les marais manquent de vaches et de moutons.
   Là où une espèce est rare, le troupeau de départ est maigre ou absent (pas de vache dans le désert) et il se multiplie lentement.
-  **Les bêtes coûtent une fortune** (prix de base : poule 100, mouton 250, vache 600 pièces, jusqu'à trois fois plus là où l'espèce est rare ; voir
+  **Les bêtes restent un investissement** (prix de base : poule 80, mouton 180, vache 360 pièces, jusqu'à trois fois plus là où l'espèce est rare ; voir
   `Economy.BaselineCost` et `Husbandry.CostFactor`) et une colonie n'y songe que si elle a en caisse deux fois et demie leur prix
   (`Husbandry.LivestockWealthFactor`) : seule une colonie très prospère en achète, par caravane ou chez le colporteur, et l'enclos accueille la bête le lendemain.
   Une colonie dont l'enclos est plein garde les petits (jusqu'à 4 par espèce) pour ces rares acheteurs.
@@ -123,7 +190,7 @@ faible pour un peuple belliqueux, alliance (+25), guerre (−40), trêve (−10)
   (mangée pendant le délai où elle se garde, 3 jours ou 7 avec un entrepôt, ou salée) : on n'abat pas pour la laisser pourrir. Une bête qu'on ne peut plus nourrir l'hiver est elle aussi abattue plutôt que de dépérir.
   Les colons de l'agriculture (et ceux de la cueillette en cas de besoin) font l'abattage à l'enclos, à l'enclos le plus proche.
   La **viande fraîche** se mange avant le reste (la plus vieille d'abord) et **commence à se gâter après 3 jours, ou 7 jours si la colonie a un entrepôt** : passé ce délai, elle perd la moitié de son stock chaque jour. **Le sel la conserve** : chaque matin, la viande fraîche est salée (une unité de sel pour huit de
-  viande) en **viande salée**, qui ne se gâte jamais, se mange après les céréales (c'est la réserve de longue durée) et s'échange comme une marchandise. Le sel, denrée de région,
+  viande) en **viande salée**, qui ne se gâte jamais, se mange avant le lait, les œufs et les céréales crues (c'est la réserve de longue durée) et s'échange comme une marchandise. Le sel, denrée de région,
   gagne ainsi un usage de plus.
 - **Plusieurs enclos** : une colonie n'est pas limitée à un enclos. Quand les premiers débordent (enclos plein et quatre petits en réserve que personne
   n'achète), qu'elle compte au moins huit habitants par enclos, que ses vivres sont confortables (4 jours) et que son grain peut nourrir un troupeau plus grand l'hiver,
@@ -147,15 +214,16 @@ faible pour un peuple belliqueux, alliance (+25), guerre (−40), trêve (−10)
   des deux autres. Le marché troque la denrée locale avec les nomades (compétence de négoce), augmente de moitié la charge des caravanes, et les marchands
   expérimentés rabattent le coût des voyages. Le sel conserve les vivres, les épices relèvent le moral, une bûche de bois dur brûle comme trois de bois.
   Toutes ces marchandises, avec la laine et les vêtements, apparaissent dans l'écran Économie.
-  Quand les échanges se développent, le marché gagne jusqu'à **trois extensions** de **2 × 3 cases** : **21 bois, 9 pierres et 36 secondes de travail** chacune.
+  Quand les échanges se développent, le marché gagne jusqu'à **trois extensions** de **2 × 3 cases** : **12 bois, 6 pierres et 24 secondes de travail** chacune.
   Les ajouts sont décidés progressivement à partir de **20 habitants**, puis **26** et **32**, après les besoins essentiels du village.
   Chaque extension achevée prépare **9 unités de charge supplémentaires** par caravane ; c'est le plus grand marché des deux partenaires qui fixe ce bonus, avant l'effet de la monnaie frappée.
 - **Santé** : en hiver surtout, ou à jeun, ou à la belle étoile, un colon peut tomber malade ; un geste de travail peut le blesser. Il garde le lit
   (à l'infirmerie, il guérit deux fois plus vite) et peut succomber s'il n'a pas été soigné par un guérisseur (compétence de médecine). Le puits divise le
   risque de fièvre par deux. Les biomes froids brûlent plus de bois et connaissent des vagues de froid ; les biomes arides connaissent des sécheresses l'été.
-- **Entrepôt** : au-delà d'une capacité de stockage, le grain, la farine, le pain et les œufs pourrissent en partie.
-- **Événements** : un incendie détruit un bâtiment (le puits l'éteint à temps), des pillards attaquent une colonie qui a de quoi les attirer
-  (des défenseurs adultes et des outils les repoussent), un colporteur propose des denrées lointaines ou achète un surplus.
+- **Entrepôt** : 36 bois, 24 pierres et 60 secondes de travail ; chaque entrepôt achevé protège 240 unités supplémentaires de vivres.
+  Au-delà d'une capacité de stockage, le grain, la farine, le pain, les œufs et le lait pourrissent en partie.
+- **Événements** : un incendie détruit un bâtiment (le puits l'éteint à temps),
+  un colporteur propose des denrées lointaines ou achète un surplus.
 - **Objectifs** : `Milestones.All` liste les jalons (population, premier pain, premier outil de fer, barrage, enclos, caravane, village…) ; chacun est célébré
   dans le journal et réjouit un peu tout le monde. L'écran Économie en donne le compte.
 
@@ -185,14 +253,16 @@ dans `user://settings.cfg`.
 
 L'interface adapte les stocks à la largeur de la fenêtre : une rangée sur grand écran, deux rangées sur une fenêtre
 plus petite. Le bandeau indique les jours de repas en réserve ; la nourriture est signalée en rouge sous deux jours.
-La case **Nourriture** additionne la valeur nutritive des baies, du poisson, des céréales et du pain :
-100 points de faim valent 1 nourriture (0,6 par baie, poisson ou céréale ; 0,85 par pain).
-Un clic ouvre le détail sous la case, avec les quantités et leur contribution. La farine y figure avec une valeur nulle
-tant qu'elle n'est pas cuite en pain. Un second clic, un clic ailleurs ou Échap replie le détail.
+La case **Nourriture** additionne la valeur nutritive des baies, du poisson, du pain et des autres vivres de la colonie observée :
+100 points de faim valent 1 nourriture (0,6 par baie ou poisson ; 0,85 par pain ; 0,1 par céréale crue).
+Un clic ouvre le détail sous la case, avec les quantités et leur contribution. Un second clic, un clic ailleurs ou Échap replie le détail.
+La case **Cultures** (céréales, farine, lin) et la case **Minéraux** (roches et sels, minerais bruts, métaux, pierres précieuses) ouvrent de même leurs quantités détaillées ;
+l'écran Économie présente aussi les biens par rubrique (vivres, cultures, matériaux, minéraux, produits transformés).
+En haut à gauche, le nom de l'empire, le menu de ses colonies et le **cumul des décès de l'empire depuis le début de la partie** (le détail local et les causes sont dans l'infobulle ; aucune tombe n'existe)
 L'économie et les prières disposent de panneaux défilants ; l'actualisation de l'économie conserve la position de lecture.
 Les panneaux se replient lorsqu'une carte ou les commandes occupent leur emplacement.
 
-**C** ou **Recentrer** rejoint le camp, ou l'habitant sélectionné. **Tab** passe à la colonie suivante.
+**C** ou **Recentrer** rejoint le camp, ou l'habitant sélectionné. **Tab** passe à l'empire suivant.
 **M** ouvre la carte du monde, **E** l'économie, **R** les savoirs et relations, **P** les prières, **J** le journal et **H** les commandes.
 Le panneau **Savoirs et relations** montre l'âge de la colonie, le savoir à l'étude et l'arbre des savoirs, puis son opinion de chaque autre colonie
 (avec ses raisons), ses pactes, ses batailles et les bandes de guerriers en marche. La carte du monde trace les alliances (vert), les guerres (rouge)
@@ -235,8 +305,8 @@ sans changer le format des sauvegardes.
 Les vitesses sont ×1, ×4 et ×30 (touches **1**, **2**, **3**) et **×200** (touche **4**), qui fait passer une année en 4,5 secondes.
 À ×200, la carte et les habitants ne sont plus dessinés : leurs vues sont libérées, textures comprises, et la simulation reçoit
 jusqu'à 25 ms par image au lieu de 10. À leur place, la **vue chiffrée** (`StatsPanel`) montre le monde (population et sa courbe,
-colonies habitées, caravanes, tombes et leurs causes, vitesse réellement atteinte, temps écoulé) puis une carte par colonie :
-habitants, humeur, réserves, pièces, bâtiments, bêtes, malades, tombes, jalons, alertes (réserves basses, froid, sécheresse,
+empires, caravanes, décès et leurs causes, vitesse réellement atteinte, temps écoulé) puis une carte par empire :
+habitants, humeur, réserves, pièces, bâtiments, bêtes, malades, décès, jalons, alertes (réserves basses, froid, sécheresse,
 prière en attente) et dernière pensée. Les courbes suivent au choix les habitants, les réserves, l'humeur ou les pièces ; sous les cartes,
 la comparaison met les colonies sur la même échelle (les huit premières, chacune avec sa teinte, reprise par le liseré de sa carte).
 Le survol d'une courbe en donne les relevés.
@@ -244,7 +314,7 @@ Le survol d'une courbe en donne les relevés.
 Les relevés (un par jour de jeu ; au-delà de 480, un sur deux) sont tenus par l'affichage (`View/ColonyHistory`) dès le début
 de la partie, quelle que soit la vitesse, et repartent de zéro au chargement. La pause garde la vue chiffrée ; **1**, **2** ou **3**,
 **Observer** sur une colonie (ou son bouton dans la barre des colonies) rendent la carte, repeinte telle que les années l'ont changée,
-et la vitesse d'avant (en restant en pause si le jeu l'était). **Tab** désigne la colonie à retrouver, et celle de l'écran Économie.
+et la vitesse d'avant (en restant en pause si le jeu l'était). **Tab** désigne l'empire à retrouver, et celle de l'écran Économie.
 Une partie enregistrée en vue chiffrée s'y recharge sans peindre la carte. Mesuré sur un Ryzen 5 7600X (version Debug du jeu,
 quatre colonies) : ×200 tenu après dix ans de partie, la simulation prenant environ 6 ms par image.
 

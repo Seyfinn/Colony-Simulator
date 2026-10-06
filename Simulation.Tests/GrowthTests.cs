@@ -16,12 +16,13 @@ public class GrowthTests(ITestOutputHelper output)
         // Neuf graines : la croissance d'une colonie est très chaotique (une même graine double en 1,2 ou en 4 ans selon le moindre
         // changement), la médiane de cinq parties basculait d'un côté ou de l'autre de la cible au gré des nouveautés.
         int[] seeds = [12345, 2, 3, 4, 5, 6, 7, 8, 9];
-        var yearsToDouble = new List<double>();
-        var populationAtSix = new List<int>();
+        var doubledAt = new double?[seeds.Length];
+        var populationAtSix = new int[seeds.Length];
 
-        foreach (int seed in seeds)
+        // Les parties sont indépendantes : on les joue en parallèle, c'est le test le plus long de la suite.
+        Parallel.For(0, seeds.Length, s =>
         {
-            var world = new WorldState(seed, startingColonists: 8);
+            var world = new WorldState(seeds[s], startingColonists: 8);
             Colony colony = world.Colonies[0];
             double? doubled = null;
             for (long i = 1; i <= 6 * TimeConstants.TicksPerYear; i++)
@@ -30,10 +31,12 @@ public class GrowthTests(ITestOutputHelper output)
                 if (doubled is null && colony.Members.Count >= 16)
                     doubled = i / (double)TimeConstants.TicksPerYear;
             }
-            populationAtSix.Add(colony.Members.Count);
-            yearsToDouble.Add(doubled ?? 99);
-            output.WriteLine($"graine {seed} : 16 colons en {doubled:0.0} ans, {colony.Members.Count} colons à 6 ans");
-        }
+            populationAtSix[s] = colony.Members.Count;
+            doubledAt[s] = doubled;
+        });
+        for (int s = 0; s < seeds.Length; s++)
+            output.WriteLine($"graine {seeds[s]} : 16 colons en {doubledAt[s]:0.0} ans, {populationAtSix[s]} colons à 6 ans");
+        double[] yearsToDouble = doubledAt.Select(d => d ?? 99).ToArray();
 
         double median = yearsToDouble.OrderBy(y => y).ElementAt(seeds.Length / 2);
         output.WriteLine($"Médiane du premier doublement : {median:0.0} ans ; population moyenne à 6 ans : {populationAtSix.Average():0}");

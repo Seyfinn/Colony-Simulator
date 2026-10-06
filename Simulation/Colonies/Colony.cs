@@ -100,6 +100,16 @@ public sealed class Colony
     private List<Monument>? _monuments = [];
     private List<DivineWish>? _wishes = [];
     private int _nextOfferingId = 1, _nextMonumentId = 1, _nextWishId = 1;
+    private List<DivineEffect>? _divineEffects = [];
+    private int _nextEffectId = 1;
+
+    /// <summary>Les pouvoirs appliquÃ©s par des souhaits accordÃ©s (voir <see cref="DivinePowers"/>), vivants ou clos rÃ©cemment.</summary>
+    public List<DivineEffect> DivineEffects => _divineEffects ??= [];
+    internal int NextEffectId() => _nextEffectId++;
+    internal void AdoptEffects(IEnumerable<DivineEffect> effects)
+    {
+        foreach (DivineEffect e in effects) { e.Id = _nextEffectId++; DivineEffects.Add(e); }
+    }
 
     /// <summary>Les projets d'offrande de la colonie (tous établissements), y compris achevés ou abandonnés.</summary>
     public List<OfferingProject> Offerings => _offerings ??= [];
@@ -126,7 +136,7 @@ public sealed class Colony
     internal int NextWishId() => _nextWishId++;
 
     /// <summary>
-    /// L'occupation de la grille (bâtiments, champs, tombes, canaux, parcelles, accès), reconstruite au besoin depuis les objets de la
+    /// L'occupation de la grille (bâtiments, champs, canaux, parcelles, accès), reconstruite au besoin depuis les objets de la
     /// simulation : un cache, jamais sauvegardé. Il se remet à jour tout seul quand un objet est ajouté ou retiré.
     /// </summary>
     public GodColony.Simulation.Map.LocalSpatialIndex Spatial
@@ -162,8 +172,11 @@ public sealed class Colony
     /// <summary>L'horloge du monde, pour calculer les âges.</summary>
     internal GodColony.Simulation.Time.GameClock Clock { get; set; } = new(0);
 
-    /// <summary>Ceux qui sont morts dans la colonie, avec leur tombe.</summary>
-    public List<Grave> Graves { get => LocalSettlement.Graves; }
+    /// <summary>Ceux qui sont morts dans l'établissement observé (le détail local des décès, avec leur cause).</summary>
+    public List<Death> Deaths { get => LocalSettlement.Deaths; }
+
+    /// <summary>Le cumul des décès de tout l'empire depuis le début de la partie, tous établissements confondus (il survit à la fermeture d'un établissement).</summary>
+    public int TotalDeaths { get; internal set; }
 
     /// <summary>Les colons qui travaillent : tout le monde sauf les enfants.</summary>
     public IEnumerable<Colonist> Workers => PresentMembers.Where(m => m.Stage != LifeStage.Child);
@@ -232,7 +245,7 @@ public sealed class Colony
     public IEnumerable<Canal> CanalsInProgress => Canals.Where(c => !c.IsComplete);
 
     /// <summary>Les ateliers achevés d'un type donné.</summary>
-    public IEnumerable<Building> Workshops(BuildingType type) => Buildings.Where(b => b.Type == type && b.IsComplete);
+    public IEnumerable<Building> Workshops(BuildingType type) => Buildings.Where(b => b.Type == type && b.IsComplete && !b.IsExtension);
 
     /// <summary>
     /// Des postes de mineur où aucun chemin n'a mené aujourd'hui (roche isolée sur un plateau) : on passe aux suivants
@@ -282,6 +295,9 @@ public sealed class Colony
     public int Chickens { get => LocalSettlement.Chickens; internal set => LocalSettlement.Chickens = value; }
     public int Sheep { get => LocalSettlement.Sheep; internal set => LocalSettlement.Sheep = value; }
     public int Cows { get => LocalSettlement.Cows; internal set => LocalSettlement.Cows = value; }
+    public int Horses { get => LocalSettlement.Horses; internal set => LocalSettlement.Horses = value; }
+    public int Oxen { get => LocalSettlement.Oxen; internal set => LocalSettlement.Oxen = value; }
+    internal float HorseGrowth { get => LocalSettlement.HorseGrowth; set => LocalSettlement.HorseGrowth = value; }
 
     /// <summary>Œufs, laine et lait qui attendent à l'enclos qu'on vienne les ramasser.</summary>
     public float EggsReady { get => LocalSettlement.EggsReady; internal set => LocalSettlement.EggsReady = value; }
@@ -340,6 +356,33 @@ public sealed class Colony
 
     /// <summary>La colonie dont celle-ci est issue par un schisme (null pour une fondation).</summary>
     public Colony? Parent { get; internal set; }
+
+    /// <summary>Le prestige de la colonie : il monte avec les grandes chasses et les conquêtes (voir <see cref="Nature.Hunting"/>).</summary>
+    public int Prestige { get; internal set; }
+
+    // --- Chef, royaume, équipement des caravanes (voir Leadership, Realms, Trade) ---
+
+    /// <summary>Le chef élu par les adultes de la colonie (0 : aucun), depuis quand, et quand aura lieu la prochaine élection.</summary>
+    public int ChiefId { get; internal set; }
+    public long ChiefSinceTicks { get; internal set; }
+    public long NextElectionTicks { get; internal set; }
+    public int ElectionCount { get; internal set; }
+
+    /// <summary>Le royaume dont la colonie est membre (0 : indépendante), sa loyauté envers la capitale (0..1) et les jours passés sous le seuil de sécession.</summary>
+    public int RealmId { get; internal set; }
+    public float Loyalty { get; internal set; } = 1f;
+    public int LowLoyaltyDays { get; internal set; }
+
+    /// <summary>Le moment de la dernière conquête subie (null si la colonie n'a jamais été conquise).</summary>
+    public long? ConqueredTicks { get; internal set; }
+
+    /// <summary>Le meilleur équipement de caravane que la colonie s'est donné (voir <see cref="CaravanGear"/>).</summary>
+    public CaravanGear CaravanGear { get; internal set; }
+
+    /// <summary>Jours consécutifs d'humeur très basse, dernière défaite de guerre et dernière élection de crise (voir <see cref="Leadership"/>).</summary>
+    internal int LowMoodDays { get; set; }
+    internal long? LastDefeatTicks { get; set; }
+    internal long? LastCrisisElectionTicks { get; set; }
 
     /// <summary>Lassitude de la guerre : elle monte avec les jours de guerre et les morts, et retombe en paix.</summary>
     public float WarWeariness { get; internal set; }

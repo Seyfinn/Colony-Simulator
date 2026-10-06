@@ -7,16 +7,16 @@ namespace GodColony.View;
 
 public static partial class BuildingSprites
 {
-    private static readonly Dictionary<(BuildingType Type, WoodlandBiome Biome, int Width, int Height), ImageTexture> Ouvrages = [];
+    private static readonly Dictionary<(BuildingType Type, WoodlandBiome Biome, int Width, int Height, bool Extension), ImageTexture> Ouvrages = [];
 
     /// <summary>La silhouette suit l'emprise réelle, avec des détails à l'échelle des habitants.</summary>
     public static ImageTexture For(Building building, WoodlandBiome biome = WoodlandBiome.TemperatePlain)
     {
         if (building.Width == 2 && building.Height == 2)
             return Get(building.Type.ToString(), biome);
-        var key = (building.Type, biome, building.Width, building.Height);
+        var key = (building.Type, biome, building.Width, building.Height, building.IsExtension);
         if (Ouvrages.TryGetValue(key, out var cached)) return cached;
-        string kind = building.IsDam && building.Height > building.Width ? "dam_side" : building.Type.ToString().ToLowerInvariant();
+        string kind = building.Type == BuildingType.Mill ? "mill_body" : building.IsDam && building.Height > building.Width ? "dam_side" : building.Type.ToString().ToLowerInvariant();
         string suffix = building.IsExtension ? "extension" : building.Width == 1 && building.Height == 1 ? "small" : "large";
         int width = building.Width * 32, height = building.Height * 32 + 16;
         var provided = AssetLibrary.Get($"buildings/{kind}_{biome.ToString().ToLowerInvariant()}_{suffix}.png")
@@ -34,6 +34,8 @@ public static partial class BuildingSprites
         else if (b.IsDam) GrandBarrage(a, b.Height > b.Width);
         else if (b.Type == BuildingType.Pen) GrandEnclos(a, biome, b.IsExtension);
         else if (b.Type == BuildingType.Market) GrandMarche(a, biome);
+        else if (b.IsExtension && b.Type is BuildingType.Oven or BuildingType.Mill) ModuleAtelier(a, biome, b.Type);
+        else if (b.Type == BuildingType.Shrine) Sanctuaire(a, biome);
         else if (b.Width == 1)
         {
             Image image = b.Type == BuildingType.Cask ? CaskSource("empty").Image : Get(b.Type.ToString(), biome).GetImage();
@@ -67,10 +69,11 @@ public static partial class BuildingSprites
         return a;
     }
 
-    private static void GrandeMine(PixelArt a, WoodlandBiome biome)
+    private static void GrandeMine(PixelArt a, WoodlandBiome biome, int etape = 4)
     {
         // Le sol usé relie la galerie, le puits et le hangar de tri, tous à l'échelle d'un ouvrier.
         CourTexturee(a, 5, 65, 182, 75, C(130, 122, 100));
+        if (etape == 0) return;
         a.Polygon(Mortar, new(3, 75), new(12, 49), new(29, 34), new(53, 39), new(73, 65), new(70, 112), new(5, 113));
         a.Polygon(Stone, new(6, 71), new(14, 50), new(30, 37), new(38, 63), new(29, 88), new(8, 100));
         a.Polygon(Stone.Darkened(.16f), new(31, 37), new(51, 42), new(68, 63), new(61, 94), new(38, 83));
@@ -83,12 +86,14 @@ public static partial class BuildingSprites
         // Deux portiques qui se perdent dans le noir donnent de la profondeur à la galerie.
         a.Line(30, 82, 30, 102, Wood.Darkened(.3f)); a.Line(45, 82, 45, 102, Wood.Darkened(.3f));
         a.Line(30, 82, 45, 82, Wood); a.Box(33, 88, 10, 2, Wood.Darkened(.4f));
-        Roof(a, biome, 7, 71, 47, 69);
+        // Un auvent adossé à la roche protège la galerie ; son unique pente suit la profondeur de la cour.
+        AuventGalerie(a, biome, etape >= 3);
         a.Box(15, 81, 5, 8, Ink); a.Box(16, 83, 3, 4, Brass); a.Dot(17, 83, StoneLight);
         // Le puits est cerclé de pierre ; les pieds évasés et les boulons portent le chevalement.
         a.Oval(108, 112, 27, 12, Mortar); a.Oval(107, 109, 23, 10, Stone);
         a.Oval(107, 109, 17, 7, Soot);
         foreach (int x in new[] { 83, 126 }) Masonry(a, x - 3, 112, 13, 8, Stone, 6, 4);
+        if (etape == 1) return;
         a.Polygon(Ink, new(89, 17), new(98, 17), new(90, 116), new(81, 116));
         a.Polygon(Wood, new(91, 18), new(96, 18), new(87, 114), new(84, 114));
         a.Line(91, 19, 83, 113, WoodLight);
@@ -103,31 +108,48 @@ public static partial class BuildingSprites
             foreach (int x in new[] { 89, 127 }) { a.Box(x, y, 3, 4, Mortar); a.Dot(x + 1, y + 1, StoneLight); }
         }
         Beam(a, 84, 13, 53, 7);
-        a.Oval(109, 15, 11, 11, Ink); a.Oval(109, 15, 9, 9, WoodLight); a.Oval(109, 15, 6, 6, Soot);
-        a.Line(102, 10, 116, 20, WoodLight); a.Line(104, 22, 114, 8, WoodLight); a.Oval(109, 15, 2, 2, Stone);
-        a.Line(106, 24, 106, 97, C(197, 181, 134)); a.Line(112, 24, 112, 97, WoodLight);
-        a.Box(99, 96, 23, 17, Ink); a.Box(101, 98, 19, 12, Wood);
-        for (int x = 102; x < 120; x += 5) a.Line(x, 99, x, 109, WoodLight);
-        a.Box(100, 102, 22, 2, Mortar); a.Box(100, 109, 22, 2, Mortar);
+        if (etape >= 3)
+        {
+            a.Oval(109, 15, 11, 11, Ink); a.Oval(109, 15, 9, 9, WoodLight); a.Oval(109, 15, 6, 6, Soot);
+            a.Line(102, 10, 116, 20, WoodLight); a.Line(104, 22, 114, 8, WoodLight); a.Oval(109, 15, 2, 2, Stone);
+            a.Line(106, 24, 106, 97, C(197, 181, 134)); a.Line(112, 24, 112, 97, WoodLight);
+            a.Box(99, 96, 23, 17, Ink); a.Box(101, 98, 19, 12, Wood);
+            for (int x = 102; x < 120; x += 5) a.Line(x, 99, x, 109, WoodLight);
+            a.Box(100, 102, 22, 2, Mortar); a.Box(100, 109, 22, 2, Mortar);
+        }
         // Échelle de service, tambour du treuil et atelier couvert.
         a.Line(73, 51, 73, 114, Wood); a.Line(79, 51, 79, 114, WoodLight);
         for (int y = 53; y < 113; y += 6) a.Line(73, y, 79, y, WoodLight);
-        a.Box(141, 75, 42, 28, Wood.Darkened(.25f));
-        for (int x = 144; x < 182; x += 5) a.Line(x, 76, x, 100, Wood);
+        if (etape >= 3)
+        {
+            a.Box(141, 75, 42, 28, Wood.Darkened(.25f));
+            for (int x = 144; x < 182; x += 5) a.Line(x, 76, x, 100, Wood);
+        }
         Beam(a, 140, 73, 4, 31); Beam(a, 179, 73, 4, 31);
-        Roof(a, biome, 136, 188, 47, 72);
-        a.Box(145, 91, 33, 5, WoodLight); Beam(a, 148, 96, 3, 10); Beam(a, 174, 96, 3, 10);
-        a.Box(153, 85, 12, 6, Mortar); a.Line(153, 85, 164, 85, StoneLight);
-        a.Line(172, 78, 172, 89, WoodLight); a.Line(168, 80, 176, 78, Stone);
-        CaisseDetaillee(a, 145, 111, 17, 13); CaisseDetaillee(a, 166, 106, 16, 12);
-        a.Oval(93, 128, 8, 5, Ink); a.Box(84, 121, 18, 7, Wood);
-        for (int x = 85; x < 101; x += 3) a.Line(x, 121, x, 127, StoneLight);
-        a.Line(101, 123, 111, 123, Ink); a.Line(111, 123, 111, 116, WoodLight);
+        if (etape >= 3) Roof(a, biome, 136, 188, 47, 72);
+        else
+        {
+            Beam(a, 140, 72, 43, 3);
+            a.Line(137, 72, 151, 48, WoodLight); a.Line(151, 48, 185, 72, Wood);
+            a.Line(151, 48, 175, 52, WoodLight); a.Line(175, 52, 185, 72, WoodLight);
+            a.Line(145, 72, 157, 49, Wood); a.Line(158, 73, 169, 51, Wood);
+        }
+        if (etape >= 3)
+        {
+            a.Box(145, 91, 33, 5, WoodLight); Beam(a, 148, 96, 3, 10); Beam(a, 174, 96, 3, 10);
+            a.Box(153, 85, 12, 6, Mortar); a.Line(153, 85, 164, 85, StoneLight);
+            a.Line(172, 78, 172, 89, WoodLight); a.Line(168, 80, 176, 78, Stone);
+            CaisseDetaillee(a, 145, 111, 17, 13); CaisseDetaillee(a, 166, 106, 16, 12);
+            a.Oval(93, 128, 8, 5, Ink); a.Box(84, 121, 18, 7, Wood);
+            for (int x = 85; x < 101; x += 3) a.Line(x, 121, x, 127, StoneLight);
+            a.Line(101, 123, 111, 123, Ink); a.Line(111, 123, 111, 116, WoodLight);
+        }
         foreach (int x in new[] { 27, 49 })
         {
             a.Line(x, 105, x + 28, 140, Soot); a.Line(x + 1, 105, x + 29, 140, StoneLight);
         }
         for (int y = 110; y < 140; y += 6) a.Line(24 + (y - 105) * 4 / 5, y, 53 + (y - 105) * 4 / 5, y, Wood);
+        if (etape < 3) return;
         a.Oval(57, 132, 20, 4, C(92, 89, 76));
         CaisseDetaillee(a, 43, 113, 29, 14);
         a.Box(44, 115, 27, 2, Mortar); a.Box(44, 123, 27, 2, Mortar);
@@ -141,6 +163,47 @@ public static partial class BuildingSprites
             a.Line(x - 3, y - 4, x + 1, y - 5, StoneLight);
         }
         Logs(a, 112, 134); Sack(a, 14, 121);
+    }
+
+    private static readonly Dictionary<(WoodlandBiome Biome, int Etape), ImageTexture> ChantiersMines = [];
+
+    /// <summary>Les ouvrages apparaissent entiers, par étapes : fondations, ossatures, puis toitures et mécanismes.</summary>
+    internal static ImageTexture MineSite(Building building, WoodlandBiome biome)
+    {
+        int etape = building.Progress < .15f ? 0 : building.Progress < .35f ? 1 : building.Progress < .7f ? 2 : 3;
+        var cle = (biome, etape);
+        if (ChantiersMines.TryGetValue(cle, out var image)) return image;
+        var art = new PixelArt(building.Width * 32, building.Height * 32 + 16);
+        GrandeMine(art, biome, etape);
+        return ChantiersMines[cle] = art.Texture();
+    }
+
+    private static void AuventGalerie(PixelArt a, WoodlandBiome biome, bool couvert)
+    {
+        Beam(a, 17, 76, 4, 35); Beam(a, 62, 71, 4, 39);
+        a.Line(20, 78, 27, 89, WoodLight); a.Line(62, 75, 55, 87, WoodLight);
+        if (!couvert)
+        {
+            a.Line(8, 64, 55, 58, WoodLight); a.Line(18, 79, 70, 73, WoodLight);
+            foreach (int x in new[] { 9, 22, 35, 48, 55 }) a.Line(x, 64 - (x - 8) * 6 / 47, x + 11, 79 - (x - 8) * 6 / 47, Wood);
+            return;
+        }
+        Color toit = RoofColor(biome).Darkened(.08f);
+        a.Polygon(Ink, new(6, 63), new(56, 56), new(72, 73), new(18, 81));
+        a.Polygon(toit, new(8, 64), new(55, 58), new(69, 72), new(19, 78));
+        // Comparer la teinte réellement enregistrée en RGBA8 pour dessiner les rangs de couverture.
+        Color surface = a.Image.GetPixel(30, 69);
+        for (int y = 58; y < 79; y++)
+        for (int x = 8; x < 70; x++)
+        {
+            if (a.Image.GetPixel(x, y) != surface) continue;
+            int rang = (y + x / 8) % 5;
+            if (rang == 0) a.Dot(x, y, toit.Lightened(.16f));
+            else if (rang == 4) a.Dot(x, y, toit.Darkened(.17f));
+        }
+        a.Line(8, 63, 55, 57, toit.Lightened(.28f));
+        a.Line(18, 79, 70, 73, WoodLight); a.Line(19, 81, 71, 75, Wood);
+        a.Line(56, 58, 70, 72, toit.Darkened(.3f));
     }
 
     private static void GrandBarrage(PixelArt a, bool side)

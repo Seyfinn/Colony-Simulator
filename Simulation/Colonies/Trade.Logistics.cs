@@ -17,7 +17,16 @@ public static partial class Trade
     {
         decimal wanted = (decimal)((tripDays + ProvisionMarginDays) * TradersPerCaravan * TravelerNutritionPerDay);
         var sales = lines.Where(l => l.IsSale).GroupBy(l => l.Good).ToDictionary(g => g.Key, g => g.Sum(l => l.Units));
-        return ProvisionLoad(colony, wanted, sales);
+        List<(ResourceType Resource, int Amount)>? load = ProvisionLoad(colony, wanted, sales);
+        // Les bêtes de trait mangent du grain en route : leur ration s'ajoute aux provisions, si le stock la fournit.
+        if (load is not null && EffectiveGear(colony) == CaravanGear.Draft)
+        {
+            int feed = DraftFeed(tripDays);
+            int spare = colony.Stock.Available(ResourceType.Grain) - sales.GetValueOrDefault(ResourceType.Grain) - load.Where(p => p.Resource == ResourceType.Grain).Sum(p => p.Amount);
+            if (spare >= feed)
+                load.Add((ResourceType.Grain, feed));
+        }
+        return load;
     }
 
     /// <summary>Des vivres variés pour la nutrition demandée, sans toucher aux marchandises déjà réservées au chargement ; null si le stock ne suffit pas.</summary>
@@ -77,6 +86,8 @@ public static partial class Trade
             caravan.Inventory.SpoilMeat(3, 0.5f);
             caravan.Provisions.AgeMeat();
             caravan.Provisions.SpoilMeat(3, 0.5f);
+            caravan.Inventory.AgeGrain();
+            caravan.Provisions.AgeGrain();
         }
         if (elapsed <= 0) return;
         float hours = elapsed / TimeConstants.TicksPerHour;

@@ -15,7 +15,7 @@ namespace GodColony;
 public readonly record struct StatsPace(double Multiplier, bool Paused, long Day, long StartDay);
 
 /// <summary>
-/// La vue chiffrée de la vitesse ×200 : à la place de la carte, les chiffres et les courbes de toutes les colonies.
+/// La vue chiffrée de la vitesse ×200 : à la place de la carte, les chiffres et les courbes de tous les empires.
 /// Ni terrain ni habitants ne sont dessinés, si bien que presque tout le temps de calcul va à la simulation.
 /// Les contrôles sont construits une fois ; une actualisation ne change que leurs textes, et les courbes ne se
 /// redessinent qu'à chaque nouveau relevé quotidien.
@@ -112,9 +112,9 @@ public partial class StatsPanel : CanvasLayer
             Surface = CardFill, Format = value => Spoken(ColonyMetric.Population, value),
         };
         populationRow.AddChild(_worldCurve);
-        _colonies = Tile(row, "COLONIES", 1, out _);
+        _colonies = Tile(row, "EMPIRES", 1, out _);
         _caravans = Tile(row, "CARAVANES EN ROUTE", 1, out _);
-        _graves = Tile(row, "TOMBES", 1, out _);
+        _graves = Tile(row, "DÉCÈS", 1, out _);
         _pace = Tile(row, "VITESSE RÉELLE", 1, out _);
         _pace.Value.Name = "VitesseReelle";
         _elapsed = Tile(row, "EN VUE CHIFFRÉE", 1, out _);
@@ -127,10 +127,10 @@ public partial class StatsPanel : CanvasLayer
         title.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
         foreach (var (metric, caption, hint) in new[]
         {
-            (ColonyMetric.Population, "Habitants", "Nombre d'habitants de chaque colonie"),
-            (ColonyMetric.FoodDays, "Réserves", "Jours de repas en réserve (nourriture, céréales, pain…)"),
+            (ColonyMetric.Population, "Habitants", "Nombre d'habitants de chaque empire"),
+            (ColonyMetric.FoodDays, "Réserves", "Jours de repas en réserve (nourriture, pain…; les céréales crues comptent à peine)"),
             (ColonyMetric.Mood, "Humeur", "Humeur moyenne des habitants"),
-            (ColonyMetric.Coins, "Pièces", "Trésorerie de chaque colonie"),
+            (ColonyMetric.Coins, "Pièces", "Trésorerie de chaque empire"),
         })
         {
             Button button = WorldPanel.Chip(caption, hint);
@@ -150,7 +150,7 @@ public partial class StatsPanel : CanvasLayer
 
     private void BuildColonies()
     {
-        _empty = DashboardStyle.Text(_body, "Aucune colonie pour le moment : fondez-en une depuis la carte du monde.", 14, DashboardStyle.Muted, true);
+        _empty = DashboardStyle.Text(_body, "Aucun empire pour le moment : fondez-en un depuis la carte du monde.", 14, DashboardStyle.Muted, true);
         var scroll = new ScrollContainer
         {
             Name = "DefilementColonies", HorizontalScrollMode = ScrollContainer.ScrollMode.Disabled,
@@ -198,7 +198,7 @@ public partial class StatsPanel : CanvasLayer
         _comparison.SetData(series, metric, value => Format(metric, value), Ceiling(metric));
         _comparisonTitle.Text = $"COMPARAISON DES COLONIES · {Caption(metric)}";
         _comparisonNote.Text = world.Colonies.Count > shown
-            ? $"Les {shown} premières colonies ; les {world.Colonies.Count - shown} autres ont leur courbe dans leur carte." : "";
+            ? $"Les {shown} premiers empires ; les {world.Colonies.Count - shown} autres ont leur courbe dans leur carte." : "";
         _comparisonNote.Visible = _comparisonNote.Text.Length > 0;
 
         string stamp = string.Join("|", series.Select(s => s.Name));
@@ -268,9 +268,9 @@ public partial class StatsPanel : CanvasLayer
         _caravans.Value.Text = world.Caravans.Count.ToString();
         _caravans.Detail.Text = $"{world.CompletedCaravans:N0} voyage{(world.CompletedCaravans > 1 ? "s" : "")} mené{(world.CompletedCaravans > 1 ? "s" : "")}";
 
-        var causes = world.Colonies.SelectMany(c => c.Graves).GroupBy(g => g.Cause)
+        var causes = world.Colonies.SelectMany(c => c.Settlements).SelectMany(s => s.Deaths).GroupBy(d => d.Cause)
             .Select(g => (Cause: g.Key, Count: g.Count())).OrderByDescending(g => g.Count).ToList();
-        _graves.Value.Text = causes.Sum(c => c.Count).ToString("N0");
+        _graves.Value.Text = world.Colonies.Sum(c => c.TotalDeaths).ToString("N0");
         _graves.Detail.Text = causes.Count == 0 ? "aucun décès" : string.Join(" · ", causes.Take(2).Select(c => $"{c.Cause} {c.Count}"));
         _graves.Detail.AddThemeColorOverride("font_color", causes.Any(c => c.Cause == "faim") ? DashboardStyle.Warning : DashboardStyle.Muted);
         _graves.Card.TooltipText = causes.Count == 0 ? "Personne n'est mort pour le moment."
@@ -283,7 +283,7 @@ public partial class StatsPanel : CanvasLayer
             : $"une année toutes les {TimeConstants.TicksPerYear / (Math.Max(1, pace.Multiplier) * TimeConstants.TicksPerSecond):0.0} s";
         _pace.Detail.AddThemeColorOverride("font_color", behind ? DashboardStyle.Warning : DashboardStyle.Muted);
         _pace.Card.TooltipText = "Vitesse mesurée chaque demi-seconde, puis lissée.\nSans carte à dessiner, la simulation dispose de presque tout le temps de calcul ;\n"
-            + "si les colonies deviennent très grandes, la vitesse réelle peut passer sous ×200.";
+            + "si les empires deviennent très grands, la vitesse réelle peut passer sous ×200.";
 
         _elapsed.Value.Text = Elapsed(pace.Day - pace.StartDay);
         _elapsed.Detail.Text = $"depuis {Sparkline.DateOf(pace.StartDay)}";
@@ -373,7 +373,7 @@ public partial class StatsPanel : CanvasLayer
     {
         public event Action? ObserveRequested;
 
-        private static readonly string[] FigureNames = ["Habitants", "Humeur", "Réserves", "Pièces", "Bâtiments", "Bêtes", "Malades", "Tombes", "Jalons"];
+        private static readonly string[] FigureNames = ["Habitants", "Humeur", "Réserves", "Pièces", "Bâtiments", "Bêtes", "Malades", "Décès", "Jalons"];
 
         private StyleBoxFlat _style = null!;
         private ColorRect _stripe = null!;
@@ -413,7 +413,7 @@ public partial class StatsPanel : CanvasLayer
                 label.ClipText = true;
                 label.TextOverrunBehavior = TextServer.OverrunBehavior.TrimEllipsis;
             }
-            Button observe = WorldPanel.Chip("Observer", "Revenir à la carte de cette colonie, à la vitesse d'avant");
+            Button observe = WorldPanel.Chip("Observer", "Revenir à la carte de cet empire, à la vitesse d'avant");
             observe.Name = "ObserverColonie";
             observe.SizeFlagsVertical = SizeFlags.ShrinkCenter;
             observe.Pressed += () => ObserveRequested?.Invoke();
@@ -509,13 +509,14 @@ public partial class StatsPanel : CanvasLayer
             SetFigure("Bêtes", pens == 0 && animals == 0 ? "—" : animals.ToString(),
                 $"{colony.Chickens} poules · {colony.Sheep} moutons · {colony.Cows} vaches · {pens} enclos");
             SetFigure("Malades", Health.PatientCount(colony).ToString(), "Habitants malades ou blessés");
-            var causes = colony.Graves.GroupBy(g => g.Cause).Select(g => $"{g.Key} : {g.Count()}");
-            SetFigure("Tombes", colony.Graves.Count.ToString(), colony.Graves.Count == 0 ? "Aucun décès" : "Causes des décès :\n" + string.Join("\n", causes),
-                colony.Graves.Any(g => g.Cause == "faim"));
+            var deaths = colony.Settlements.SelectMany(s => s.Deaths).ToList();
+            var causes = deaths.GroupBy(d => d.Cause).Select(g => $"{g.Key} : {g.Count()}");
+            SetFigure("Décès", colony.TotalDeaths.ToString(), colony.TotalDeaths == 0 ? "Aucun décès dans l'empire" : "Décès cumulés de l'empire depuis le début\nCauses :\n" + string.Join("\n", causes),
+                deaths.Any(d => d.Cause == "faim"));
             SetFigure("Jalons", $"{Milestones.Reached(colony)} / {Milestones.All.Count}", "Objectifs atteints (détail dans l'écran Économie)");
 
             Thought? last = colony.Thoughts.Count > 0 ? colony.Thoughts[^1] : null;
-            _thought.Text = last is null ? "La colonie prend ses marques…" : $"{Sparkline.DateOf(last.Ticks / TimeConstants.TicksPerDay)} · {last.Text}";
+            _thought.Text = last is null ? "L'empire prend ses marques…" : $"{Sparkline.DateOf(last.Ticks / TimeConstants.TicksPerDay)} · {last.Text}";
             _thought.TooltipText = _thought.Text;
         }
 
@@ -531,7 +532,7 @@ public partial class StatsPanel : CanvasLayer
         private void RefreshAlerts(Colony colony, int members, float days)
         {
             var alerts = new List<(string Text, Color Color)>();
-            if (members == 0) alerts.Add(("Colonie éteinte", DashboardStyle.Warning));
+            if (members == 0) alerts.Add(("Empire éteint", DashboardStyle.Warning));
             else if (days < 2) alerts.Add(("Réserves basses", DashboardStyle.Warning));
             if (colony.ColdSnapDaysLeft > 0) alerts.Add(("Vague de froid", ArtDirection.Brass));
             if (colony.DroughtDaysLeft > 0) alerts.Add(("Sécheresse", ArtDirection.Brass));

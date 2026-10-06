@@ -27,7 +27,7 @@ internal static class VillageAscii
                 sb.Append(Glyph(colony, map, layout, index, x, y));
             sb.AppendLine();
         }
-        sb.AppendLine("légende : @ feu, : place, H hutte (minuscule : chantier), # champ, ~ eau, ^ montagne, T arbre, ' buisson, + accès réservé, = sentier, _ route, g tombe, * espace public");
+        sb.AppendLine("légende : @ feu, : place, H hutte (minuscule : chantier), # champ, ~ eau, ^ montagne, T arbre, ' buisson, + accès réservé, = sentier, _ route, * espace public");
         return sb.ToString();
     }
 
@@ -50,8 +50,6 @@ internal static class VillageAscii
         if (map.IsWater(x, y)) return '~';
         if (map.IsRiver(x, y)) return '≈';
         if (map.IsMountain(x, y)) return '^';
-        foreach (Grave g in colony.Graves)
-            if (g.X == x && g.Y == y) return 'g';
         int cell = layout.Cell(x, y);
         RoadSurface surface = map.Roads.SurfaceAt(cell);
         if (surface == RoadSurface.DirtRoad) return '_';

@@ -47,7 +47,7 @@ public static partial class Trade
         trip.Route = route; trip.RouteIndex = 0; trip.SegmentTravelCost = 0;
         trip.RouteRevision = RoutingRevision(world, trip.From);
         trip.BlockedReason = null;
-        long travel = (long)Math.Ceiling(route.Cost / WorldMap.CaravanTilesPerDay * TimeConstants.TicksPerDay);
+        long travel = (long)Math.Ceiling(route.Cost / (WorldMap.CaravanTilesPerDay * SpeedOf(trip)) * TimeConstants.TicksPerDay);
         if (trip.State == CaravanState.Outbound)
         {
             trip.ArriveTicks = world.Clock.Ticks + travel;
@@ -77,7 +77,7 @@ public static partial class Trade
             trip.SegmentTravelCost = traveled - legacyRoute.Cumulative[trip.RouteIndex];
             ticks = 0;
         }
-        double costPerTick = WorldMap.CaravanTilesPerDay / TimeConstants.TicksPerDay;
+        double costPerTick = WorldMap.CaravanTilesPerDay * SpeedOf(trip) / TimeConstants.TicksPerDay;
         while (true)
         {
             if (trip.State == CaravanState.Returning && trip.RestUntilTicks > now - ticks)
@@ -152,6 +152,7 @@ public static partial class Trade
             ticks = Math.Max(0, ticks - needed);
             trip.RouteIndex++; trip.SegmentTravelCost = 0;
             world.WorldMap.Roads.RecordUse(route.Tiles[trip.RouteIndex - 1], route.Tiles[trip.RouteIndex]);
+            CheckInterception(world, trip, route.Tiles[trip.RouteIndex - 1], route.Tiles[trip.RouteIndex], edge);
         }
     }
 }

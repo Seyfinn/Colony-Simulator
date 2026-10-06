@@ -55,7 +55,7 @@ public class RiverTests(ITestOutputHelper output)
             Assert.Equal(FloraType.None, map.GetFlora(t.X, t.Y));
             Assert.False(map.CanMine(t.X, t.Y));
             Assert.Equal(Surface.River, map.GetSurface(t.X, t.Y));
-            Assert.Equal(LocalMap.RiverMoveCost, map.MoveCost(t.X, t.Y));
+            Assert.Equal(map.IsWideRiver(t.X, t.Y) ? LocalMap.WideRiverMoveCost : LocalMap.RiverMoveCost, map.MoveCost(t.X, t.Y));
             Assert.True(map.GetFish(t.X, t.Y) > 0);
         });
     }

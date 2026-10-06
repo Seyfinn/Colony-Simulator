@@ -4,6 +4,17 @@ namespace GodColony.View;
 
 public static partial class BuildingSprites
 {
+    public static void ExportMillBodies()
+    {
+        foreach (WoodlandBiome biome in System.Enum.GetValues<WoodlandBiome>())
+        {
+            string variant = biome.ToString().ToLowerInvariant();
+            WorkshopSource("Mill", biome).Image.SavePng(ProjectSettings.GlobalizePath($"res://Assets/buildings/mill_body_{variant}.png"));
+            var mill = new GodColony.Simulation.Colonies.Building(GodColony.Simulation.Colonies.BuildingType.Mill, 0, 0);
+            OuvrageSource(mill, biome).Image.SavePng(ProjectSettings.GlobalizePath($"res://Assets/buildings/mill_body_{variant}_large.png"));
+        }
+    }
+
     /// <summary>Mêmes silhouettes et points d'attache que le dessin natif, patine assortie au village.</summary>
     internal static PixelArt WorkshopSource(string kind, WoodlandBiome biome = WoodlandBiome.TemperatePlain)
     {

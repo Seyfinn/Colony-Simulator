@@ -11,6 +11,9 @@ public sealed record Reservoir((int X, int Y) Dam, int Level, List<(int X, int Y
 /// En aval, la rivière coule moins fort. Rien de tout cela n'est une simulation de fluide : la retenue est
 /// calculée une fois, quand le barrage est achevé.
 /// </summary>
+/// <summary>Le côté d'un bâtiment que longe l'eau motrice.</summary>
+public enum MillSide { North, East, South, West }
+
 public static class Hydrology
 {
     public const int MinReservoirTiles = 8;
@@ -64,7 +67,7 @@ public static class Hydrology
     /// Que noierait un barrage sur cette case de rivière ? On part des cases de rivière juste en amont et on étend l'eau
     /// sur les terres plates voisines, côté amont seulement, case après case en s'éloignant de la rivière, sans dépasser
     /// <see cref="MaxReservoirTiles"/>. Renvoie null si le barrage ne retiendrait rien d'utile (trop peu de cases),
-    /// si la rivière est trop large pour être barrée, ou si la retenue engloutirait un champ, un bâtiment, une tombe ou le camp.
+    /// si la rivière est trop large pour être barrée, ou si la retenue engloutirait un champ, un bâtiment ou le camp.
     /// </summary>
     public static Reservoir? FindReservoir(LocalMap map, Colony colony, int damX, int damY, Building? existing = null)
     {
@@ -135,7 +138,7 @@ public static class Hydrology
 
     /// <summary>
     /// Ce qu'une retenue ne doit pas engloutir : les cases de canal prévues, les abords du camp, les champs, les bâtiments
-    /// et les tombes. Marqué une fois pour toute une recherche de site.
+    /// . Marqué une fois pour toute une recherche de site.
     /// </summary>
     private static void MarkWhatToProtect(LocalMap map, Colony colony, SearchScratch scratch)
     {
@@ -152,14 +155,12 @@ public static class Hydrology
         for (int x = colony.CampX - 3; x <= colony.CampX + 3; x++)
             Protect(x, y);
         foreach (Field field in colony.Fields)
-            for (int y = field.Y; y < field.Y + Field.Size; y++)
-            for (int x = field.X; x < field.X + Field.Size; x++)
+            for (int y = field.Y; y < field.Y + field.Size; y++)
+            for (int x = field.X; x < field.X + field.Size; x++)
                 Protect(x, y);
         foreach (Building building in colony.Buildings)
             foreach ((int x, int y) in building.Tiles)
                 Protect(x, y);
-        foreach (Grave grave in colony.Graves)
-            Protect(grave.X, grave.Y);
         // La retenue ne coupe pas les accès du village : place, tracés réservés, espaces publics et abords des parcelles.
         if (colony.Map is not null) // une colonie bâtie à la main, sans carte, n'a pas encore de plan
         {
@@ -196,7 +197,7 @@ public static class Hydrology
                 continue;
 
             int fieldsNearby = colony.Fields.Count(f => reservoir.Tiles.Any(t =>
-                Math.Max(Math.Abs(t.X - (f.X + Field.Size / 2)), Math.Abs(t.Y - (f.Y + Field.Size / 2))) <= 7));
+                Math.Max(Math.Abs(t.X - (f.X + f.Size / 2)), Math.Abs(t.Y - (f.Y + f.Size / 2))) <= 7));
             float score = reservoir.Tiles.Count + 12f * fieldsNearby - 0.4f * Math.Max(Math.Abs(dx), Math.Abs(dy));
             if (score > bestScore)
             {
@@ -220,22 +221,28 @@ public static class Hydrology
     /// Le débit qui fait tourner un moulin : celui de la rivière qui le longe (moindre si un barrage en amont la retient),
     /// 1 au bord d'un lac ou d'un canal. 0 si aucune eau ne touche le bâtiment.
     /// </summary>
-    public static float MillFlow(LocalMap map, Building mill)
+    public static float MillFlow(LocalMap map, Building mill) => MillWater(map, mill).Flow;
+
+    /// <summary>
+    /// L'eau motrice d'un moulin et le côté du bâtiment qu'elle longe : la roue se pose de ce côté. Seuls comptent un courant (rivière, canal en eau) ou une retenue de barrage,
+    /// dont la chute fait tourner la roue ; un lac naturel ou une eau morte ne fournit aucun débit. Côté nul si aucune eau ne touche le bâtiment.
+    /// </summary>
+    public static (float Flow, MillSide? Side) MillWater(LocalMap map, Building mill)
     {
         float best = 0f;
+        MillSide? side = null;
         for (int y = mill.Y - 1; y <= mill.Y + mill.Height; y++)
         for (int x = mill.X - 1; x <= mill.X + mill.Width; x++)
         {
-            bool inside = x >= mill.X && x < mill.X + mill.Width && y >= mill.Y && y < mill.Y + mill.Height;
-            bool corner = (x < mill.X || x >= mill.X + mill.Width) && (y < mill.Y || y >= mill.Y + mill.Height);
-            if (inside || corner || !map.InBounds(x, y))
+            bool west = x < mill.X, east = x >= mill.X + mill.Width, north = y < mill.Y, south = y >= mill.Y + mill.Height;
+            bool inside = !west && !east && !north && !south;
+            if (inside || (west || east) && (north || south) || !map.InBounds(x, y))
                 continue;
-            if (map.IsFlooded(x, y) || map.IsCanalWet(x, y))
-                best = Math.Max(best, 1f);
-            else if (map.IsRiver(x, y))
-                best = Math.Max(best, map.GetFlow(x, y));
+            float flow = map.IsFlooded(x, y) || map.IsCanalWet(x, y) ? 1f : map.IsRiver(x, y) ? map.GetFlow(x, y) : 0f;
+            if (flow > best)
+                (best, side) = (flow, east ? MillSide.East : west ? MillSide.West : south ? MillSide.South : MillSide.North);
         }
-        return best;
+        return (best, side);
     }
 
     /// <summary>Outil de développement : bâtit tout de suite le meilleur barrage possible, sans prière ni travail.</summary>

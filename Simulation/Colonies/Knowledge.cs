@@ -124,7 +124,7 @@ public static class Knowledge
         BuildingType.Pen => Discovery.Husbandry,
         BuildingType.Kiln or BuildingType.Bloomery or BuildingType.Forge => Discovery.Metallurgy,
         BuildingType.Mill or BuildingType.Oven => Discovery.Milling,
-        BuildingType.Well or BuildingType.Storehouse => Discovery.Masonry,
+        BuildingType.Well or BuildingType.Storehouse or BuildingType.Silo => Discovery.Masonry,
         BuildingType.Loom => Discovery.Weaving,
         BuildingType.Infirmary => Discovery.Medicine,
         BuildingType.Tavern or BuildingType.Cask => Discovery.Brewing,

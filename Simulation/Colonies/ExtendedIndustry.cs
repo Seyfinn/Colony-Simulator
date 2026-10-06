@@ -18,7 +18,7 @@ public static class ExtendedIndustry
     public static readonly Recipe[] Recipes =
     [
         new(BuildingType.Bloomery, [(ResourceType.CopperOre,3),(ResourceType.Charcoal,2)], ResourceType.Copper,1,24),
-        new(BuildingType.Bloomery, [(ResourceType.GoldOre,3),(ResourceType.Charcoal,2)], ResourceType.Gold,1,32),
+        new(BuildingType.Bloomery, [(ResourceType.GoldOre,3),(ResourceType.Charcoal,1)], ResourceType.Gold,1,32),
         new(BuildingType.PotteryKiln, [(ResourceType.Clay,3),(ResourceType.Wood,1)], ResourceType.Pottery,2,14),
         new(BuildingType.Loom, [(ResourceType.Flax,3)], ResourceType.Linen,2,14),
         new(BuildingType.Loom, [(ResourceType.Linen,2)], ResourceType.Clothes,1,16),
@@ -31,6 +31,8 @@ public static class ExtendedIndustry
         new(BuildingType.Goldsmith, [(ResourceType.Gold,1),(ResourceType.Emerald,1)], ResourceType.Jewelry,1,24),
         new(BuildingType.Goldsmith, [(ResourceType.Gold,1),(ResourceType.Diamond,1)], ResourceType.Jewelry,1,24),
         new(BuildingType.Mint, [(ResourceType.Gold,1)], ResourceType.Coins,MonetaryLedger.CoinsPerGold,24),
+        // Une charrette locale : dix planches et une pièce de fer, à la forge (voir Carts). Douze secondes de travail : un ouvrage plus long ferait jeûner l'artisan.
+        new(BuildingType.Forge, [(ResourceType.Wood,10),(ResourceType.Iron,1)], ResourceType.Carts,1,12),
     ];
 
     public static bool Crisis(Colony colony) => colony.Stock.AvailableNutrition < Math.Max(1, colony.PresentMembers.Count)
@@ -49,7 +51,7 @@ public static class ExtendedIndustry
             ResourceType.Shoes => colony.PresentMembers.Count(c => c.Stage != LifeStage.Child && !c.HasShoes),
             ResourceType.Jewelry => Math.Max(0, Math.Min(1 - equipment.Jewelry, luxury)),
             ResourceType.Wine => Civic.Has(colony, BuildingType.Tavern) ? luxury : 0,
-            ResourceType.Clay => 3 * Math.Max(0, Target(colony, ResourceType.Pottery) - colony.Stock.Get(ResourceType.Pottery)),
+            ResourceType.Clay => 3 * ((Math.Max(0, Target(colony, ResourceType.Pottery) - colony.Stock.Get(ResourceType.Pottery)) + 1) / 2),
             ResourceType.Copper => 2 * Math.Max(0, Target(colony, ResourceType.Copperware) - colony.Stock.Get(ResourceType.Copperware)),
             ResourceType.CopperOre => 3 * Math.Max(0, Target(colony, ResourceType.Copper) - colony.Stock.Get(ResourceType.Copper)),
             ResourceType.Gold => JewelryGold(colony) + Minting.GoldWish(colony) + Offerings.Need(colony, ResourceType.Gold),
@@ -60,9 +62,10 @@ public static class ExtendedIndustry
             ResourceType.Hides => Math.Max(0, Target(colony, ResourceType.Leather) - colony.Stock.Get(ResourceType.Leather)),
             ResourceType.Clothes => Husbandry.ClothesTarget(colony),
             ResourceType.Linen => 2 * Math.Max(0, Husbandry.ClothesTarget(colony) - colony.Stock.Get(ResourceType.Clothes)),
-            ResourceType.Flax => 3 * Math.Max(0, Target(colony, ResourceType.Linen) - colony.Stock.Get(ResourceType.Linen)),
+            ResourceType.Flax => 3 * ((Math.Max(0, Target(colony, ResourceType.Linen) - colony.Stock.Get(ResourceType.Linen)) + 1) / 2),
             ResourceType.Grapes => 2 * Math.Max(0, Target(colony, ResourceType.Wine) - colony.Stock.Get(ResourceType.Wine)),
             ResourceType.MineralCoal => Math.Max(ToolChain.Demand(colony).CharcoalTarget,FuelTarget(colony)),
+            ResourceType.Carts => Carts.Wanted(colony),
             ResourceType.IronOre => (int)Economy.Need(colony,ResourceType.IronOre),
             _ => 0,
         };
@@ -76,7 +79,7 @@ public static class ExtendedIndustry
         foreach (Recipe recipe in Recipes.Where(r => r.Workshop == workshop && (product is null || r.Output == product)))
         {
             if (product is null && Target(colony, recipe.Output) + colony.ExportInterest.GetValueOrDefault(recipe.Output)
-                <= colony.Stock.Get(recipe.Output) + Crafting.Pending(colony, recipe.Output) * recipe.OutputAmount) continue;
+                <= colony.Stock.Get(recipe.Output) + Crafting.Expected(colony, recipe.Output)) continue;
             if (ToolChain.MissingInputs(colony, recipe).Count == 0) return recipe;
         }
         return product is not null ? Recipes.FirstOrDefault(r => r.Workshop == workshop && r.Output == product) : null;
@@ -88,13 +91,24 @@ public static class ExtendedIndustry
         .Sum(r => Math.Max(0,Target(colony,r.Output) + colony.ExportInterest.GetValueOrDefault(r.Output) - colony.Stock.Get(r.Output))
             * r.Inputs.First(i => i.Type == ResourceType.Charcoal).Amount);
 
+    /// <summary>
+    /// L'affinage de l'or et la frappe passent avant les chaînes ordinaires : leur besoin est borné (l'or est rare, le quota annuel plafonne la frappe) et ils
+    /// n'arrivent jamais en tête sinon, tant que les ateliers de base trouvent du travail sans fin.
+    /// </summary>
+    internal static (Building Workshop, Recipe Recipe)? PickMonetaryJob(Colony colony)
+    {
+        if (Crisis(colony)) return null;
+        foreach (Building workshop in colony.Buildings.Where(b => b.IsComplete && b.Type is BuildingType.Bloomery or BuildingType.Mint))
+        {
+            if (!Knowledge.Allows(colony, workshop.Type) || colony.PresentMembers.Any(c => c.Activity?.Building == workshop)) continue;
+            Recipe? recipe = RecipeFor(colony, workshop.Type, null);
+            if (recipe is { Output: ResourceType.Gold or ResourceType.Coins }) return (workshop, recipe);
+        }
+        return null;
+    }
+
     internal static (Building Workshop, Recipe Recipe)? PickJob(Colony colony)
     {
-        if (FuelTarget(colony) > colony.Stock.Get(ResourceType.Charcoal) + colony.Stock.Get(ResourceType.MineralCoal)
-            && colony.Stock.Available(ResourceType.Wood) >= 6 + ColonyBrain.HeatingTarget(colony,colony.Clock.Season)
-            && Knowledge.Allows(colony,BuildingType.Kiln)
-            && colony.Workshops(BuildingType.Kiln).FirstOrDefault(b => !colony.PresentMembers.Any(c => c.Activity?.Building == b)) is { } kiln)
-            return (kiln,ToolChain.RecipeFor(BuildingType.Kiln));
         foreach (Building workshop in colony.Buildings.Where(b => b.IsComplete && b.IsWorkshop))
         {
             if (!Knowledge.Allows(colony, workshop.Type) || colony.PresentMembers.Any(c => c.Activity?.Building == workshop)
@@ -107,6 +121,12 @@ public static class ExtendedIndustry
                     >= Math.Max(1, colony.Workers.Count() / 10)) continue;
             return (workshop, recipe);
         }
+        // Le charbon ne passe qu'après les fusions déjà réalisables : sinon le minerai attend sans fin un combustible que l'objectif gonflé n'atteint jamais.
+        if (FuelTarget(colony) > colony.Stock.Get(ResourceType.Charcoal) + colony.Stock.Get(ResourceType.MineralCoal)
+            && colony.Stock.Available(ResourceType.Wood) >= 6 + ColonyBrain.HeatingTarget(colony,colony.Clock.Season)
+            && Knowledge.Allows(colony,BuildingType.Kiln)
+            && colony.Workshops(BuildingType.Kiln).FirstOrDefault(b => !colony.PresentMembers.Any(c => c.Activity?.Building == b)) is { } kiln)
+            return (kiln,ToolChain.RecipeFor(BuildingType.Kiln));
         return null;
     }
 
