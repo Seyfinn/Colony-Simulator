@@ -10,7 +10,7 @@ public sealed class LogisticsPlannerTests
     {
         var world = new WorldState(42, startingColonists: 20, migration: false, lifecycle: false, trade: false);
         Colony owner = world.Colonies[0];
-        owner.Stock.Add(ResourceType.Grain, 800); owner.Stock.Add(ResourceType.Wood, 400); owner.Stock.Add(ResourceType.Stone, 200); owner.Stock.Add(ResourceType.Tools, 12);
+        owner.Stock.Add(ResourceType.Grain, 800); owner.Stock.Add(ResourceType.Bread, 800); owner.Stock.Add(ResourceType.Wood, 400); owner.Stock.Add(ResourceType.Stone, 200); owner.Stock.Add(ResourceType.Tools, 12);
         foreach (Colonist c in owner.Members) c.Sector = WorkSector.Free;
         int target = world.WorldMap.Grid.Neighbors(owner.PrimarySettlement.RegionTileIndex)
             .First(t => world.WorldMap.Grid[t].Habitable && world.WorldMap.TravelRoute(owner.PrimarySettlement.RegionTileIndex, t, new HashSet<int>()) is not null);
@@ -53,6 +53,7 @@ public sealed class LogisticsPlannerTests
         var (world, owner, camp) = WithCamp();
         Empty(camp, ResourceType.Grain, ResourceType.Food, ResourceType.Wood, ResourceType.Tools);
         Settlement main = owner.PrimarySettlement;
+        Empty(main, ResourceType.Bread);
         main.Stock.Add(ResourceType.Bread, 4);
         main.Stock.Add(ResourceType.SaltedMeat, 6);
         List<SupplyNeed> needs = LogisticsPlanner.Needs(world, owner, camp);

@@ -81,18 +81,21 @@ public class TradeTests(ITestOutputHelper output)
         Colony seller = world.Colonies[0], buyer = world.Colonies[1];
         Set(seller, ResourceType.Tools, 30);
         Set(buyer, ResourceType.Tools, 0);
-        Set(buyer, ResourceType.Coins, 500);
+        Set(buyer, ResourceType.Coins, 800);
         TradePlan? unlimited = PlanApresRencontre(world, seller, buyer);
 
-        Set(buyer, ResourceType.Coins, 260);
+        Set(buyer, ResourceType.Coins, 400);
         TradePlan? plan = PlanApresRencontre(world, seller, buyer);
 
         Assert.NotNull(unlimited);
         Assert.NotNull(plan);
         double spentByBuyer = plan!.Lines.Where(l => l.IsSale).Sum(l => l.Total);
-        Assert.True(spentByBuyer <= 260 + 0.01, $"L'acheteur ne peut pas dépenser {spentByBuyer:0} avec 260 pièces.");
+        Assert.True(spentByBuyer <= 400 + 0.01, $"L'acheteur ne peut pas dépenser {spentByBuyer:0} avec 400 pièces.");
         Assert.True(plan.Lines.Sum(l => l.Units) <= unlimited!.Lines.Sum(l => l.Units), "Une bourse plus vide ne peut pas augmenter l'échange.");
         Assert.True(plan.GainHours >= plan.CostHours * Trade.RequiredGainOverCost);
+        // Un tout petit lot ne couvre plus le voyage avec le seul bénéfice de l'expéditeur.
+        Set(buyer, ResourceType.Coins, 260);
+        Assert.Null(PlanApresRencontre(world, seller, buyer));
     }
 
     [Fact]
@@ -214,6 +217,7 @@ public class TradeTests(ITestOutputHelper output)
     {
         var world = new WorldState(12345, startingColonists: 8, migration: true, lifecycle: true, colonyCount: 2);
         int coinsAtStart = CoinsInTheWorld(world);
+        long dotationsAtStart = world.Money.Dotations;
         var watches = world.Colonies.ToDictionary(c => c, _ => new StarvationWatch());
 
         for (long i = 0; i < 3 * TimeConstants.TicksPerYear; i++)
@@ -223,7 +227,7 @@ public class TradeTests(ITestOutputHelper output)
             {
                 foreach (Colony c in world.Colonies)
                     watches[c].Observe(c);
-                Assert.Equal(coinsAtStart + world.Money.Minted, CoinsInTheWorld(world) + world.CoinsLostToEvents); // la monnaie ne se crée ni ne se perd (hors pillards et colporteurs)
+                Assert.Equal(coinsAtStart + world.Money.Minted + world.Money.Dotations - dotationsAtStart, CoinsInTheWorld(world) + world.CoinsLostToEvents); // la monnaie ne se crée ni ne se perd (hors colporteurs)
             }
         }
 
@@ -238,8 +242,13 @@ public class TradeTests(ITestOutputHelper output)
         }
         // Selon la carte, deux peuples font un à quatre voyages en trois ans : la mécanique fine est couverte par les autres tests.
         Assert.True(world.CompletedCaravans >= 1, $"Au moins un voyage : {world.CompletedCaravans}.");
-        // Deux petits peuples n'ont presque rien à s'échanger : leurs voyages peuvent n'être que des prises de contact (coût sans gain). Tout échange réel, lui, doit rapporter.
-        Assert.All(world.Colonies.SelectMany(c => c.Trades).Where(r => r.Lines.Count > 0 && r.GainHours is not null), r => Assert.True(r.GainHours > 0));
+        // Deux petits peuples n'ont presque rien à s'échanger : leurs voyages peuvent n'être que des prises de contact (coût sans gain). Tout échange réel, lui, a été planifié rentable :
+        // le plan compte le gain propre de l'expéditeur selon ses besoins, alors que le bilan réalisé valorise les marchandises au coût de production connu au départ.
+        // Une prise de contact coûte du travail sans vente ; on exige que le gain annoncé d'un échange couvre le coût du voyage, avec la même marge que le planificateur
+        // (qui accorde jusqu'à StanceEffect de marge de moins à un chef marchand : voir Trade.Plan).
+        double margin = Trade.AlliedGainOverCost * (1 - Leadership.StanceEffect);
+        Assert.All(world.Colonies.SelectMany(c => c.Trades).Where(r => r.Lines.Count > 0 && r.GainHours is not null),
+            r => Assert.True(r.ExpectedGainHours >= r.CostHours * margin - 1e-6, $"gain annoncé {r.ExpectedGainHours:0} h pour un coût de {r.CostHours:0} h"));
     }
 
     [Fact]

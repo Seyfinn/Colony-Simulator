@@ -37,7 +37,7 @@ public static class RiverTiles
     {
         if (_preloaded) return;
         foreach (string name in AssetLibrary.Names("terrain"))
-            Get(name);
+            if (!name.StartsWith("bridge_deck_", StringComparison.Ordinal)) Get(name);
         _ = Complete;
         _preloaded = true;
     }

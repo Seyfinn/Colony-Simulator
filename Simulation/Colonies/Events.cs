@@ -56,8 +56,8 @@ public static class Milestones
 }
 
 /// <summary>
-/// Les événements : un incendie, des pillards, un colporteur de passage. Ils restent rares, ne frappent pas une colonie
-/// naissante, et la préparation compte : un puits maîtrise le feu, des outils et des bras défendent contre les pillards.
+/// Les événements : un incendie, un colporteur de passage. Ils restent rares, ne frappent pas une colonie
+/// naissante, et la préparation compte : un puits maîtrise le feu.
 /// Leur hasard passe par un générateur à part (<see cref="WorldState.Chance"/>).
 /// </summary>
 public static class Events
@@ -66,11 +66,8 @@ public static class Events
     public const int GraceDays = 10;
 
     public const float FireChancePerDay = 0.006f;
-    public const float RaidChancePerDay = 0.015f;
     public const float PeddlerChancePerDay = 0.03f;
 
-    public const int MinPopulationForRaid = 10;
-    public const int MinDaysForRaid = 40;
     public const int MinPopulationForFire = 8;
 
     public static void Daily(WorldState world, Colony colony)
@@ -81,9 +78,6 @@ public static class Events
 
         if (colony.PresentMembers.Count >= MinPopulationForFire && chance.NextSingle() < FireChancePerDay * (colony.DroughtDaysLeft > 0 ? 3f : 1f))
             Fire(world, colony);
-
-        if (colony.PresentMembers.Count >= MinPopulationForRaid && world.Clock.TotalDays >= MinDaysForRaid && chance.NextSingle() < RaidChancePerDay)
-            Raid(world, colony);
 
         float peddler = PeddlerChancePerDay * (Civic.Has(colony, BuildingType.Market) ? 2f : 1f);
         if (colony.PresentMembers.Count >= 6 && chance.NextSingle() < peddler)
@@ -106,49 +100,6 @@ public static class Events
         }
         else
             Civic.Burn(colony, target, world.Clock);
-    }
-
-    /// <summary>
-    /// Des pillards attaquent une colonie qui a quelque chose à prendre. Les défenseurs (adultes, outils de fer) font la différence :
-    /// repoussés, ils repartent ; sinon ils emportent pièces, outils et grain, et blessent quelques colons.
-    /// </summary>
-    public static void Raid(WorldState world, Colony colony)
-    {
-        Stockpile stock = colony.Stock;
-        if (stock.Get(ResourceType.Coins) < 100 && stock.Get(ResourceType.Tools) == 0 && stock.Get(ResourceType.Grain) < 20)
-            return;
-
-        int adults = colony.PresentMembers.Count(m => m.Stage == LifeStage.Adult && m.Ailment == Ailment.None);
-        float defense = (adults + 1.5f * Math.Min(stock.Get(ResourceType.Tools), adults))
-            * (Knowledge.Has(colony, Discovery.Fortification) ? Knowledge.FortificationFactor : 1f)
-            + Diplomacy.AlliedHelp(world, colony, attacker: null);
-        float strength = 4f + colony.PresentMembers.Count / 3f + world.Clock.Year + 2f * world.Chance.NextSingle();
-        GameClock clock = world.Clock;
-
-        if (defense >= strength)
-        {
-            colony.RecordEvent(new(ColonyEventKind.Raid, 1, colony.CampY, clock.Ticks, ColonyEventOutcome.Repelled));
-            ColonyBrain.Say(colony, clock, "Des pillards rôdent autour de la colonie, mais nos défenseurs les repoussent sans perte.");
-            return;
-        }
-
-        colony.RecordEvent(new(ColonyEventKind.Raid, 1, colony.CampY, clock.Ticks, ColonyEventOutcome.Pillaged));
-        int coins = stock.Get(ResourceType.Coins) * 3 / 10;
-        int tools = stock.Get(ResourceType.Tools) / 5;
-        int grain = stock.Get(ResourceType.Grain) / 6;
-        stock.TryTake(ResourceType.Coins, coins, ResourceFlow.Loss);
-        world.CoinsLostToEvents += coins;
-        stock.TryTake(ResourceType.Tools, tools, ResourceFlow.Loss);
-        stock.TryTake(ResourceType.Grain, grain, ResourceFlow.Loss);
-
-        int wounded = 0;
-        foreach (Colonist victim in colony.PresentMembers.Where(m => m.Stage != LifeStage.Child && m.Ailment == Ailment.None)
-                     .OrderBy(_ => world.Chance.Next()).Take(Math.Max(1, (int)MathF.Ceiling((strength - defense) / 3f))).ToList())
-        {
-            Health.Fall(colony, victim, Ailment.Injured, 72 + world.Chance.Next(0, 48), clock, "");
-            wounded++;
-        }
-        ColonyBrain.Say(colony, clock, $"Des pillards attaquent et nous prennent {coins} pièces, {tools} outils et {grain} céréales ; {wounded} colons sont blessés.");
     }
 
     /// <summary>

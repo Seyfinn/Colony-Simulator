@@ -144,7 +144,7 @@ public partial class GameMenu : CanvasLayer
     private void BuildHome()
     {
         MenuStyle.Text(_body, _pausedPage ? "Partie en pause" : "Bienvenue", 24);
-        MenuStyle.Text(_body, "Façonnez un monde, fondez des colonies et observez leurs habitants construire leur histoire.", 15, MenuStyle.Muted, true);
+        MenuStyle.Text(_body, "Façonnez un monde, fondez des empires et observez leurs habitants construire leur histoire.", 15, MenuStyle.Muted, true);
         if (HasWorld) MenuStyle.Primary(MenuStyle.Button(_body, "Reprendre la partie", () => ResumeRequested?.Invoke()));
         else MenuStyle.Primary(MenuStyle.Button(_body, "Créer un monde", () => ShowPage("world")));
         if (HasWorld) MenuStyle.Button(_body, "Sauvegarder la partie", () => { _saveMessage = ""; ShowPage("save"); });
@@ -172,7 +172,7 @@ public partial class GameMenu : CanvasLayer
             var column = MenuStyle.Column(card, 6);
             MenuStyle.Text(column, i == SaveSlots.QuickSlot ? "Sauvegarde rapide · F5" : $"Emplacement {i + 1}", 17, ArtDirection.Brass);
             string description = slot.Info is { } info
-                ? $"{info.Name} · {info.Colonies} colonies · {info.Population} habitants\nAn {new GameClock(info.Ticks).Year} · {info.SavedAt.ToLocalTime():dd/MM/yyyy HH:mm}"
+                ? $"{info.Name} · {info.Colonies} empires · {info.Population} habitants\nAn {new GameClock(info.Ticks).Year} · {info.SavedAt.ToLocalTime():dd/MM/yyyy HH:mm}"
                 : slot.Error ?? "Emplacement vide";
             MenuStyle.Text(column, description, 13, MenuStyle.Muted, true);
             if (loading)
@@ -224,19 +224,19 @@ public partial class GameMenu : CanvasLayer
         var size = new OptionButton { Name = "TailleMonde" };
         size.AddItem("Petite · 128 × 128 cases", 128); size.AddItem("Standard · 200 × 200 cases", 200); size.AddItem("Grande · 256 × 256 cases", 256); size.Select(1);
         _body.AddChild(size);
-        MenuStyle.Text(_body, "Colonies initiales", 14, MenuStyle.Muted);
+        MenuStyle.Text(_body, "Empires initiaux", 14, MenuStyle.Muted);
         var colonies = new OptionButton { Name = "ColoniesInitiales" };
-        colonies.AddItem("Monde vierge · fondez vous-même la première colonie", 0);
-        for (int i = 1; i <= 4; i++) colonies.AddItem($"{i} colonie{(i > 1 ? "s" : "")} déjà installée{(i > 1 ? "s" : "")}", i);
+        colonies.AddItem("Monde vierge · fondez vous-même le premier empire", 0);
+        for (int i = 1; i <= 4; i++) colonies.AddItem($"{i} empire{(i > 1 ? "s" : "")} déjà installé{(i > 1 ? "s" : "")}", i);
         _body.AddChild(colonies);
-        MenuStyle.Text(_body, "Habitants par colonie initiale", 14, MenuStyle.Muted);
+        MenuStyle.Text(_body, "Habitants par empire initial", 14, MenuStyle.Muted);
         var founders = new SpinBox { Name = "FondateursInitiaux", MinValue = 5, MaxValue = 20, Step = 1, Value = 8 };
         _body.AddChild(founders);
         founders.Editable = false;
         colonies.ItemSelected += index => founders.Editable = index != 0;
         var migration = MenuStyle.Check(_body, "Voyageurs et migrations", true);
         var lifecycle = MenuStyle.Check(_body, "Naissances, vieillissement et décès", true);
-        var trade = MenuStyle.Check(_body, "Commerce et caravanes entre colonies", true);
+        var trade = MenuStyle.Check(_body, "Commerce et caravanes entre empires", true);
         MenuStyle.Text(_body, "Vitesse de départ", 14, MenuStyle.Muted);
         var speed = new OptionButton();
         speed.AddItem("Observation · ×1", 1); speed.AddItem("Rapide · ×4", 4); speed.AddItem("Très rapide · ×30", 30);
@@ -295,7 +295,7 @@ public partial class GameMenu : CanvasLayer
     private void BuildHelp()
     {
         MenuStyle.Text(_body, "Comment jouer", 24);
-        MenuStyle.Text(_body, "1. Créez un monde vierge ou déjà peuplé.\n\n2. Cliquez sur « Fonder une colonie », choisissez son peuple et ses habitants, puis son emplacement sur la carte du monde.\n\n3. Sur le terrain, choisissez une zone plate. Le contour vert indique un camp valide ; le rouge signale un obstacle. Validez pour faire apparaître les fondateurs.\n\n4. Observez le travail, les naissances, le commerce et les prières de vos colonies.", 15, MenuStyle.Ink, true);
-        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nC : recentrer · Tab : colonie suivante\nM : carte du monde · E : économie · R : savoirs et relations · P : prières\nJ : journal · H : commandes\nEspace : pause · 1 / 2 / 3 : vitesse\nF5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nÉchap : fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
+        MenuStyle.Text(_body, "1. Créez un monde vierge ou déjà peuplé.\n\n2. Cliquez sur « Fonder un empire », choisissez son peuple et ses habitants, puis son emplacement sur la carte du monde.\n\n3. Sur le terrain, choisissez une zone plate. Le contour vert indique un camp valide ; le rouge signale un obstacle. Validez pour faire apparaître les fondateurs.\n\n4. Observez le travail, les naissances, le commerce et les prières de vos colonies.", 15, MenuStyle.Ink, true);
+        MenuStyle.Text(_body, "ZQSD / WASD / flèches : déplacer la caméra\nClic droit ou molette maintenue : glisser · Molette : zoom\nClic gauche : sélectionner un habitant / miner la roche\nC : recentrer · Tab : empire suivant\nM : carte du monde · E : économie · R : savoirs et relations · P : prières\nJ : journal · H : commandes\nEspace : pause · 1 / 2 / 3 : vitesse\nF5 : sauvegarde rapide · F9 : charger la sauvegarde rapide\nÉchap : fermer un panneau ou ouvrir le menu", 14, MenuStyle.Muted, true);
     }
 }

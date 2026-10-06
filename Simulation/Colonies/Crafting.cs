@@ -14,7 +14,7 @@ public static class Crafting
 
     /// <summary>La recette d'un atelier de cette colonie : celle du marché dépend de la denrée que produit sa région.</summary>
     public static Recipe RecipeFor(Colony colony, BuildingType workshop) =>
-        workshop == BuildingType.Market ? Specialties.RecipeFor(colony) : RecipeFor(workshop);
+        workshop == BuildingType.Market ? Specialties.RecipeFor(colony) : FoodChain.IsFoodWorkshop(workshop) ? FoodChain.RecipeFor(colony, workshop) : RecipeFor(workshop);
 
     /// <summary>La recette suivie : celle du produit visé s'il y en a un (les plats de fête), sinon la recette habituelle de l'atelier.</summary>
     public static Recipe RecipeFor(Colony colony, BuildingType workshop, ResourceType? product) =>
@@ -29,9 +29,36 @@ public static class Crafting
         _ => FoodChain.IsFoodWorkshop(workshop) ? SkillType.Cooking : SkillType.Smithing,
     };
 
-    /// <summary>Ce qui est déjà en train d'être fabriqué (les fabricants ont pris les matières mais n'ont pas fini).</summary>
+    /// <summary>Ce qui est déjà en train d'être fabriqué, en nombre d'activités (voir <see cref="PendingUnits"/> pour les unités exactes).</summary>
     public static int Pending(Colony colony, ResourceType output) =>
-        colony.PresentMembers.Count(m => m.Activity is { Kind: ActivityKind.Craft, Building: { } site } a && (a.Product ?? RecipeFor(colony, site.Type).Output) == output);
+        colony.PresentMembers.Sum(m => new[] { m.Activity, m.PausedCraft }.Count(a => a is { Kind: ActivityKind.Craft, Building: { } site }
+            && (a.Product ?? RecipeFor(colony, site.Type).Output) == output));
+
+    /// <summary>
+    /// Les unités exactes de ce produit que les fabrications engagées ou en route vont donner : la recette engagée si les intrants sont pris, sinon la recette proposée, sinon
+    /// la recette habituelle. Une activité en pause ne se compte qu'une fois ; <paramref name="ignoring"/> est celle qu'on revalide.
+    /// </summary>
+    public static int PendingUnits(Colony colony, ResourceType output, Activity? ignoring = null)
+    {
+        int units = 0;
+        foreach (Colonist colonist in colony.PresentMembers)
+            foreach (Activity? craft in new[] { colonist.Activity, colonist.PausedCraft }.Distinct())
+                if (craft is { Kind: ActivityKind.Craft, Building: { } site } && craft != ignoring
+                    && (craft.Product ?? RecipeFor(colony, site.Type).Output) == output)
+                    units += (craft.CommittedRecipe ?? craft.PlannedRecipe ?? RecipeFor(colony, site.Type, craft.Product)).OutputAmount;
+        return units;
+    }
+
+    /// <summary>Les produits portés vers un dépôt : ils ne sont ni au stock ni encore à fabriquer.</summary>
+    public static int CarriedUnits(Colony colony, ResourceType output) =>
+        colony.PresentMembers.Sum(m => m.Carrying is { } load && m.CarryingTo is null && load.Type == output ? load.Amount : 0);
+
+    /// <summary>
+    /// Tout ce qui arrivera au stock sans nouveau travail : fabrications engagées, sorties qui attendent à l'atelier et produits portés. Centralisé ici pour que
+    /// les chaînes, les exportations et les extensions ne réclament pas chacune les mêmes unités.
+    /// </summary>
+    public static int Expected(Colony colony, ResourceType output, Activity? ignoring = null) =>
+        PendingUnits(colony, output, ignoring) + BatchProduction.BufferedUnits(colony, output) + CarriedUnits(colony, output);
 
     /// <summary>
     /// Le prochain atelier à bâtir. Le pain passe avant le fer : manger mieux libère des bras pour tout le reste.
@@ -42,6 +69,28 @@ public static class Crafting
         if (FoodChain.NextWorkshopToBuild(colony, map) is { } food && Knowledge.Allows(colony, food))
             return food;
         return ToolChain.NextWorkshopToBuild(colony) is { } iron && Knowledge.Allows(colony, iron) ? iron : ExtendedIndustry.NextWorkshop(colony);
+    }
+
+    /// <summary>
+    /// Les travaux d'atelier recevables, dans l'ordre de priorité de la colonie (le premier est celui qu'on choisit sans préférence). Évalués à la demande : un colon sans préférence
+    /// n'en regarde jamais plus d'un. Le gâteau, le ragoût et la bière urgents passent avant tout ; une offrande en chantier ensuite ; puis la frappe et l'affinage de l'or, les
+    /// chaînes (blé, fer, textile, négoce), les plats de fête restants et les autres industries.
+    /// </summary>
+    internal static IEnumerable<CraftCandidate> Candidates(Colony colony, int heatingReserve)
+    {
+        (Building Workshop, Recipe Recipe)? urgent = Cuisine.PickCake(colony) ?? Cuisine.PickStew(colony, Cuisine.UrgentFill) ?? Cuisine.PickBrew(colony, Cuisine.UrgentFill);
+        if (urgent is { } first)
+            yield return new CraftCandidate(first.Workshop, first.Recipe.Output);
+        else if (Offerings.PickSculptJob(colony) is { } shrine)
+            yield return new CraftCandidate(shrine, null, Sculpt: true);
+        if (urgent is null && ExtendedIndustry.PickMonetaryJob(colony) is { } monetary)
+            yield return new CraftCandidate(monetary.Workshop, monetary.Recipe.Output);
+        if (urgent is null && PickJob(colony, heatingReserve) is { } chain)
+            yield return new CraftCandidate(chain, null);
+        if ((Cuisine.PickStew(colony) ?? Cuisine.PickBrew(colony)) is { } dish)
+            yield return new CraftCandidate(dish.Workshop, dish.Recipe.Output);
+        if (ExtendedIndustry.PickJob(colony) is { } industry)
+            yield return new CraftCandidate(industry.Workshop, industry.Recipe.Output);
     }
 
     /// <summary>Où travailler maintenant, s'il y a quelque chose d'utile à fabriquer.</summary>

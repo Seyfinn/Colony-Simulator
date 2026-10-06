@@ -37,6 +37,7 @@ public partial class WorkshopPreview : Node2D
                 if (arg == "--compact") { GetWindow().Size = new Vector2I(1100, 700); GetWindow().ContentScaleSize = Vector2I.Zero; }
                 if (arg == "--fallback") { _fallback = true; AssetLibrary.NativeFallbackForValidation = true; }
             }
+            if (_mode is "bridges" or "mills" or "places") { AddChild(new WaterworksPreview()); return; }
             ValidateArt();
             if (_mode == "gallery") Gallery();
             else if (_mode == "local") Local();
@@ -181,6 +182,7 @@ public partial class WorkshopPreview : Node2D
     private static IEnumerable<Node> Descendants(Node node) { yield return node; foreach (Node child in node.GetChildren()) foreach (Node descendant in Descendants(child)) yield return descendant; }
     public override void _Process(double delta)
     {
+        if (_mode is "bridges" or "mills" or "places") return;
         try
         {
             _frame++;

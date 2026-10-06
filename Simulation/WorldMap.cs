@@ -155,10 +155,29 @@ public sealed class WorldMap
     }
 
     /// <summary>Coût d'entrée dans une case : moyenne des deux cases traversées (on quitte l'une, on entre dans l'autre).</summary>
-    private float StepCost(int from, int to) => 0.5f * (Grid[from].TravelCost + Grid[to].TravelCost) * WorldRoadNetwork.CostFactor(Roads.LevelOf(from, to));
+    private float StepCost(int from, int to)
+    {
+        int level = Roads.LevelOf(from, to);
+        // Le passage d'un grand fleuve ralentit la marche tant que l'arête n'est pas aménagée au niveau du pont (niveau 2).
+        return 0.5f * (Grid[from].TravelCost + Grid[to].TravelCost) * (level < 2 && CrossesRiver(from, to) ? RiverCrossingFactor : 1f) * WorldRoadNetwork.CostFactor(level);
+    }
 
-    /// <summary>Le coût de marche d'une arête sans aménagement (la route le réduit : voir <see cref="WorldRoadNetwork"/>).</summary>
-    internal float StepCostOf(int from, int to) => 0.5f * (Grid[from].TravelCost + Grid[to].TravelCost);
+    /// <summary>Majoration de la marche (et des matériaux d'aménagement) d'une arête qui traverse un grand fleuve ; le niveau 2 y représente le pont.</summary>
+    public const float RiverCrossingFactor = 1.5f;
+
+    /// <summary>
+    /// L'arête entre deux cases voisines traverse-t-elle un grand fleuve ? Oui si l'une est une case de fleuve (taille 2) et que l'on n'y longe pas le même cours d'eau.
+    /// </summary>
+    public bool CrossesRiver(int a, int b)
+    {
+        WorldTile from = Grid[a], to = Grid[b];
+        if (from.River < 2 && to.River < 2)
+            return false;
+        return !(from.River >= 2 && to.River >= 2 && (from.FlowsTo == b || to.FlowsTo == a));
+    }
+
+    /// <summary>Le coût de marche d'une arête sans aménagement (la route le réduit : voir <see cref="WorldRoadNetwork"/>) ; un fleuve à traverser le majore.</summary>
+    internal float StepCostOf(int from, int to) => 0.5f * (Grid[from].TravelCost + Grid[to].TravelCost) * (CrossesRiver(from, to) ? RiverCrossingFactor : 1f);
 
     /// <summary>Aménage une arête d'un niveau : les itinéraires déjà calculés sont écartés et les voyages en cours revalident à leur prochaine étape.</summary>
     internal bool ImproveRoad(int a, int b, int maxLevel)

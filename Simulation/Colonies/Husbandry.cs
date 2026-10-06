@@ -73,6 +73,11 @@ public static class Husbandry
 
     public static bool IsLivestock(ResourceType good) => good is ResourceType.Chickens or ResourceType.Sheep or ResourceType.Cows;
 
+    /// <summary>Les bêtes de trait : elles logent à l'enclos et mangent comme les vaches, mais ne donnent ni œufs, ni lait, ni viande ; elles tirent les caravanes (voir <see cref="CaravanGear.Draft"/>).</summary>
+    public static readonly ResourceType[] DraftSpecies = [ResourceType.Horses, ResourceType.Oxen];
+
+    public static bool IsDraft(ResourceType good) => good is ResourceType.Horses or ResourceType.Oxen;
+
     // --- Régions ---
 
     /// <summary>
@@ -140,7 +145,7 @@ public static class Husbandry
 
     public static int Pens(Colony colony) => colony.Buildings.Count(b => b.Type == BuildingType.Pen && b.IsComplete);
 
-    public static int PerPen(ResourceType species) => species == ResourceType.Cows ? CowsPerPen : PenCapacity;
+    public static int PerPen(ResourceType species) => species is ResourceType.Cows or ResourceType.Horses or ResourceType.Oxen ? CowsPerPen : PenCapacity;
 
     /// <summary>Capacité des enclos pour les poules et les moutons (voir <see cref="CapacityOf"/> pour une espèce donnée).</summary>
     public static int Capacity(Colony colony) => CapacityOf(colony, ResourceType.Chickens);
@@ -155,6 +160,9 @@ public static class Husbandry
     {
         ResourceType.Chickens => colony.Chickens,
         ResourceType.Sheep => colony.Sheep,
+        ResourceType.Horses => colony.Horses,
+        ResourceType.Oxen => colony.Oxen,
+        ResourceType.Dogs => colony.Stock.Get(ResourceType.Dogs),
         _ => colony.Cows,
     };
 
@@ -164,16 +172,48 @@ public static class Husbandry
         {
             case ResourceType.Chickens: colony.Chickens = count; break;
             case ResourceType.Sheep: colony.Sheep = count; break;
+            case ResourceType.Horses: colony.Horses = count; break;
+            case ResourceType.Oxen: colony.Oxen = count; break;
             default: colony.Cows = count; break;
         }
     }
 
-    public static int Animals(Colony colony) => colony.Chickens + colony.Sheep + colony.Cows;
+    public static int Animals(Colony colony) => colony.Chickens + colony.Sheep + colony.Cows + colony.Horses + colony.Oxen;
 
-    /// <summary>Une vache mange pour deux : la ration d'hiver se compte en « bouches ».</summary>
-    private static int Mouths(Colony colony) => colony.Chickens + colony.Sheep + 2 * colony.Cows;
+    /// <summary>Une vache, un cheval ou un bœuf mange pour deux : la ration d'hiver se compte en « bouches ».</summary>
+    private static int Mouths(Colony colony) => colony.Chickens + colony.Sheep + 2 * (colony.Cows + colony.Horses + colony.Oxen);
 
-    /// <summary>L'enclos est achevé : les premières bêtes de la région s'y installent.</summary>
+    /// <summary>Une bête apprivoisée entre à l'enclos, ou au stock (en réserve) s'il est plein.</summary>
+    internal static void AddTamed(Colony colony, ResourceType species)
+    {
+        if (Count(colony, species) < CapacityOf(colony, species))
+            SetCount(colony, species, Count(colony, species) + 1);
+        else
+            colony.Stock.Add(species, 1);
+    }
+
+    /// <summary>Des bêtes de l'enclos sont perdues (attaque de prédateurs) ; la dernière paire n'est jamais touchée par l'appelant.</summary>
+    internal static void Lose(Colony colony, ResourceType species, int number) =>
+        SetCount(colony, species, Math.Max(0, Count(colony, species) - number));
+
+    /// <summary>Des bêtes de trait prélevées pour une caravane (voir <see cref="Trade"/>) ; renvoie ce qui a été pris.</summary>
+    internal static int TakeDraft(Colony colony, ResourceType species, int number)
+    {
+        int taken = Math.Min(number, Count(colony, species));
+        SetCount(colony, species, Count(colony, species) - taken);
+        return taken;
+    }
+
+    /// <summary>Des bêtes de trait rentrent de caravane : elles reprennent leur place à l'enclos, ou au stock s'il est plein.</summary>
+    internal static void ReturnDraft(Colony colony, ResourceType species, int number)
+    {
+        for (int i = 0; i < number; i++)
+            AddTamed(colony, species);
+    }
+
+    /// <summary>
+    /// L'enclos est achevé, et vide : tous les animaux sont sauvages au départ. Il faudra capturer des bêtes puis les apprivoiser (voir <see cref="Nature.Taming"/>).
+    /// </summary>
     public static void OnPenBuilt(Colony colony, GameClock clock)
     {
         if (Animals(colony) > 0)
@@ -183,14 +223,9 @@ public static class Husbandry
                     + $"{CapacityOf(colony, ResourceType.Sheep)} moutons et {CapacityOf(colony, ResourceType.Cows)} vaches.");
             return;
         }
-        Biome biome = colony.Map.Biome;
-        foreach (ResourceType species in Species)
-            SetCount(colony, species, Math.Min(StartingHerd(biome, species), CapacityOf(colony, species)));
-
-        string herd = string.Join(", ", Species.Where(s => Count(colony, s) > 0).Select(s => $"{Count(colony, s)} {Trade.GoodName(s, Count(colony, s))}"));
-        string missing = string.Join(" et ", Species.Where(s => Count(colony, s) == 0).Select(s => Trade.GoodName(s, 2)));
-        ColonyBrain.Say(colony, clock, (herd.Length > 0 ? $"L'enclos est achevé : {herd} s'y installent." : "L'enclos est achevé, mais il est vide.")
-            + (missing.Length > 0 ? $" Il n'y a pas de {missing} dans la région : leurs produits viendront des voisines, car les bêtes elles-mêmes coûtent une fortune." : ""));
+        ColonyBrain.Say(colony, clock, colony.LocalSettlement.Herds.Any(h => Nature.WildSpeciesInfo.DomesticForm(h.Species) is not null)
+            ? "L'enclos est achevé, mais il est vide : on va capturer des bêtes sauvages des environs et les apprivoiser."
+            : "L'enclos est achevé, mais il est vide : aucune bête domestiquable n'est en vue, il faudra guetter les hardes de la région.");
     }
 
     /// <summary>Chaque matin : accueillir les bêtes achetées, nourrir le troupeau, le voir se multiplier, laisser les produits s'accumuler ; les vêtements s'usent.</summary>
@@ -202,7 +237,7 @@ public static class Husbandry
         Season season = clock.Season;
 
         // Les bêtes achetées ou nées en surplus entrent à l'enclos dès qu'il y a de la place.
-        foreach (ResourceType species in Species)
+        foreach (ResourceType species in Species.Concat(DraftSpecies))
         {
             int take = Math.Min(CapacityOf(colony, species) - Count(colony, species), colony.Stock.Get(species));
             if (take > 0 && colony.Stock.TryTake(species, take))
@@ -237,14 +272,16 @@ public static class Husbandry
             {
                 Breed(colony, ResourceType.Sheep, 0.07f);
                 Breed(colony, ResourceType.Cows, 0.045f);
+                Breed(colony, ResourceType.Horses, 0.03f);
             }
         }
 
         int penChickens = Capacity(colony);
         float laying = season == Season.Hiver ? 0.3f : 1f;
-        colony.EggsReady = Math.Min(colony.EggsReady + colony.Chickens * 0.5f * laying, penChickens * 1.5f);
-        colony.WoolReady = Math.Min(colony.WoolReady + colony.Sheep * 0.2f, penChickens * 0.75f);
-        colony.MilkReady = Math.Min(colony.MilkReady + colony.Cows * 0.8f * (season == Season.Hiver ? 0.4f : 1f), CapacityOf(colony, ResourceType.Cows) * 2f);
+        // Les bêtes de la lignée de la colonie, plus dociles, donnent davantage (voir Taming.OnBirth).
+        colony.EggsReady = Math.Min(colony.EggsReady + colony.Chickens * 0.5f * laying * Nature.Taming.Yield(colony, ResourceType.Chickens), penChickens * 1.5f);
+        colony.WoolReady = Math.Min(colony.WoolReady + colony.Sheep * 0.2f * Nature.Taming.Yield(colony, ResourceType.Sheep), penChickens * 0.75f);
+        colony.MilkReady = Math.Min(colony.MilkReady + colony.Cows * 0.8f * (season == Season.Hiver ? 0.4f : 1f) * Nature.Taming.Yield(colony, ResourceType.Cows), CapacityOf(colony, ResourceType.Cows) * 2f);
 
         PlanSlaughter(colony, clock);
     }
@@ -255,15 +292,20 @@ public static class Husbandry
         {
             ResourceType.Chickens => colony.ChickenGrowth,
             ResourceType.Sheep => colony.SheepGrowth,
+            ResourceType.Horses => colony.HorseGrowth,
             _ => colony.CowGrowth,
         };
         // Il faut une paire : une bête seule ne donne rien, deux en donnent autant que deux bêtes d'un grand troupeau.
-        growth += Count(colony, species) / 2 * 2f * rate * Abundance(colony, species);
+        // Un cheval apprivoisé n'est pas lié à l'abondance du biome : sa famille vient de l'enclos.
+        growth += Count(colony, species) / 2 * 2f * rate * (species == ResourceType.Horses ? 1f : Abundance(colony, species));
         while (growth >= 1f)
         {
             growth -= 1f;
             if (Count(colony, species) < CapacityOf(colony, species))
+            {
                 SetCount(colony, species, Count(colony, species) + 1);
+                Nature.Taming.OnBirth(colony, species);
+            }
             else if (colony.Stock.Get(species) < MaxSpareAnimals)
                 colony.Stock.Add(species, 1);
         }
@@ -271,6 +313,7 @@ public static class Husbandry
         {
             case ResourceType.Chickens: colony.ChickenGrowth = growth; break;
             case ResourceType.Sheep: colony.SheepGrowth = growth; break;
+            case ResourceType.Horses: colony.HorseGrowth = growth; break;
             default: colony.CowGrowth = growth; break;
         }
     }
@@ -492,8 +535,12 @@ public static class Husbandry
     /// <summary>La part de la colonie qui a de quoi s'habiller chaudement, de 0 à 1.</summary>
     public static float ClothesCoverage(Colony colony)
     {
+        // Sans vêtements, la couverture est nulle : inutile de compter les présents (lu à chaque tick pour chaque colon, l'hiver).
+        int clothes = colony.Stock.Get(ResourceType.Clothes);
+        if (clothes == 0)
+            return 0f;
         int people = colony.PresentMembers.Count;
-        return people == 0 ? 0f : Math.Min(1f, colony.Stock.Get(ResourceType.Clothes) / (float)people);
+        return people == 0 ? 0f : Math.Min(1f, clothes / (float)people);
     }
 
     /// <summary>Tisser dès qu'il y a de la laine et que tout le monde n'est pas encore habillé.</summary>
@@ -504,6 +551,6 @@ public static class Husbandry
         Stockpile stock = colony.Stock;
         if (stock.Get(ResourceType.Wool) < Weaving.Inputs[0].Amount)
             return null;
-        return stock.Get(ResourceType.Clothes) + Crafting.Pending(colony, ResourceType.Clothes) < ClothesTarget(colony) ? loom : null;
+        return stock.Get(ResourceType.Clothes) + Crafting.Expected(colony, ResourceType.Clothes) < ClothesTarget(colony) ? loom : null;
     }
 }

@@ -26,7 +26,7 @@ public sealed class BuildingExtensionTests
 
     [Theory]
     [InlineData(BuildingType.Pen, 15, 0)]
-    [InlineData(BuildingType.Market, 21, 9)]
+    [InlineData(BuildingType.Market, 12, 6)]
     public void Les_habitants_livrent_et_batissent_une_extension_sans_fermer_le_batiment(BuildingType type, int bois, int pierre)
     {
         var (monde, colonie, principal) = Village(type);

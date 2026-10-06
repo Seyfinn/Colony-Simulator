@@ -165,8 +165,9 @@ public sealed class PrayerBook(Colony colony)
 
         if (approve && prayer.Kind == DecisionKind.Wish)
         {
-            // Le souhait attend un pouvoir qui n'existe pas encore : l'accord est retenu, rien n'est exaucé.
-            ColonyBrain.Say(colony, clock, "Notre souhait est entendu : les habitants attendent que ta puissance s'exerce.");
+            // L'accord applique le pouvoir à sa cible valide, une seule fois (voir DivinePowers.ApplyAccepted) ; elle raconte l'effet réel.
+            if (colony.Wishes.FirstOrDefault(w => w.Id == prayer.WishId) is { } accepted)
+                DivinePowers.ApplyAccepted(colony, accepted);
             return;
         }
         if (approve)

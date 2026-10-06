@@ -18,11 +18,15 @@ public partial class VillageNotices : CanvasLayer
     private PanelContainer _toast = null!;
     private ColorRect _cold = null!;
     private double _remaining;
+    private readonly Dictionary<(int Source, int Id), DivineWishStatus> _wishStates = [];
+    private readonly Dictionary<(int Source, int Wish), DivineEffectStatus> _effectStates = [];
 
     public void Init(WorldState world, Colony colony)
     {
         _world = world; _colony = colony; _settlement = colony.CurrentSettlement;
         foreach (string id in colony.Achievements.Keys) _seen.Add(id);
+        foreach (DivineWish wish in colony.Wishes) _wishStates[(wish.SourceColonyId, wish.Id)] = wish.Status;
+        foreach (DivineEffect effect in colony.DivineEffects) _effectStates[(effect.SourceColonyId, effect.WishId)] = effect.Status;
         Layer = 2;
         var root = new Control { MouseFilter = Control.MouseFilterEnum.Ignore };
         root.SetAnchorsAndOffsetsPreset(Control.LayoutPreset.FullRect); AddChild(root);
@@ -46,12 +50,30 @@ public partial class VillageNotices : CanvasLayer
         using var scope = _settlement.Observe();
         _cold.Visible = _colony.ColdSnapDaysLeft > 0 && Climate.ColdSeverity(_colony.Map.Biome) > 0;
         foreach (Milestone milestone in Milestones.All)
-            if (_colony.Achievements.TryGetValue(milestone.Id, out long ticks) && _seen.Add(milestone.Id)) _pending.Enqueue((milestone.Title, ticks));
+            if (_colony.Achievements.TryGetValue(milestone.Id, out long ticks) && _seen.Add(milestone.Id)) _pending.Enqueue(($"Jalon atteint : {milestone.Title}", ticks));
+        foreach (DivineWish wish in _colony.Wishes)
+        {
+            var key = (wish.SourceColonyId, wish.Id);
+            if ((!_wishStates.TryGetValue(key, out var previous) || previous != wish.Status) && wish.Status != DivineWishStatus.AwaitingResponse)
+                _pending.Enqueue(($"Souhait {ScaleDashboard.WishStatus(wish.Status)} : {wish.Outcome}", wish.AnsweredTicks ?? _world.Clock.Ticks));
+            _wishStates[key] = wish.Status;
+        }
+        foreach (DivineEffect effect in _colony.DivineEffects)
+        {
+            var key = (effect.SourceColonyId, effect.WishId);
+            if ((!_effectStates.TryGetValue(key, out var previous) || previous != effect.Status) && effect.Status != DivineEffectStatus.Active)
+            {
+                DivineEffectView? view = null;
+                foreach (DivineEffectView candidate in DivinePowers.Views(_colony)) if (candidate.Id == effect.Id) { view = candidate; break; }
+                if (view is not null) _pending.Enqueue((view.Explanation, _world.Clock.Ticks));
+            }
+            _effectStates[key] = effect.Status;
+        }
         _remaining -= delta;
         if (_remaining <= 0 && _pending.TryDequeue(out var next))
         {
             var when = new GameClock(next.Ticks);
-            _text.Text = $"Jalon atteint : {next.Title}\n{when.Season} · jour {when.DayOfSeason} · année {when.Year}";
+            _text.Text = $"{next.Title}\n{when.Season} · jour {when.DayOfSeason} · année {when.Year}";
             _remaining = 5;
         }
         _toast.Visible = _remaining > 0;

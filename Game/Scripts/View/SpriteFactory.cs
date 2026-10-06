@@ -16,7 +16,7 @@ public static class SpriteFactory
     private static ImageTexture? _bush;
     private static ImageTexture? _bushEmpty;
     private static ImageTexture[]? _campfire;
-    private static ImageTexture? _firepit, _grave, _chat, _sleep;
+    private static ImageTexture? _firepit, _chat, _sleep;
     private static readonly Dictionary<(int Id, bool Elder, WoodlandBiome Biome), ImageTexture[]> Colonists = [];
 
     /// <summary>Chêne, bouleau, conifère, saule, acacia et arbre tropical en 32 × 48 pixels.</summary>
@@ -54,7 +54,6 @@ public static class SpriteFactory
     /// <summary>Foyer de pierre de 32 × 32 pixels et quatre poses de flamme.</summary>
     public static ImageTexture[] Campfire => _campfire ??= [BuildCampfire(0), BuildCampfire(1), BuildCampfire(2), BuildCampfire(3)];
     public static ImageTexture Firepit => _firepit ??= BuildCampfire(-1);
-    public static ImageTexture Grave => _grave ??= BuildGrave();
     public static ImageTexture ChatBubble => _chat ??= BuildChatBubble();
     public static ImageTexture Sleep => _sleep ??= BuildSleep();
 
@@ -193,28 +192,6 @@ public static class SpriteFactory
             image.SetPixel(x, y, c);
         }
         FillBox(image, 10 + frame, 14 - frame, 2, 4, Color.Color8(245, 168, 63));
-        return ImageTexture.CreateFromImage(image);
-    }
-
-    private static ImageTexture BuildGrave()
-    {
-        var image = Image.CreateEmpty(32, 32, false, Image.Format.Rgba8);
-        Color rim = Color.Color8(69, 85, 79), stone = Color.Color8(145, 159, 140);
-        Oval(image, 16, 12, 8, 8, rim);
-        FillBox(image, 8, 12, 17, 15, rim);
-        Oval(image, 15, 12, 6, 6, stone);
-        FillBox(image, 10, 12, 13, 13, stone);
-        FillBox(image, 10, 12, 2, 12, Color.Color8(180, 188, 158));
-        FillBox(image, 21, 12, 2, 13, Color.Color8(112, 134, 121));
-        FillBox(image, 6, 26, 21, 3, rim);
-        FillBox(image, 7, 26, 18, 1, stone);
-        // Petit losange gravé, inscription et fleurs au pied.
-        foreach (var p in new[] { (16, 10), (15, 11), (17, 11), (16, 12) }) image.SetPixel(p.Item1, p.Item2, rim);
-        FillBox(image, 13, 17, 7, 1, rim);
-        FillBox(image, 14, 20, 5, 1, rim);
-        FillBox(image, 25, 23, 1, 6, Color.Color8(88, 127, 82));
-        FillBox(image, 24, 24, 3, 2, Color.Color8(202, 151, 126));
-        image.SetPixel(25, 24, ArtDirection.Cream);
         return ImageTexture.CreateFromImage(image);
     }
 

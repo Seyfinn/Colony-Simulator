@@ -1,6 +1,6 @@
 namespace GodColony.Simulation.Colonies;
 
-public enum SkillType { Foraging, Fishing, Woodcutting, Mining, Construction, Farming, Smithing, Cooking, Husbandry, Weaving, Trading, Medicine }
+public enum SkillType { Foraging, Fishing, Woodcutting, Mining, Construction, Farming, Smithing, Cooking, Husbandry, Weaving, Trading, Medicine, Hunting }
 
 /// <summary>
 /// Les compétences d'un colon, de 0 à 20. Elles progressent par la pratique, plus ou moins vite
@@ -36,8 +36,20 @@ public sealed class Skills
         return best;
     }
 
-    private readonly float[] _level = new float[All.Length];
-    private readonly float[] _talent = new float[All.Length];
+    private float[] _level = new float[All.Length];
+    private float[] _talent = new float[All.Length];
+
+    /// <summary>Complète les tableaux d'un colon lu dans un ancien format avec les métiers apparus depuis (talent moyen, aucune expérience).</summary>
+    internal void PadToCurrent()
+    {
+        int known = _level.Length;
+        if (known >= All.Length)
+            return;
+        Array.Resize(ref _level, All.Length);
+        Array.Resize(ref _talent, All.Length);
+        for (int i = known; i < All.Length; i++)
+            _talent[i] = 1f;
+    }
 
     /// <summary>Niveau de départ et talent tirés au hasard : chacun a ses points forts.</summary>
     public static Skills Random(Random random, Species? species = null)
@@ -101,6 +113,7 @@ public sealed class Skills
             SkillType.Weaving => f ? "tisserande" : "tisserand",
             SkillType.Trading => f ? "marchande" : "marchand",
             SkillType.Medicine => f ? "guérisseuse" : "guérisseur",
+            SkillType.Hunting => f ? "chasseuse" : "chasseur",
             _ => f ? "bâtisseuse" : "bâtisseur",
         };
     }

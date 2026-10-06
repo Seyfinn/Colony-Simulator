@@ -12,6 +12,44 @@ public static class RemainingArt
     private static readonly Color Wood = Color.Color8(108, 72, 47), LightWood = Color.Color8(177, 126, 73);
     private static readonly Dictionary<PeopleLook, ImageTexture[]> NativeTraders = [];
     private static ImageTexture[]? NativeWheels;
+    private static readonly Dictionary<(MillSide Side, int Frame, bool Fallback), ImageTexture> OrientedWheels = [];
+
+    public static ImageTexture WheelFrame(int frame, MillSide side)
+    {
+        var key = (side, frame, AssetLibrary.NativeFallbackForValidation);
+        if (!OrientedWheels.TryGetValue(key, out var texture))
+            OrientedWheels[key] = texture = AssetLibrary.Get($"buildings/mill_wheel_{side.ToString().ToLowerInvariant()}_{frame}.png")
+                ?? ImageTexture.CreateFromImage(Wheel(frame, side));
+        return texture;
+    }
+
+    private static Image Wheel(int frame, MillSide side)
+    {
+        if (side is MillSide.East or MillSide.West)
+        {
+            Image image = Wheel(frame);
+            if (side == MillSide.West) image.FlipX();
+            return image;
+        }
+        var p = new PixelArt(40, 32);
+        int front = side == MillSide.South ? 2 : -2;
+        p.Oval(20, 16 + front, 18, 13, Ink); p.Oval(20, 16 + front, 17, 12, Wood);
+        p.Oval(20, 15, 17, 12, LightWood); p.Oval(20, 15, 13, 9, Ink);
+        for (int i = 0; i < 8; i++)
+        {
+            double angle = i * Math.PI / 4 + frame * Math.PI / 16;
+            int x = 20 + (int)Math.Round(Math.Cos(angle) * 16), y = 15 + (int)Math.Round(Math.Sin(angle) * 11);
+            p.Line(20, 15, x, y, LightWood); p.Box(x - 2, y - 1, 5, 2, Gold);
+        }
+        p.Oval(20, 15, 3, 2, Gold); p.Dot(20, 15, Ink);
+        return p.Image;
+    }
+
+    public static void ExportMillWheels()
+    {
+        foreach (MillSide side in Enum.GetValues<MillSide>())
+            for (int i = 0; i < 4; i++) Save($"buildings/mill_wheel_{side.ToString().ToLowerInvariant()}_{i}.png", Wheel(i, side));
+    }
 
     public static ImageTexture WheelFrame(int frame)
     {

@@ -3,10 +3,11 @@ namespace GodColony.Simulation.Colonies;
 public enum DivineWishKind { CropBlessing = 0, ChampionBlessing = 1 }
 
 /// <summary>
-/// L'état d'un souhait. Il reste en attente tant qu'aucun pouvoir ne l'applique : un accord du joueur est noté (<see cref="DivineWish.AcceptedTicks"/>)
-/// mais ne vaut jamais exaucement. <see cref="Fulfilled"/> exige un effet réellement appliqué par un futur service de pouvoirs.
+/// L'état d'un souhait. Il reste en attente tant que le joueur n'a pas répondu ; un accord (<see cref="DivineWish.AcceptedTicks"/>) applique le pouvoir à sa cible valide et
+/// l'exauce (<see cref="Fulfilled"/>) dans la même transition, jamais avant. <see cref="AlreadyBlessed"/> : la cible portait déjà un effet du même type au moment de l'accord ;
+/// l'accord est valide mais n'ajoute rien, et l'explication reste visible.
 /// </summary>
-public enum DivineWishStatus { AwaitingResponse = 0, Refused = 1, TargetInvalid = 2, Fulfilled = 3 }
+public enum DivineWishStatus { AwaitingResponse = 0, Refused = 1, TargetInvalid = 2, Fulfilled = 3, AlreadyBlessed = 4 }
 
 public enum WishTargetKind { Field = 0, Colonist = 1 }
 
@@ -34,6 +35,12 @@ public sealed class DivineWish
 
     /// <summary>L'effort réel investi, en clair, pour que le joueur juge de la demande.</summary>
     public string Description { get; internal set; } = "";
+
+    /// <summary>La colonie qui a formulé le souhait : son identité, avec celle du souhait, reste figée même après un transfert politique.</summary>
+    public int SourceColonyId { get; internal set; }
+
+    /// <summary>Ce qu'est devenu l'accord, en clair : l'effet appliqué, ou le motif pour lequel rien ne l'a été (cible disparue, déjà bénie).</summary>
+    public string Outcome { get; internal set; } = "";
 }
 
 /// <summary>Création, réponse et validité des souhaits ; les effets des pouvoirs relèvent d'un chantier distinct.</summary>
@@ -54,14 +61,16 @@ public static class DivineWishes
         if (template.Wish == DivineWishKind.CropBlessing)
         {
             targetKind = WishTargetKind.Field;
-            Field? field = place.Fields.Where(f => f.Plots.Any(p => p.Stage is CropStage.Growing or CropStage.Ripe)).OrderBy(f => f.Id).FirstOrDefault();
+            // Une cible qui porte déjà une bénédiction du même type n'est pas proposée : on filtre à la création, puis on revalide à la réponse.
+            Field? field = place.Fields.Where(f => f.Plots.Any(p => p.Stage is CropStage.Growing or CropStage.Ripe) && !DivinePowers.IsBlessed(colony, DivineEffectKind.HarvestYield, place.Id, f.Id))
+                .OrderBy(f => f.Id).FirstOrDefault();
             if (field is null) return null;
             target = field.Id;
         }
         else
         {
             targetKind = WishTargetKind.Colonist;
-            Colonist? champion = place.Population.Where(c => c.Stage == LifeStage.Adult)
+            Colonist? champion = place.Population.Where(c => c.Stage == LifeStage.Adult && !DivinePowers.IsBlessed(colony, DivineEffectKind.ChampionStrength, 0, c.Id))
                 .OrderByDescending(c => c.Personality[Axis.Audace] + c.Personality[Axis.Temperament]).ThenBy(c => c.Id).FirstOrDefault();
             if (champion is null) return null;
             target = champion.Id;
@@ -69,7 +78,7 @@ public static class DivineWishes
         string materials = string.Join(", ", monument.Materials.OrderBy(m => (int)m.Key).Select(m => $"{ResourceCatalog.Name(m.Key)} {m.Value}"));
         var wish = new DivineWish
         {
-            Id = colony.NextWishId(), SettlementId = place.Id, Kind = template.Wish, TargetKind = targetKind, TargetId = target,
+            Id = colony.NextWishId(), SourceColonyId = colony.Id, SettlementId = place.Id, Kind = template.Wish, TargetKind = targetKind, TargetId = target,
             OfferingProjectId = monument.ProjectId, MonumentId = monument.Id, Status = DivineWishStatus.AwaitingResponse,
             CreatedTicks = colony.Clock.Ticks,
             Description = $"{Capital(template.Name)} ({materials}).",
@@ -77,7 +86,9 @@ public static class DivineWishes
         colony.Wishes.Add(wish);
         monument.WishId = wish.Id;
         string question = template.Wish == DivineWishKind.CropBlessing ? "Bénir nos récoltes ?" : "Accorder une faveur durable à notre champion ?";
-        string reason = $"{wish.Description} Les habitants espèrent ta bénédiction ; le pouvoir de l'accorder n'existe pas encore, ta réponse sera seulement retenue.";
+        string reason = $"{wish.Description} " + (template.Wish == DivineWishKind.CropBlessing
+            ? $"Les habitants espèrent ta bénédiction : la prochaine moisson des parcelles de ce champ déjà en croissance rendrait un quart de plus (une seule fois par parcelle, {DivinePowers.HarvestSeasons} saisons au plus)."
+            : "Les habitants espèrent ta faveur : ce guerrier aurait un quart de force de plus au combat pendant un an, tant qu'il y prend part.");
         colony.Prayers.Ask(DecisionKind.Wish, $"souhait:{wish.Id}", question, reason, () => { }, colony.Clock, RefusalCooldownDays, wish.Id);
         return wish;
     }
@@ -94,10 +105,15 @@ public static class DivineWishes
         else wish.Status = DivineWishStatus.Refused;
     }
 
-    /// <summary>Marque un souhait exaucé, seulement si un pouvoir a réellement appliqué son effet à une cible encore valide.</summary>
-    public static bool TryFulfill(Colony colony, DivineWish wish, bool effectApplied)
+    /// <summary>
+    /// Marque un souhait exaucé, seulement si l'effet appliqué lui est lié : un effet enregistré chez cette colonie, issu de ce souhait, après un accord réel, sur une cible encore valide.
+    /// Un simple booléen ne suffit jamais à fabriquer un exaucement sans effet.
+    /// </summary>
+    public static bool TryFulfill(Colony colony, DivineWish wish, DivineEffect effect)
     {
-        if (!effectApplied || wish.Status != DivineWishStatus.AwaitingResponse || !IsTargetValid(colony, wish)) return false;
+        if (wish.AcceptedTicks is null || wish.Status != DivineWishStatus.AwaitingResponse || effect.WishId != wish.Id || effect.SourceColonyId != wish.SourceColonyId
+            || !colony.DivineEffects.Contains(effect) || effect.Status != DivineEffectStatus.Active || !IsTargetValid(colony, wish))
+            return false;
         wish.Status = DivineWishStatus.Fulfilled;
         return true;
     }
@@ -115,6 +131,7 @@ public static class DivineWishes
     /// <summary>Chaque jour : les souhaits dont la cible a disparu sont invalidés (l'offrande reste) et les monuments sans souhait en cherchent un.</summary>
     internal static void Daily(Colony colony)
     {
+        DivinePowers.Daily(colony); // les effets vivants expirent ou s'invalident avant tout
         foreach (DivineWish wish in colony.Wishes.Where(w => w.Status == DivineWishStatus.AwaitingResponse))
         {
             if (IsTargetValid(colony, wish)) continue;

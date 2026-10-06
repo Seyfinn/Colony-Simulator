@@ -31,13 +31,11 @@ public static class Economy
         ResourceType.MineralCoal, ResourceType.Clay, ResourceType.Pottery, ResourceType.CopperOre, ResourceType.Copper, ResourceType.Copperware,
         ResourceType.Flax, ResourceType.Linen, ResourceType.Hides, ResourceType.Leather, ResourceType.Shoes, ResourceType.Grapes, ResourceType.Wine,
         ResourceType.GoldOre, ResourceType.Gold, ResourceType.Ruby, ResourceType.Sapphire, ResourceType.Emerald, ResourceType.Diamond, ResourceType.Jewelry,
+        ResourceType.Honey, ResourceType.Herbs, ResourceType.Carts,
     ];
 
     /// <summary>Un bien qu'on n'a jamais produit coûterait plus cher que la normale à qui s'y mettrait : on l'apprend sur le tas.</summary>
     private const double UnprovenFactor = 1.5;
-
-    /// <summary>Jours de repas de céréales qu'on veut garder en grenier avant de les trouver abondantes.</summary>
-    private const float GrainDays = 6f;
 
     /// <summary>Un bien moins rare que ce multiple du besoin ne vaut plus que le plancher du prix.</summary>
     private const double GlutFloor = 0.6;
@@ -46,33 +44,43 @@ public static class Economy
     public const double MinValueGap = 0.15;
 
     /// <summary>Coût de référence (heures par unité) d'un bien qu'une colonie n'a jamais produit : ce que coûtent les autres colonies en moyenne.</summary>
-    public static double BaselineCost(ResourceType good) => good switch
+    public static double BaselineCost(ResourceType good) => ReferencesProduction[good].Cout;
+
+    /// <summary>Transformations successives de la filière de référence ; les branches parallèles ne s'additionnent pas.</summary>
+    public static int ProductionSteps(ResourceType good) => ReferencesProduction[good].Etapes;
+
+    /// <summary>Prime de valeur par transformation, appliquée une seule fois au produit fini, jamais aux heures de ses intrants.</summary>
+    public const double TransformationPremiumPerStep = 0.08;
+
+    private static readonly IReadOnlyDictionary<ResourceType, (double Cout, int Etapes)> ReferencesProduction = ConstruireReferencesProduction();
+
+    /// <summary>Les heures des intrants et du geste, divisées par la sortie réelle ; la filière la moins coûteuse sert de référence.</summary>
+    private static IReadOnlyDictionary<ResourceType, (double Cout, int Etapes)> ConstruireReferencesProduction()
     {
-        ResourceType.Grain => 1.5,
-        ResourceType.Bread => 6.7,
-        ResourceType.Flour => 4.6,
-        ResourceType.Wood => 0.5,
-        ResourceType.Stone => 3.5,
-        ResourceType.IronOre => 5.5,
-        ResourceType.Charcoal => 5.0,
-        ResourceType.Iron => 48.0,
-        ResourceType.Tools => 129.0,
-        ResourceType.Wool => 5.0,
-        ResourceType.Clothes => 25.0,
-        ResourceType.Eggs => 4.0,
-        ResourceType.SaltedMeat => 3.0,
-        // Une fournée : 50 céréales (50 × 1,5 h) et deux heures de travail, pour 40 chopes.
-        ResourceType.Beer => (Cuisine.BeerRecipe.Inputs[0].Amount * 1.5 + 2.0) / Cuisine.BeerRecipe.OutputAmount,
-        ResourceType.Milk => 5.0,
-        ResourceType.Salt => 4.0,
-        ResourceType.Spices => 6.0,
-        ResourceType.Hardwood => 5.0,
-        // Les bêtes valent une fortune : on échange leurs produits, pas elles (voir Husbandry.LivestockWealthFactor).
-        ResourceType.Chickens => 100.0,
-        ResourceType.Sheep => 250.0,
-        ResourceType.Cows => 600.0,
-        _ => (int)good >= 27 ? ResourceCatalog.ReferenceCost(good) : 1.0,
-    };
+        Recipe[] recettes = [.. ExtendedIndustry.Recipes.Where(r => r.Output != ResourceType.Coins),
+            ToolChain.RecipeFor(BuildingType.Kiln), ToolChain.RecipeFor(BuildingType.Bloomery), ToolChain.RecipeFor(BuildingType.Forge),
+            FoodChain.RecipeFor(BuildingType.Mill), FoodChain.RecipeFor(BuildingType.Oven), Husbandry.Weaving,
+            Cuisine.CakeRecipe, Cuisine.StewRecipe, Cuisine.BeerRecipe];
+        var references = new Dictionary<ResourceType, (double Cout, int Etapes)>();
+        (double Cout, int Etapes) Resoudre(ResourceType bien)
+        {
+            if (references.TryGetValue(bien, out var connu)) return connu;
+            Recipe[] choix = recettes.Where(r => r.Output == bien).ToArray();
+            (double Cout, int Etapes) reference = choix.Length == 0
+                ? (ResourceCatalog.CoutBrutReference(bien), bien == ResourceType.SaltedMeat ? 1 : 0)
+                : choix.Select(r => (
+                    Cout: (r.Inputs.Sum(i => i.Amount * Resoudre(i.Type).Cout) + r.Seconds * ScaleRules.HoursPerSecond) / r.OutputAmount,
+                    Etapes: 1 + r.Inputs.Max(i => Resoudre(i.Type).Etapes)))
+                    .OrderBy(r => r.Cout).ThenBy(r => r.Etapes).First();
+            references.Add(bien, reference);
+            return reference;
+        }
+        foreach (ResourceType bien in Enum.GetValues<ResourceType>()) Resoudre(bien);
+        return references;
+    }
+
+    private static double ValeurProduction(Colony colonie, ResourceType bien) =>
+        Cost(colonie, bien) * (1 + TransformationPremiumPerStep * ProductionSteps(bien));
 
     /// <summary>Heures de travail que coûte une unité à cette colonie : son registre, ou à défaut la référence majorée.</summary>
     public static double Cost(Colony colony, ResourceType good) =>
@@ -83,13 +91,15 @@ public static class Economy
     /// <summary>La quantité que la colonie voudrait avoir en réserve pour ses propres besoins (0 si le bien ne lui sert à rien).</summary>
     public static float Need(Colony colony, ResourceType good)
     {
-        if ((int)good >= 27) return ExtendedIndustry.Target(colony, good);
         float daily = Math.Max(1, colony.PresentMembers.Count) * ColonyBrain.MealsPerColonistPerDay;
         ChainDemand iron = ToolChain.Demand(colony);
         return good switch
         {
-            ResourceType.Grain => daily * GrainDays,
-            ResourceType.Bread => colony.Buildings.Any(b => b.Type == BuildingType.Oven) ? FoodChain.Demand(colony).BreadTarget : 0f,
+            // On garde le grain nécessaire au prochain pain, aux semailles, aux animaux et aux fûts ; le grain cru n'est pas six jours de repas.
+            ResourceType.Grain => FoodChain.GrainForBread(colony, Math.Max(0, FoodChain.Demand(colony).BreadTarget - colony.Stock.Available(ResourceType.Bread)))
+                + Cuisine.BeerGrainReserve(colony),
+            // Le pain est la vraie nourriture de base : sans four, la colonie en voudrait au moins un jour de réserve (le grain cru ne la nourrirait presque pas).
+            ResourceType.Bread => colony.Buildings.Any(b => b.Type == BuildingType.Oven) ? FoodChain.Demand(colony).BreadTarget : daily,
             ResourceType.Flour => colony.Buildings.Any(b => b.Type == BuildingType.Mill) ? FoodChain.Demand(colony).FlourTarget : 0f,
             ResourceType.Wood => ColonyBrain.HeatingTarget(colony, colony.Clock.Season) + 10f + Offerings.Need(colony, ResourceType.Wood),
             ResourceType.Stone => ColonyBrain.StoneReserveTarget + Offerings.Need(colony, ResourceType.Stone),
@@ -106,15 +116,18 @@ public static class Economy
             ResourceType.Eggs or ResourceType.Milk => Math.Max(2f, colony.PresentMembers.Count * 0.6f),
             // La viande salée : trois jours de repas en réserve, le reste se vend.
             ResourceType.SaltedMeat => daily * 3f,
-            // La bière : une chope par habitant, mais seulement pour une colonie qui a une taverne.
-            ResourceType.Beer => colony.Buildings.Any(b => b.Type == BuildingType.Tavern) ? colony.PresentMembers.Count : 0f,
+            // La bière : cinq jours de consommation, comme les objectifs de brassage, avec une taverne achevée.
+            ResourceType.Beer => Civic.Has(colony, BuildingType.Tavern) ? Cuisine.BeerTarget(colony) : 0f,
+            ResourceType.Honey => daily,
+            ResourceType.Herbs => Civic.Has(colony, BuildingType.Infirmary) ? Math.Max(2, colony.IllnessCases + colony.PresentMembers.Count / 4) : colony.IllnessCases,
+            ResourceType.Carts => colony.PresentMembers.Count >= 8 ? Math.Max(Carts.Wanted(colony), Carts.InService(colony) + 1) : 0,
             // Les bêtes : de quoi remplir l'enclos, mais seule une colonie très riche songe à en acheter.
             ResourceType.Chickens or ResourceType.Sheep or ResourceType.Cows =>
                 Husbandry.CanAffordLivestock(colony, good) ? Math.Max(0, Husbandry.CapacityOf(colony, good) - Husbandry.Count(colony, good)) : 0f,
             // Les denrées de négoce : la région produit la sienne et manque des deux autres.
             ResourceType.Salt or ResourceType.Spices or ResourceType.Hardwood =>
                 Specialties.NativeOf(colony) == good ? 0f : Specialties.ImportNeed(colony),
-            _ => 0f,
+            _ => ExtendedIndustry.Target(colony, good),
         };
     }
 
@@ -132,14 +145,14 @@ public static class Economy
     public static double UseValue(Colony colony, ResourceType good, int stock)
     {
         float need = Need(colony, good);
-        return need <= 0f ? 0.0 : Cost(colony, good) * ScarcityAt(stock, need);
+        return need <= 0f ? 0.0 : ValeurProduction(colony, good) * ScarcityAt(stock, need);
     }
 
     /// <summary>Ce que la colonie perd en cédant une unité alors qu'elle en détient <paramref name="stock"/>.</summary>
     public static double KeepValue(Colony colony, ResourceType good, int stock)
     {
         float need = Need(colony, good);
-        return Cost(colony, good) * (need <= 0f ? GlutFloor : ScarcityAt(stock - 1, need));
+        return ValeurProduction(colony, good) * (need <= 0f ? GlutFloor : ScarcityAt(stock - 1, need));
     }
 
     /// <summary>Rareté actuelle du bien pour la colonie (voir <see cref="ScarcityAt"/>) ; 1 si elle n'en a pas l'usage et n'en a pas.</summary>
@@ -152,8 +165,8 @@ public static class Economy
         return ScarcityAt(stock, need);
     }
 
-    /// <summary>Ce que vaut une unité du bien pour cette colonie, en heures de travail (donc en pièces) : son coût fois sa rareté.</summary>
-    public static double Value(Colony colony, ResourceType good) => Cost(colony, good) * Scarcity(colony, good);
+    /// <summary>Ce que vaut une unité du bien pour cette colonie, en heures de travail (donc en pièces) : son coût majoré de la prime de transformation, fois sa rareté.</summary>
+    public static double Value(Colony colony, ResourceType good) => ValeurProduction(colony, good) * Scarcity(colony, good);
 
     /// <summary>Ce que la colonie peut vendre sans se priver : le stock au-delà d'un quart de plus que ses besoins.</summary>
     public static int Surplus(Colony colony, ResourceType good) =>

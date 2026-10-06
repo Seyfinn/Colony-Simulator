@@ -8,9 +8,13 @@ public static class ResourceCatalog
     {
         ResourceType.Coins => 0.01,
         ResourceType.Stone or ResourceType.IronOre or ResourceType.Iron or ResourceType.Clay or ResourceType.CopperOre or ResourceType.Copper or ResourceType.GoldOre or ResourceType.Gold => 2,
+        ResourceType.Carts => 8,
         ResourceType.Chickens => 2,
         ResourceType.Sheep => 8,
         ResourceType.Cows => 16,
+        ResourceType.Horses => 16,
+        ResourceType.Oxen => 20,
+        ResourceType.Dogs => 2,
         _ => 1,
     };
 
@@ -25,19 +29,68 @@ public static class ResourceCatalog
         _ => Trade.GoodName(resource),
     };
 
-    public static double ReferenceCost(ResourceType resource) => resource switch
+    /// <summary>Coût commun aux affichages et au commerce ; les produits suivent leurs recettes actuelles.</summary>
+    public static double ReferenceCost(ResourceType resource) => Economy.BaselineCost(resource);
+
+    /// <summary>Référence des ressources brutes, avant les transformations et les coûts locaux mesurés.</summary>
+    internal static double CoutBrutReference(ResourceType resource) => resource switch
     {
-        ResourceType.Gold => 72, ResourceType.Jewelry => 110,
-        ResourceType.Ruby or ResourceType.Sapphire or ResourceType.Emerald or ResourceType.Diamond => 32,
-        ResourceType.Copper => 40, ResourceType.Copperware => 95, ResourceType.Shoes => 25,
-        ResourceType.Pottery or ResourceType.Leather or ResourceType.Linen => 12,
-        ResourceType.CopperOre or ResourceType.GoldOre => 7,
-        ResourceType.MineralCoal => 5, ResourceType.Wine => 9, _ => 3,
+        ResourceType.Coins => 1,
+        ResourceType.Food or ResourceType.Fish or ResourceType.Mushrooms => 2,
+        ResourceType.Grain or ResourceType.Flax or ResourceType.Grapes => 1.5,
+        ResourceType.Wood => 0.5,
+        ResourceType.Stone or ResourceType.Clay => 3.5,
+        ResourceType.IronOre => 5.5,
+        ResourceType.CopperOre => 6,
+        ResourceType.GoldOre => 8,
+        ResourceType.MineralCoal or ResourceType.Wool or ResourceType.Milk or ResourceType.Herbs => 5,
+        ResourceType.Eggs or ResourceType.Salt or ResourceType.Hides => 4,
+        ResourceType.Meat => 3,
+        ResourceType.SaltedMeat => 3 + 4d / Civic.MeatPerSalt,
+        ResourceType.Spices => 6,
+        ResourceType.Hardwood => 5,
+        ResourceType.Chickens => 80,
+        ResourceType.Sheep => 180,
+        ResourceType.Cows or ResourceType.Oxen => 360,
+        ResourceType.Horses => 420,
+        ResourceType.Dogs => 90,
+        ResourceType.Honey => 3,
+        ResourceType.Wax => 4,
+        ResourceType.Ruby or ResourceType.Sapphire or ResourceType.Emerald => 24,
+        ResourceType.Diamond => 36,
+        _ => throw new ArgumentOutOfRangeException(nameof(resource), resource, "Ce produit doit avoir une recette de référence."),
     };
 
-    public static string Category(ResourceType resource) => Nutrition(resource) > 0 ? "Vivres"
-        : resource is ResourceType.IronOre or ResourceType.CopperOre or ResourceType.GoldOre or ResourceType.Clay or ResourceType.MineralCoal ? "Sous-sol"
-        : (int)resource >= 27 ? "Filières et équipement" : "Ressources du village";
+    /// <summary>Les rubriques de présentation des stocks : la classification vient de la simulation, l'affichage ne l'invente pas.</summary>
+    public enum Group { Food, Crops, Materials, Minerals, Processed }
+
+    /// <summary>Les minéraux, dans l'ordre d'affichage : roches et sels, minerais bruts, métaux, puis pierres précieuses.</summary>
+    public static readonly ResourceType[] Minerals =
+    [
+        ResourceType.Stone, ResourceType.Clay, ResourceType.Salt, ResourceType.MineralCoal,
+        ResourceType.IronOre, ResourceType.CopperOre, ResourceType.GoldOre,
+        ResourceType.Iron, ResourceType.Copper, ResourceType.Gold,
+        ResourceType.Ruby, ResourceType.Sapphire, ResourceType.Emerald, ResourceType.Diamond,
+    ];
+
+    /// <summary>Les matières premières agricoles : les céréales ne se mangent qu'en dernier recours (voir <see cref="Stockpile.GrainMealValue"/>).</summary>
+    public static readonly ResourceType[] Crops = [ResourceType.Grain, ResourceType.Flour, ResourceType.Flax];
+
+    private static readonly ResourceType[] RawMaterials =
+        [ResourceType.Wood, ResourceType.Hardwood, ResourceType.Charcoal, ResourceType.Hides, ResourceType.Wool, ResourceType.Wax];
+
+    public static Group GroupOf(ResourceType resource) =>
+        Minerals.Contains(resource) ? Group.Minerals : Crops.Contains(resource) ? Group.Crops
+        : Nutrition(resource) > 0 ? Group.Food : RawMaterials.Contains(resource) ? Group.Materials : Group.Processed;
+
+    public static string Category(ResourceType resource) => GroupOf(resource) switch
+    {
+        Group.Food => "Vivres",
+        Group.Crops => "Cultures",
+        Group.Minerals => "Minéraux",
+        Group.Materials => "Matériaux",
+        _ => "Produits transformés",
+    };
 
     public static string Source(ResourceType resource) => resource switch
     {
@@ -49,9 +102,9 @@ public static class ResourceCatalog
 
     public static decimal Nutrition(ResourceType resource) => Stockpile.NutritionPerItem(resource);
 
-    /// <summary>Les vivres transportables qui peuvent aussi ravitailler les voyageurs, dans un ordre stable.</summary>
+    /// <summary>Les vivres transportables qui peuvent aussi ravitailler les voyageurs, dans un ordre stable : les céréales crues, presque sans valeur nutritive, ferment la marche.</summary>
     public static readonly ResourceType[] TravelFood =
-        [ResourceType.Bread, ResourceType.Grain, ResourceType.SaltedMeat, ResourceType.Eggs, ResourceType.Milk];
+        [ResourceType.Bread, ResourceType.SaltedMeat, ResourceType.Eggs, ResourceType.Milk, ResourceType.Grain];
 
     public static double WeightOf(IEnumerable<KeyValuePair<ResourceType, int>> inventory) =>
         inventory.Sum(p => Weight(p.Key) * p.Value);

@@ -88,7 +88,7 @@ public static class Irrigation
 
     /// <summary>
     /// Ce qu'un canal ne doit pas traverser, en plus de l'eau et de la roche : les cases de canal déjà prévues, les abords du feu,
-    /// les bâtiments et le passage qui les entoure, les champs et les tombes. Marqué une fois pour tout un tracé.
+    /// les bâtiments et le passage qui les entoure, et les champs. Marqué une fois pour tout un tracé.
     /// </summary>
     private static void MarkObstacles(LocalMap map, Colony colony, SearchScratch scratch)
     {
@@ -109,14 +109,12 @@ public static class Irrigation
             for (int x = b.X - 1; x <= b.X + b.Width; x++)
                 Block(x, y);
         foreach (Field f in colony.Fields)
-            for (int y = f.Y; y < f.Y + Field.Size; y++)
-            for (int x = f.X; x < f.X + Field.Size; x++)
+            for (int y = f.Y; y < f.Y + f.Size; y++)
+            for (int x = f.X; x < f.X + f.Size; x++)
                 Block(x, y);
-        foreach (Grave g in colony.Graves)
-            Block(g.X, g.Y);
     }
 
-    /// <summary>Un canal ne doit pas passer sur un bâtiment, un champ, une tombe, le feu ou l'eau (voir <see cref="MarkObstacles"/>).</summary>
+    /// <summary>Un canal ne doit pas passer sur un bâtiment, un champ, le feu ou l'eau (voir <see cref="MarkObstacles"/>).</summary>
     private static bool CanDig(LocalMap map, SearchScratch scratch, int x, int y) =>
         map.InBounds(x, y) && map.IsWalkable(x, y) && !map.IsWaterway(x, y) && !map.IsMountain(x, y)
         && !scratch.IsBlocked(y * map.Width + x);
@@ -151,11 +149,11 @@ public static class Irrigation
         PriorityQueue<int, float> open = scratch.Open;
         int width = map.Width;
 
-        for (int y = field.Y - 1; y <= field.Y + Field.Size; y++)
-        for (int x = field.X - 1; x <= field.X + Field.Size; x++)
+        for (int y = field.Y - 1; y <= field.Y + field.Size; y++)
+        for (int x = field.X - 1; x <= field.X + field.Size; x++)
         {
-            bool border = x < field.X || x >= field.X + Field.Size || y < field.Y || y >= field.Y + Field.Size;
-            bool corner = (x < field.X || x >= field.X + Field.Size) && (y < field.Y || y >= field.Y + Field.Size);
+            bool border = x < field.X || x >= field.X + field.Size || y < field.Y || y >= field.Y + field.Size;
+            bool corner = (x < field.X || x >= field.X + field.Size) && (y < field.Y || y >= field.Y + field.Size);
             if (!border || corner || !CanDig(map, scratch, x, y))
                 continue;
             int index = y * width + x;

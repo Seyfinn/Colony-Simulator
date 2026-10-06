@@ -37,8 +37,18 @@ public static class ExpansionPlanner
         return missing <= 0 ? 0 : Math.Max(1.0, missing / 10.0);
     }
 
-    private static double RouteDays(WorldState world, Colony owner, int from, int to) =>
+    internal static double RouteDays(WorldState world, Colony owner, int from, int to) =>
         world.WorldMap.TravelRoute(from, to, Trade.HostileRegions(world, owner)) is { } route ? route.Cost / WorldMap.CaravanTilesPerDay : double.PositiveInfinity;
+
+    /// <summary>Durée d'une route vers une région connue, pour la fiche territoriale ; aucune information sur une région inconnue.</summary>
+    public static double KnownRouteDays(WorldState world, Colony owner, int from, int to)
+    {
+        bool Known(int region) => owner.VisitedRegions.Contains(region) || owner.RegionReach.ContainsKey(region)
+            || owner.Settlements.Any(s => s.RegionTileIndex == region);
+        if (!Known(to) || world.WorldMap.TravelRoute(from, to, Trade.HostileRegions(world, owner)) is not { } route
+            || route.Tiles.Any(t => !Known(t))) return double.PositiveInfinity;
+        return route.Cost / WorldMap.CaravanTilesPerDay;
+    }
 
     /// <summary>Heures de travail d'un aller-retour de ravitaillement à deux, avec la charge utile qu'il ramène (en unités du matériau).</summary>
     private static (double TripHours, double UnitsPerTrip) HaulTrip(double routeDays, ResourceType material) =>
@@ -64,7 +74,7 @@ public static class ExpansionPlanner
         double producibleDays = Math.Min(HorizonDays, reserve / Math.Max(0.1, perDay));
         int units = (int)Math.Min(dailyDemand * HorizonDays, perDay * producibleDays);
         if (units < 10 || producibleDays < 10) return null;
-        double foodPerDay = CampPeople * Trade.TravelerNutritionPerDay / Stockpile.GrainMealValue * Economy.Cost(owner, ResourceType.Grain);
+        double foodPerDay = CampPeople * Trade.TravelerNutritionPerDay / Stockpile.BreadMealValue * Economy.Cost(owner, ResourceType.Bread);
         (double tripHours, double perTrip) = HaulTrip(days, site.Material);
         double total = InstallationHours(owner, days) + units * unitHours + foodPerDay * (units / perDay) + units / perTrip * tripHours;
         return new ExpansionOption(ExpansionKind.Camp, total / units, units, site.SiteId, site.Region);

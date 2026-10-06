@@ -91,9 +91,9 @@ public class WorldMapTests(ITestOutputHelper output)
             if (i % TimeConstants.TicksPerDay == 0)
                 watch.Observe(colony!);
         }
-        output.WriteLine($"Colonie sans eau : {colony!.Members.Count} colons, {colony.Stock.FoodUnits} unités de nourriture, {colony.Graves.Count} tombes");
+        output.WriteLine($"Colonie sans eau : {colony!.Members.Count} colons, {colony.Stock.FoodUnits} unités de nourriture, {colony.Deaths.Count} tombes");
         Assert.Null(watch.Victim);
-        Assert.DoesNotContain(colony.Graves, g => g.Cause == "faim");
+        Assert.DoesNotContain(colony.Deaths, g => g.Cause == "faim");
     }
 
     [Fact]

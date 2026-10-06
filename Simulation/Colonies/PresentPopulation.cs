@@ -7,7 +7,18 @@ public sealed class PresentPopulation(Colony owner, Settlement settlement) : IRe
 {
     private bool IsPresent(Colonist colonist) => colonist.TravelId == 0 && colonist.Transit == TransitState.None
         && (colonist.LocationSettlementId == settlement.Id || (colonist.LocationSettlementId == 0 && settlement.Id == 0));
-    public int Count => owner.Members.Count(IsPresent);
+    public int Count
+    {
+        get
+        {
+            // Une simple boucle : ce compte est lu à chaque tick, pour chaque colon.
+            int count = 0;
+            foreach (Colonist colonist in owner.Members)
+                if (IsPresent(colonist))
+                    count++;
+            return count;
+        }
+    }
     public Colonist this[int index] => owner.Members.Where(IsPresent).ElementAt(index);
     public IEnumerator<Colonist> GetEnumerator() => owner.Members.Where(IsPresent).GetEnumerator();
     IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();

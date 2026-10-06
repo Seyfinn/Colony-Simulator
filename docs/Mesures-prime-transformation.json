@@ -1,0 +1,692 @@
+{
+  "Resume": {
+    "Parties": 10,
+    "Annees": 12,
+    "Graines": [
+      1001,
+      1002,
+      1003,
+      1004,
+      1005,
+      1006,
+      1007,
+      1008,
+      1009,
+      1010
+    ],
+    "DoublementHumainMedian": 2.9833333333333334,
+    "Voyages": 844,
+    "EcartsMonnaie": 0,
+    "StocksNegatifs": 0,
+    "Peuples": [
+      {
+        "Name": "Humain",
+        "PopulationMoyenne": 35,
+        "PopulationMin": 24,
+        "NaissancesMoyennes": 13.8,
+        "MortsFaim": 0,
+        "Famines": 0,
+        "BatimentsMoyens": 36.6,
+        "OutilsMoyens": 15.4,
+        "HumeurMoyenne": 0.8168511927127838,
+        "PainProduit": 17826,
+        "OutilsProduits": 272,
+        "GainCommerce": -12157.611567487098
+      },
+      {
+        "Name": "Nain",
+        "PopulationMoyenne": 40.6,
+        "PopulationMin": 27,
+        "NaissancesMoyennes": 11.9,
+        "MortsFaim": 0,
+        "Famines": 0,
+        "BatimentsMoyens": 32.2,
+        "OutilsMoyens": 16.5,
+        "HumeurMoyenne": 0.7926716685295105,
+        "PainProduit": 12922,
+        "OutilsProduits": 283,
+        "GainCommerce": -14516.176926206317
+      },
+      {
+        "Name": "Elfe",
+        "PopulationMoyenne": 35,
+        "PopulationMin": 22,
+        "NaissancesMoyennes": 8.1,
+        "MortsFaim": 0,
+        "Famines": 0,
+        "BatimentsMoyens": 30.8,
+        "OutilsMoyens": 13.3,
+        "HumeurMoyenne": 0.8222049713134766,
+        "PainProduit": 20702,
+        "OutilsProduits": 235,
+        "GainCommerce": -15619.19909181884
+      },
+      {
+        "Name": "Orque",
+        "PopulationMoyenne": 18.4,
+        "PopulationMin": 0,
+        "NaissancesMoyennes": 11.9,
+        "MortsFaim": 11,
+        "Famines": 1,
+        "BatimentsMoyens": 24.9,
+        "OutilsMoyens": 8.8,
+        "HumeurMoyenne": 0.7165185868740082,
+        "PainProduit": 7654,
+        "OutilsProduits": 178,
+        "GainCommerce": -11661.891579607007
+      }
+    ]
+  },
+  "Parties": [
+    {
+      "Graine": 1001,
+      "DoublementHumain": 3.5833333333333335,
+      "Voyages": 72,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 40,
+          "Naissances": 18,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 36,
+          "Outils": 20,
+          "Humeur": 0.7463125586509705,
+          "PainProduit": 2658,
+          "OutilsProduits": 34,
+          "GainCommerce": -832.3060878366628
+        },
+        {
+          "Nom": "Nain",
+          "Population": 34,
+          "Naissances": 13,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 26,
+          "Outils": 13,
+          "Humeur": 0.7924506068229675,
+          "PainProduit": 1108,
+          "OutilsProduits": 24,
+          "GainCommerce": -1385.9650113620905
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 31,
+          "Naissances": 9,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 26,
+          "Outils": 9,
+          "Humeur": 0.8384893536567688,
+          "PainProduit": 554,
+          "OutilsProduits": 19,
+          "GainCommerce": -1453.0064417182186
+        },
+        {
+          "Nom": "Orque",
+          "Population": 18,
+          "Naissances": 9,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 16,
+          "Outils": 8,
+          "Humeur": 0.8034405708312988,
+          "PainProduit": 266,
+          "OutilsProduits": 17,
+          "GainCommerce": -1253.421959632738
+        }
+      ]
+    },
+    {
+      "Graine": 1002,
+      "DoublementHumain": 4.733333333333333,
+      "Voyages": 96,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 31,
+          "Naissances": 11,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 33,
+          "Outils": 13,
+          "Humeur": 0.7899889349937439,
+          "PainProduit": 1408,
+          "OutilsProduits": 23,
+          "GainCommerce": -1510.5093803444524
+        },
+        {
+          "Nom": "Nain",
+          "Population": 43,
+          "Naissances": 9,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 35,
+          "Outils": 20,
+          "Humeur": 0.7680220603942871,
+          "PainProduit": 2344,
+          "OutilsProduits": 31,
+          "GainCommerce": -1861.2353506511683
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 22,
+          "Naissances": 6,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 25,
+          "Outils": 8,
+          "Humeur": 0.8971763253211975,
+          "PainProduit": 1126,
+          "OutilsProduits": 13,
+          "GainCommerce": -994.5935828966224
+        },
+        {
+          "Nom": "Orque",
+          "Population": 19,
+          "Naissances": 12,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 22,
+          "Outils": 9,
+          "Humeur": 0.8272172808647156,
+          "PainProduit": 548,
+          "OutilsProduits": 20,
+          "GainCommerce": -1009.0152652748762
+        }
+      ]
+    },
+    {
+      "Graine": 1003,
+      "DoublementHumain": 2.433333333333333,
+      "Voyages": 83,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 40,
+          "Naissances": 18,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 42,
+          "Outils": 15,
+          "Humeur": 0.8578310608863831,
+          "PainProduit": 2116,
+          "OutilsProduits": 30,
+          "GainCommerce": -1508.848155361093
+        },
+        {
+          "Nom": "Nain",
+          "Population": 33,
+          "Naissances": 6,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 34,
+          "Outils": 15,
+          "Humeur": 0.7878702282905579,
+          "PainProduit": 1202,
+          "OutilsProduits": 26,
+          "GainCommerce": -2248.5875327071963
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 41,
+          "Naissances": 11,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 35,
+          "Outils": 15,
+          "Humeur": 0.8075090050697327,
+          "PainProduit": 1880,
+          "OutilsProduits": 28,
+          "GainCommerce": -1660.7408868543641
+        },
+        {
+          "Nom": "Orque",
+          "Population": 18,
+          "Naissances": 13,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 28,
+          "Outils": 0,
+          "Humeur": 0.8676397204399109,
+          "PainProduit": 1416,
+          "OutilsProduits": 0,
+          "GainCommerce": -1577.0228273223456
+        }
+      ]
+    },
+    {
+      "Graine": 1004,
+      "DoublementHumain": 5.754944444444445,
+      "Voyages": 68,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 29,
+          "Naissances": 12,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 28,
+          "Outils": 11,
+          "Humeur": 0.803758978843689,
+          "PainProduit": 1878,
+          "OutilsProduits": 19,
+          "GainCommerce": -999.0076592466148
+        },
+        {
+          "Nom": "Nain",
+          "Population": 41,
+          "Naissances": 11,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 29,
+          "Outils": 17,
+          "Humeur": 0.81247878074646,
+          "PainProduit": 952,
+          "OutilsProduits": 28,
+          "GainCommerce": -1340.7933385478332
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 41,
+          "Naissances": 13,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 46,
+          "Outils": 14,
+          "Humeur": 0.8026689291000366,
+          "PainProduit": 4126,
+          "OutilsProduits": 28,
+          "GainCommerce": -1297.6626422431225
+        },
+        {
+          "Nom": "Orque",
+          "Population": 0,
+          "Naissances": 7,
+          "MortsFaim": 11,
+          "Famines": 1,
+          "Batiments": 15,
+          "Outils": 10,
+          "Humeur": 0,
+          "PainProduit": 138,
+          "OutilsProduits": 13,
+          "GainCommerce": -462.10502948649275
+        }
+      ]
+    },
+    {
+      "Graine": 1005,
+      "DoublementHumain": 2.410222222222222,
+      "Voyages": 79,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 31,
+          "Naissances": 17,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 34,
+          "Outils": 14,
+          "Humeur": 0.7833652496337891,
+          "PainProduit": 984,
+          "OutilsProduits": 26,
+          "GainCommerce": -1054.1386283001216
+        },
+        {
+          "Nom": "Nain",
+          "Population": 34,
+          "Naissances": 11,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 24,
+          "Outils": 14,
+          "Humeur": 0.8055674433708191,
+          "PainProduit": 744,
+          "OutilsProduits": 24,
+          "GainCommerce": -1194.2788261923195
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 25,
+          "Naissances": 6,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 21,
+          "Outils": 10,
+          "Humeur": 0.8179544806480408,
+          "PainProduit": 1672,
+          "OutilsProduits": 17,
+          "GainCommerce": -2133.6480873348887
+        },
+        {
+          "Nom": "Orque",
+          "Population": 14,
+          "Naissances": 9,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 28,
+          "Outils": 5,
+          "Humeur": 0.7551183700561523,
+          "PainProduit": 1964,
+          "OutilsProduits": 17,
+          "GainCommerce": -1572.9258966632813
+        }
+      ]
+    },
+    {
+      "Graine": 1006,
+      "DoublementHumain": 2.0516111111111113,
+      "Voyages": 81,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 45,
+          "Naissances": 18,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 43,
+          "Outils": 18,
+          "Humeur": 0.7699400186538696,
+          "PainProduit": 1804,
+          "OutilsProduits": 34,
+          "GainCommerce": -1428.5726978998919
+        },
+        {
+          "Nom": "Nain",
+          "Population": 27,
+          "Naissances": 6,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 26,
+          "Outils": 11,
+          "Humeur": 0.6863604784011841,
+          "PainProduit": 502,
+          "OutilsProduits": 23,
+          "GainCommerce": -1253.9914332708076
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 46,
+          "Naissances": 5,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 36,
+          "Outils": 20,
+          "Humeur": 0.7958357930183411,
+          "PainProduit": 2628,
+          "OutilsProduits": 33,
+          "GainCommerce": -1503.3318312504448
+        },
+        {
+          "Nom": "Orque",
+          "Population": 18,
+          "Naissances": 11,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 24,
+          "Outils": 9,
+          "Humeur": 0.6807973384857178,
+          "PainProduit": 418,
+          "OutilsProduits": 16,
+          "GainCommerce": -730.2149043627998
+        }
+      ]
+    },
+    {
+      "Graine": 1007,
+      "DoublementHumain": 2.8833333333333333,
+      "Voyages": 110,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 41,
+          "Naissances": 16,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 46,
+          "Outils": 17,
+          "Humeur": 0.8721373677253723,
+          "PainProduit": 1356,
+          "OutilsProduits": 29,
+          "GainCommerce": -1201.9086096400392
+        },
+        {
+          "Nom": "Nain",
+          "Population": 54,
+          "Naissances": 22,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 50,
+          "Outils": 20,
+          "Humeur": 0.8682356476783752,
+          "PainProduit": 886,
+          "OutilsProduits": 36,
+          "GainCommerce": -1193.3243565626806
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 40,
+          "Naissances": 10,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 34,
+          "Outils": 15,
+          "Humeur": 0.8055625557899475,
+          "PainProduit": 3312,
+          "OutilsProduits": 25,
+          "GainCommerce": -1512.60002624145
+        },
+        {
+          "Nom": "Orque",
+          "Population": 22,
+          "Naissances": 10,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 29,
+          "Outils": 12,
+          "Humeur": 0.8767471313476562,
+          "PainProduit": 1188,
+          "OutilsProduits": 22,
+          "GainCommerce": -1797.7893266101153
+        }
+      ]
+    },
+    {
+      "Graine": 1008,
+      "DoublementHumain": 4.315611111111111,
+      "Voyages": 83,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 24,
+          "Naissances": 6,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 32,
+          "Outils": 13,
+          "Humeur": 0.8846933841705322,
+          "PainProduit": 2612,
+          "OutilsProduits": 20,
+          "GainCommerce": -1276.7785890008972
+        },
+        {
+          "Nom": "Nain",
+          "Population": 55,
+          "Naissances": 21,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 37,
+          "Outils": 20,
+          "Humeur": 0.7772947549819946,
+          "PainProduit": 1512,
+          "OutilsProduits": 33,
+          "GainCommerce": -1013.0488102984219
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 44,
+          "Naissances": 8,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 43,
+          "Outils": 18,
+          "Humeur": 0.8431949615478516,
+          "PainProduit": 1912,
+          "OutilsProduits": 31,
+          "GainCommerce": -1382.521924201176
+        },
+        {
+          "Nom": "Orque",
+          "Population": 19,
+          "Naissances": 11,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 21,
+          "Outils": 8,
+          "Humeur": 0.7245960235595703,
+          "PainProduit": 480,
+          "OutilsProduits": 21,
+          "GainCommerce": -860.7751118979608
+        }
+      ]
+    },
+    {
+      "Graine": 1009,
+      "DoublementHumain": 2.9833333333333334,
+      "Voyages": 82,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 37,
+          "Naissances": 13,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 41,
+          "Outils": 17,
+          "Humeur": 0.8251344561576843,
+          "PainProduit": 1394,
+          "OutilsProduits": 30,
+          "GainCommerce": -998.3130045879498
+        },
+        {
+          "Nom": "Nain",
+          "Population": 35,
+          "Naissances": 7,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 29,
+          "Outils": 15,
+          "Humeur": 0.8012667298316956,
+          "PainProduit": 1736,
+          "OutilsProduits": 26,
+          "GainCommerce": -1702.251523549628
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 33,
+          "Naissances": 7,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 20,
+          "Outils": 13,
+          "Humeur": 0.7752742767333984,
+          "PainProduit": 764,
+          "OutilsProduits": 21,
+          "GainCommerce": -2115.8023222481133
+        },
+        {
+          "Nom": "Orque",
+          "Population": 30,
+          "Naissances": 20,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 35,
+          "Outils": 14,
+          "Humeur": 0.7885375022888184,
+          "PainProduit": 536,
+          "OutilsProduits": 29,
+          "GainCommerce": -1431.1775719632194
+        }
+      ]
+    },
+    {
+      "Graine": 1010,
+      "DoublementHumain": 2.933333333333333,
+      "Voyages": 90,
+      "EcartsMonnaie": 0,
+      "StocksNegatifs": 0,
+      "Peuples": [
+        {
+          "Nom": "Humain",
+          "Population": 32,
+          "Naissances": 9,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 31,
+          "Outils": 16,
+          "Humeur": 0.8353499174118042,
+          "PainProduit": 1616,
+          "OutilsProduits": 27,
+          "GainCommerce": -1347.2287552693742
+        },
+        {
+          "Nom": "Nain",
+          "Population": 50,
+          "Naissances": 13,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 32,
+          "Outils": 20,
+          "Humeur": 0.8271699547767639,
+          "PainProduit": 1936,
+          "OutilsProduits": 32,
+          "GainCommerce": -1322.7007430641704
+        },
+        {
+          "Nom": "Elfe",
+          "Population": 27,
+          "Naissances": 6,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 22,
+          "Outils": 11,
+          "Humeur": 0.8383840322494507,
+          "PainProduit": 2728,
+          "OutilsProduits": 20,
+          "GainCommerce": -1565.2913468304403
+        },
+        {
+          "Nom": "Orque",
+          "Population": 26,
+          "Naissances": 17,
+          "MortsFaim": 0,
+          "Famines": 0,
+          "Batiments": 31,
+          "Outils": 13,
+          "Humeur": 0.8410919308662415,
+          "PainProduit": 700,
+          "OutilsProduits": 23,
+          "GainCommerce": -967.4436863931778
+        }
+      ]
+    }
+  ]
+}

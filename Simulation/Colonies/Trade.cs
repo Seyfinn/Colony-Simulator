@@ -15,6 +15,9 @@ public sealed record TradePlan(Colony From, Colony To, IReadOnlyList<TradeLine> 
     public double NetCoins => Lines.Sum(l => l.IsSale ? l.Total : -l.Total);
     public bool Emergency { get; init; }
     public bool ContactOnly { get; init; }
+
+    /// <summary>La caravane est presque pleine : la capacité a bridé l'échange (voir <see cref="Trade.ConsiderGearUpgrade"/>).</summary>
+    public bool CapacityLimited { get; init; }
 }
 
 /// <summary>Le compte rendu d'un voyage achevé, gardé par chaque colonie pour s'en souvenir.</summary>
@@ -23,9 +26,18 @@ public sealed record TradeRecord(long Ticks, string Partner, IReadOnlyList<Trade
     public double? GainHours { get; init; }
     public double? CostHours { get; init; }
     public double? ExpectedGainHours { get; init; }
+
+    /// <summary>Le voyage s'est heurté à la capacité de la caravane.</summary>
+    public bool CapacityLimited { get; init; }
+
+    /// <summary>La caravane a subi une interception en route : sa cargaison a été entamée, le bilan n'est plus celui du plan.</summary>
+    public bool Intercepted { get; init; }
 }
 
 public enum CaravanState { Outbound, Returning, Home }
+
+/// <summary>L'équipement d'une caravane : des porteurs, une charrette de bois, une charrette renforcée de fer, puis des bêtes de trait (bœufs ou chevaux).</summary>
+public enum CaravanGear : byte { Porters = 0, WoodCart = 1, IronCart = 2, Draft = 3 }
 
 /// <summary>
 /// Une caravane : quelques colons partent avec des marchandises (et des pièces pour acheter), marchent jusqu'à
@@ -94,6 +106,17 @@ public sealed class Caravan
     internal int RouteRevision { get; set; } = -1;
     public CaravanState State { get; internal set; } = CaravanState.Outbound;
 
+    /// <summary>L'équipement figé au départ : il décide de la capacité et de la vitesse (voir <see cref="Trade.GearCapacityFactor"/>).</summary>
+    public CaravanGear Gear { get; internal set; }
+
+    /// <summary>Les bêtes de trait qui accompagnent la caravane (espèce et nombre) : elles rentrent avec elle, sauf si l'interception en emporte une.</summary>
+    public ResourceType DraftSpecies { get; internal set; }
+    public int DraftCount { get; internal set; }
+
+    /// <summary>Le voyage a été limité par la capacité de la caravane, et le nombre d'interceptions subies en route.</summary>
+    public bool CapacityLimited { get; internal set; }
+    public int Interceptions { get; internal set; }
+
     /// <summary>Le travail que l'échange devait épargner, si tout se passait comme prévu.</summary>
     public double PlanGainHours { get; }
 
@@ -157,11 +180,15 @@ public static partial class Trade
     public const int CarryCapacity = 36;
 
     /// <summary>Les étals du plus grand marché préparent davantage de marchandises pour chaque voyage.</summary>
-    public static int CapacityOf(Colony from, Colony to)
+    public static int CapacityOf(Colony from, Colony to) => CapacityOf(from, to, EffectiveGear(from));
+
+    /// <summary>La capacité d'une caravane de cet équipement : celle des porteurs, multipliée par le niveau de l'équipement.</summary>
+    public static int CapacityOf(Colony from, Colony to, CaravanGear gear)
     {
         int capacity = CarryCapacity + Math.Max(MarketBonus(from), MarketBonus(to));
         // La monnaie frappée allège les comptes : on emporte un quart de plus.
-        return Knowledge.Has(from, Discovery.Coinage) ? (int)(capacity * Knowledge.CoinageCapacityFactor) : capacity;
+        capacity = Knowledge.Has(from, Discovery.Coinage) ? (int)(capacity * Knowledge.CoinageCapacityFactor) : capacity;
+        return capacity * GearCapacityFactor(gear);
     }
 
     private static int MarketBonus(Colony colony) => colony.Buildings
@@ -209,11 +236,12 @@ public static partial class Trade
             return null;
         WorldRoute? route = RouteForTrade(world, from, world.WorldMap.TileOf(from), world.WorldMap.TileOf(to));
         if (route is null) return null;
-        float tripDays = 2f * route.Cost / WorldMap.CaravanTilesPerDay + 0.5f;
+        CaravanGear gear = EffectiveGear(from, out ResourceType? draft);
+        float tripDays = 2f * route.Cost / (WorldMap.CaravanTilesPerDay * GearSpeedFactor(gear, draft)) + 0.5f;
         double bargain = Math.Min(0.4, TradingSkillDiscount * Specialties.TraderLevel(PickTraders(from, emergency)));
         double cost = TradersPerCaravan * tripDays * WorkHoursPerDay * (1 - bargain)
             * (Knowledge.Has(from, Discovery.Coinage) ? Knowledge.CoinageCostFactor : 1.0);
-        int capacity = CapacityOf(from, to);
+        int capacity = CapacityOf(from, to, gear);
 
         SupplierMemory? memory = Suppliers(world, from).FirstOrDefault(m => m.Supplier == to);
         if (memory is null || memory.AgeDays(world.Clock.Ticks) > OfferLifetimeDays)
@@ -252,6 +280,7 @@ public static partial class Trade
         }
 
         // Les pièces sont physiques : chacun ne paie que ce que contient sa bourse.
+        bool capacityLimited = room < 0.1 * capacity;
         lines = FitPurse(lines, isSale: false, available: from.Stock.Available(ResourceType.Coins));
         lines = FitPurse(lines, isSale: true, available: memory.BuyingBudget);
         List<(ResourceType Resource, int Amount)>? provisions;
@@ -273,12 +302,13 @@ public static partial class Trade
         // La rancune (d'un côté ou de l'autre) rend le voyage moins tentant : il faut qu'il rapporte bien plus.
         double grudge = Math.Max(from.GrudgeAgainst(to), to.GrudgeAgainst(from));
         double gainHours = lines.Sum(l => l.Line.Units * l.Gain);
-        double required = Diplomacy.AreAllied(world, from, to) ? AlliedGainOverCost : RequiredGainOverCost;
+        double required = (Diplomacy.AreAllied(world, from, to) ? AlliedGainOverCost : RequiredGainOverCost)
+            * (1 - Leadership.StanceEffect * Leadership.Stance(from).Commerce); // un chef marchand se contente de moindres gains
         decimal boughtNutrition = lines.Where(l => !l.Line.IsSale).Sum(l => l.Line.Units * ResourceCatalog.Nutrition(l.Line.Good));
         if (emergency ? boughtNutrition <= provisions.Sum(p => p.Amount * ResourceCatalog.Nutrition(p.Resource))
             : gainHours < cost * required * (1 + GrudgeCostFactor * grudge))
             return null;
-        return new TradePlan(from, to, lines.Select(l => l.Line).ToList(), gainHours, cost, tripDays) { Emergency = emergency };
+        return new TradePlan(from, to, lines.Select(l => l.Line).ToList(), gainHours, cost, tripDays) { Emergency = emergency, CapacityLimited = capacityLimited };
     }
 
     /// <summary>Réduit les achats d'un côté (les moins rentables d'abord) jusqu'à ce que la bourse suffise.</summary>
@@ -312,6 +342,7 @@ public static partial class Trade
     /// </summary>
     public static void Daily(WorldState world, Colony colony)
     {
+        ConsiderGearUpgrade(world, colony);
         // On ne commerce qu'avec les colonies qu'une caravane peut atteindre à pied (ni mer ni sommets entre elles), et jamais avec l'ennemi.
         List<Colony> partners = world.Colonies.Where(c => c != colony && c.PresentMembers.Count > 0 && world.WorldMap.Connected(colony, c)
                 && !Diplomacy.AtWar(world, colony, c))
@@ -399,12 +430,13 @@ public static partial class Trade
         long now = world.Clock.Ticks;
         WorldRoute? route = RouteForTrade(world, plan.From, world.WorldMap.TileOf(plan.From), world.WorldMap.TileOf(plan.To));
         if (route is null) return null;
-        double oneWayDays = route.Cost / WorldMap.CaravanTilesPerDay;
+        CaravanGear gear = EffectiveGear(plan.From, out ResourceType? draft);
+        double oneWayDays = route.Cost / (WorldMap.CaravanTilesPerDay * GearSpeedFactor(gear, draft));
         double tripDays = 2 * oneWayDays + 0.5;
         var provisions = ProvisionLoad(plan.From, tripDays, plan.Lines);
         double payment = PurchaseCoins(plan.Lines);
         if (provisions is null || payment > int.MaxValue || payment > plan.From.Stock.Available(ResourceType.Coins)
-            || !LoadFits(plan.Lines, provisions, CapacityOf(plan.From, plan.To))
+            || !LoadFits(plan.Lines, provisions, CapacityOf(plan.From, plan.To, gear))
             || !SafeDeparture(plan.From, plan.Lines, provisions)
             || traders.Any(t => Migration.FindEdgePoint(world, plan.From, t.TileX, t.TileY) is null))
             return null;
@@ -412,6 +444,8 @@ public static partial class Trade
         var caravan = new Caravan(plan.From, plan.To, traders, plan.Lines, plan.GainHours, now, now + oneWay, now + 2 * oneWay + TimeConstants.TicksPerDay / 2);
 
         caravan.ContactOnly = plan.ContactOnly;
+        caravan.Gear = gear;
+        caravan.CapacityLimited = plan.CapacityLimited;
         caravan.Route = route;
         caravan.RouteRevision = RoutingRevision(world, plan.From);
         caravan.OutboundOffers = Publish(plan.From);
@@ -442,6 +476,12 @@ public static partial class Trade
                 throw new InvalidOperationException("Le chargement préparé n'est plus disponible.");
         caravan.CoinsAtDeparture = caravan.Coins;
         world.RegisterTrip(caravan);
+        if (gear == CaravanGear.Draft && draft is { } team)
+        {
+            // Les bêtes de trait partent avec la caravane : retirées de l'enclos, elles y reviendront.
+            caravan.DraftSpecies = team;
+            caravan.DraftCount = Husbandry.TakeDraft(plan.From, team, DraftTeam);
+        }
 
         // Les marchands sortent de la colonie en marchant jusqu'au bord de la carte, puis le voyage se poursuit hors écran.
         foreach (Colonist trader in traders)
@@ -499,6 +539,14 @@ public static partial class Trade
         ResourceType.Cake => units > 1 ? "gâteaux" : "gâteau",
         ResourceType.Stew => "ragoût",
         ResourceType.Beer => "bière",
+        ResourceType.Horses => units > 1 ? "chevaux" : "cheval",
+        ResourceType.Oxen => units > 1 ? "bœufs" : "bœuf",
+        ResourceType.Dogs => units > 1 ? "chiens" : "chien",
+        ResourceType.Honey => "miel",
+        ResourceType.Wax => "cire",
+        ResourceType.Mushrooms => "champignons",
+        ResourceType.Herbs => "plantes médicinales",
+        ResourceType.Carts => units > 1 ? "charrettes" : "charrette",
         _ => (int)good >= 27 ? ResourceCatalog.Name(good) : "vivres",
     };
 
@@ -531,7 +579,7 @@ public static partial class Trade
                 // Je vends à l'hôte : il achète ce qu'il juge valoir ce prix, et paie ce qu'il peut.
                 int carried = caravan.Cargo.GetValueOrDefault(line.Good);
                 int affordable = (int)Math.Min(carried, host.Stock.Available(ResourceType.Coins) / line.UnitPrice);
-                int coinRoom = (int)Math.Min(int.MaxValue, Math.Floor(Math.Max(0, CapacityOf(seller, host) - caravan.LoadWeight)
+                int coinRoom = (int)Math.Min(int.MaxValue, Math.Floor(Math.Max(0, CapacityOf(seller, host, caravan.Gear) - caravan.LoadWeight)
                     / (line.UnitPrice * ResourceCatalog.Weight(ResourceType.Coins))));
                 affordable = Math.Min(affordable, coinRoom);
                 int wanted = Economy.UnitsWillingToBuy(host, line.Good, line.UnitPrice, line.Units);
@@ -553,7 +601,7 @@ public static partial class Trade
                 int available = Economy.UnitsWillingToSell(host, line.Good, line.UnitPrice, line.Units);
                 int affordable = (int)Math.Min(available, caravan.Coins / line.UnitPrice);
                 // Retirer les pièces ne peut pas rendre la charge plus lourde ; ce calcul conservateur protège aussi les invendus.
-                int room = (int)Math.Floor(Math.Max(0, CapacityOf(seller, host) - caravan.LoadWeight) / ResourceCatalog.Weight(line.Good));
+                int room = (int)Math.Floor(Math.Max(0, CapacityOf(seller, host, caravan.Gear) - caravan.LoadWeight) / ResourceCatalog.Weight(line.Good));
                 int units = Math.Min(Math.Min(available, affordable), room);
                 int pay = LotPayment(units, line.UnitPrice);
                 if (pay == 0) continue;
@@ -637,11 +685,13 @@ public static partial class Trade
         }
         colony.FillVacancies();
         colony.AssignSectors();
+        if (caravan.DraftCount > 0)
+            Husbandry.ReturnDraft(colony, caravan.DraftSpecies, caravan.DraftCount);
 
         // Ce que le voyage a vraiment rapporté en pièces (les arrondis des lignes ne comptent pas).
         var record = new TradeRecord(world.Clock.Ticks, caravan.To.Name, caravan.Settled.ToList(), net, WeSent: true)
         {
-            GainHours = outcome.Gain, CostHours = outcome.Cost, ExpectedGainHours = caravan.PlanGainHours,
+            GainHours = outcome.Gain, CostHours = outcome.Cost, ExpectedGainHours = caravan.PlanGainHours, CapacityLimited = caravan.CapacityLimited, Intercepted = caravan.Interceptions > 0,
         };
         colony.Trades.Add(record);
         if (colony.Trades.Count > MaxRecords)

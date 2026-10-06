@@ -20,7 +20,7 @@ internal static class StateGraph
     [
         typeof(WorldState), typeof(WorldMap), typeof(LocalMap), typeof(GameClock), typeof(Colony), typeof(Colonist),
         typeof(Needs), typeof(Skills), typeof(Personality), typeof(Stockpile), typeof(LaborLedger), typeof(Building),
-        typeof(Field), typeof(FieldPlot), typeof(Canal), typeof(Activity), typeof(Grave), typeof(Thought),
+        typeof(Field), typeof(FieldPlot), typeof(Canal), typeof(Activity), typeof(Death), typeof(Thought),
         typeof(ColonySensors), typeof(ChainDemand), typeof(BreadDemand), typeof(Caravan), typeof(TradeLine),
         typeof(TradeRecord), typeof(Prayer), typeof(PrayerBook), typeof(ColonyBrain.NarrationTopic),
         typeof(WorldGrid), typeof(WorldTile), typeof(WorldRoute), typeof(Pact), typeof(WarParty),
@@ -28,11 +28,16 @@ internal static class StateGraph
         typeof(SettlementLayout), typeof(District), typeof(PlotReservation), typeof(DevelopmentProject), typeof(RoadSegment),
         typeof(PlanRequest), typeof(PlacementProposal), typeof(RoadLayer), typeof(SettlementPlanningState), typeof(PlanningJob),
         typeof(Pathfinding.PathSearchState), typeof(StockReservation), typeof(Recipe), typeof(SupplierMemory), typeof(MarketOffer), typeof(Settlement), typeof(RegionState), typeof(Deposit), typeof(DepositKnowledge), typeof(HouseholdEquipment), typeof(MonetaryLedger), typeof(TerritorialRules), typeof(WorldRoadNetwork), typeof(OfferingProject), typeof(Monument), typeof(DivineWish),
+        // Format v11 : faune sauvage, apprivoisement, grande chasse et royaumes.
+        typeof(Nature.WildHerd), typeof(Nature.RegionWildlife), typeof(Nature.TamingAnimal), typeof(Nature.LivestockLine), typeof(Nature.GreatHuntState), typeof(Realm), typeof(BridgeSite),
+        // Grandes colonies : croissance, lots, spécialistes, services, trajets groupés et pouvoirs divins.
+        typeof(SettlementGrowthState), typeof(SettlementScaleLedger), typeof(ScaleDay), typeof(SupplyWaitState), typeof(TravelFlow), typeof(DivineEffect), typeof(BlessedPlot),
     ];
     private static readonly Dictionary<string, Type> KnownTypes = DataTypes
         .Concat(typeof(WorldState).Assembly.GetTypes().Where(t => t.IsEnum))
         .Concat(new[] { typeof(int), typeof(long), typeof(uint), typeof(byte), typeof(bool), typeof(float), typeof(double), typeof(string) })
         .ToDictionary(t => t.FullName!, StringComparer.Ordinal);
+    static StateGraph() => KnownTypes["GodColony.Simulation.Colonies.Grave"] = typeof(Death); // les anciennes tombes se lisent comme de simples décès
     private static readonly Dictionary<Type, FieldInfo[]> FieldCache = DataTypes.ToDictionary(t => t, Fields);
     private const int MaxItems = 262144;
     private const int MaxObjects = 250000;
@@ -73,6 +78,9 @@ internal static class StateGraph
                 trip.RouteRevision = -1;
             }
         world.RestoreSettlements(legacy is not null);
+        if (legacy is not null)
+            foreach (Colonist colonist in world.Colonies.SelectMany(c => c.Members.Concat(c.Settlements.SelectMany(s => s.Transients))).Distinct())
+                colonist.Skills.PadToCurrent();
         foreach (PlanningJob job in world.Planning.Jobs)
             if (job.SettlementId == 0) job.SettlementId = job.Owner.PrimarySettlementId;
         foreach (Settlement place in world.Settlements)
@@ -164,7 +172,7 @@ internal static class StateGraph
                     || !colony.Map.InBounds(building.X, building.Y)
                     || !colony.Map.InBounds(building.X + building.Width - 1, building.Y + building.Height - 1))
                     throw new InvalidDataException("Emprise de bâtiment invalide.");
-                if (building.ExtensionOfId < 0 || building.IsExtension && (building.Type is not (BuildingType.Pen or BuildingType.Market)
+                if (building.ExtensionOfId < 0 || building.IsExtension && (building.Type is not (BuildingType.Pen or BuildingType.Market or BuildingType.Oven or BuildingType.Mill)
                     || building.Width != 2 || building.Height != 3 || building.ExtensionOfId == building.Id
                     || building.ExtensionOfId >= colony.Layout.NextObjectId))
                     throw new InvalidDataException("Extension de bâtiment invalide.");
@@ -178,14 +186,27 @@ internal static class StateGraph
         var inventories = world.Settlements.Select(s => s.Stock).ToHashSet();
         if (inventories.Count != world.Settlements.Count())
             throw new InvalidDataException("Un stock est partagé entre plusieurs lieux.");
+        // Les sorties d'atelier sont des inventaires physiques propres à leur bâtiment principal ; le travail qui les accompagne n'existe que pour des unités présentes.
+        foreach (Building building in world.Settlements.SelectMany(s => s.Buildings))
+        {
+            if (building.OutputStock is { } output && (!inventories.Add(output) || !BatchProduction.IsEligible(building.Type) || building.IsExtension))
+                throw new InvalidDataException("Sortie d'atelier invalide.");
+            building.OutputStock?.ValidateInventory();
+            if (building.OutputHours is { } hours && hours.Any(h => !double.IsFinite(h.Value) || h.Value < 0 || building.OutputUnits(h.Key) <= 0))
+                throw new InvalidDataException("Travail de sortie d'atelier invalide.");
+        }
         var inhabitants = world.Colonies.SelectMany(c => c.Members).Concat(world.Settlements.SelectMany(s => s.Transients))
             .Concat(world.Caravans.SelectMany(c => c.Traders)).Distinct();
         foreach (Colonist colonist in inhabitants)
         {
+            foreach (Activity? batch in new[] { colonist.Activity, colonist.PausedCraft })
+                if (batch is not null && (batch.BatchCount < 0 || batch.WorkshopSlotId < -1 || batch.WorkshopSlotId >= ScaleRules.ExtendedSlots
+                        || batch.PlannedRecipe is not null && (batch.Kind != ActivityKind.Craft || batch.WorkshopSlotId < 0)))
+                    throw new InvalidDataException("Lot d'atelier sauvegardé invalide.");
             if (colonist.Activity is not { InputsInventory: { } inventory } activity)
                 continue;
             if (!inventories.Add(inventory) || !activity.InputsTaken || activity.Kind != ActivityKind.Craft
-                || activity.CommittedRecipe is not { } recipe || activity.Building?.Type != recipe.Workshop
+                || activity.CommittedRecipe is not { } recipe || activity.Building?.Type != recipe.Workshop && !IsStewAtOven(activity, recipe)
                 || !Enum.IsDefined(recipe.Output) || recipe.OutputAmount <= 0
                 || !float.IsFinite(recipe.Seconds) || recipe.Seconds <= 0
                 || recipe.Inputs is null || recipe.Inputs.Any(i => !Enum.IsDefined(i.Type) || i.Amount <= 0))
@@ -264,6 +285,10 @@ internal static class StateGraph
         }
     }
 
+    /// <summary>Le ragoût se cuisine à la taverne, ou au four faute de taverne (voir <see cref="Cuisine.PickStew"/>) : l'atelier du plat n'est pas forcément celui de sa recette.</summary>
+    private static bool IsStewAtOven(Activity activity, Recipe recipe) =>
+        recipe.Output == ResourceType.Stew && activity.Building?.Type == BuildingType.Oven;
+
     /// <summary>Offrandes, monuments et souhaits : états connus, matériaux livrés dans la limite de la recette figée, références existantes.</summary>
     private static void ValidateOfferings(Colony colony)
     {
@@ -291,6 +316,10 @@ internal static class StateGraph
             if (wish.Id <= 0 || !settlements.Contains(wish.SettlementId) || !Enum.IsDefined(wish.Kind) || !Enum.IsDefined(wish.TargetKind)
                 || !Enum.IsDefined(wish.Status))
                 throw new InvalidDataException("Souhait invalide.");
+        if (colony.DivineEffects.Select(e => e.Id).Distinct().Count() != colony.DivineEffects.Count
+            || colony.DivineEffects.Any(e => e.Id <= 0 || !Enum.IsDefined(e.Kind) || !Enum.IsDefined(e.Status) || !Enum.IsDefined(e.TargetKind) || e.ExpiresTicks < e.StartTicks
+                || e.Plots.Any(p => !Enum.IsDefined(p.State) || p.Gained < 0)))
+            throw new InvalidDataException("Effet divin invalide.");
     }
 
     private static void ValidateOffers(IReadOnlyList<MarketOffer> offers)

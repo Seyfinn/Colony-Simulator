@@ -8,6 +8,8 @@ namespace GodColony.Simulation.Colonies;
 /// </summary>
 public static class VillageMeasures
 {
+    /// <summary>Cases occupées par des ouvrages achevés ; les chantiers ne sont jamais comptés dans cette surface.</summary>
+    public static int CompletedBuildingCells(Colony colony) => colony.Buildings.Where(b => b.IsComplete).Sum(b => b.Width * b.Height);
     /// <summary>Le rectangle des bâtiments achevés et des champs (null s'il n'y en a pas) : (minX, minY, maxX, maxY).</summary>
     public static (int MinX, int MinY, int MaxX, int MaxY)? ActiveEnvelope(Colony colony)
     {
@@ -20,7 +22,7 @@ public static class VillageMeasures
             if (b.IsComplete && !b.IsDam)
                 Add(b.X, b.Y, b.X + b.Width - 1, b.Y + b.Height - 1);
         foreach (Field f in colony.Fields)
-            Add(f.X, f.Y, f.X + Field.Size - 1, f.Y + Field.Size - 1);
+            Add(f.X, f.Y, f.X + f.Size - 1, f.Y + f.Size - 1);
         return minX == int.MaxValue ? null : (minX, minY, maxX, maxY);
     }
 

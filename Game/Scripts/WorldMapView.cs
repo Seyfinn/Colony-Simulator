@@ -45,6 +45,8 @@ public partial class WorldMapView : Control
     private Vector2 _pan;
     private bool _dragging;
     private int _hovered = -1;
+    /// <summary>Point de survol imposé uniquement par la scène de validation.</summary>
+    internal Vector2? HoverPositionForValidation { get; set; }
 
     /// <summary>À la première ouverture, la carte se centre sur les colonies, un peu zoomée (comme dans RimWorld).</summary>
     private bool _needsFocus;
@@ -243,7 +245,7 @@ public partial class WorldMapView : Control
         if (_world is null || Size.X <= 0 || Size.Y <= 0)
             return;
         var font = ArtDirection.BodyFont;
-        _hovered = TileAt(GetLocalMousePosition());
+        _hovered = TileAt(HoverPositionForValidation ?? GetLocalMousePosition());
         if (_hovered >= 0)
         {
             bool valid = !PickingSite || _world.WorldMap.CanSettle(_hovered, out _);
@@ -254,10 +256,17 @@ public partial class WorldMapView : Control
 
         if (PickingSite)
             DrawSuggestions(g, font);
+        DrawTerritories(g);
+        foreach (var road in _world.WorldMap.Roads.Built)
+        {
+            if (!RegionKnown(road.A) || !RegionKnown(road.B)) continue;
+            g.DrawLine(CenterOf(road.A), CenterOf(road.B), road.Level >= 2 ? ArtDirection.Cream : ArtDirection.Brass, road.Level >= 2 ? 4 : 2, true);
+        }
         DrawPacts(g);
         DrawColonies(g, font);
         DrawCaravans(g, font);
         DrawWarParties(g, font);
+        DrawCaravanTooltip(g, font);
 
         // Le titre et la ligne du bas passent par-dessus les cases qui débordent du cadre quand on zoome.
         g.DrawRect(new Rect2(0, 0, Size.X, Land.Position.Y), Panel);
@@ -272,7 +281,21 @@ public partial class WorldMapView : Control
             : "Cliquez sur une colonie pour l'observer · molette : zoom · clic droit maintenu : déplacer",
             HorizontalAlignment.Left, -1, 12, Muted);
         DrawLegend(g, font);
-        g.DrawString(font, new Vector2(20, Size.Y - 18), BottomLine(), HorizontalAlignment.Left, Size.X - 40, 12, Muted);
+        string bottom = BottomLine();
+        var lines = new List<string>();
+        string line = "";
+        foreach (string word in bottom.Split(' '))
+        {
+            string candidate = line.Length == 0 ? word : line + " " + word;
+            if (line.Length > 0 && font.GetStringSize(candidate, fontSize: 12).X > Size.X - 40)
+            { lines.Add(line); line = word; }
+            else line = candidate;
+        }
+        if (line.Length > 0) lines.Add(line);
+        float bottomTop = Size.Y - 18 - Math.Max(0, lines.Count - 1) * 16;
+        g.DrawRect(new Rect2(16, bottomTop - 14, Size.X - 32, Size.Y - bottomTop + 14), Panel);
+        for (int i = 0; i < lines.Count; i++)
+            g.DrawString(font, new Vector2(20, bottomTop + i * 16), lines[i], HorizontalAlignment.Left, -1, 12, Muted);
     }
 
     /// <summary>Les régions conseillées : un contour numéroté par case, plus épais et plein pour celle qui est proposée.</summary>
@@ -352,6 +375,85 @@ public partial class WorldMapView : Control
         }
     }
 
+    // ---------- Territoires et royaumes ----------
+
+    /// <summary>Les couleurs des royaumes (la couleur stable d'un royaume vient de <see cref="Realm.ColorIndex"/>).</summary>
+    private static readonly Color[] RealmColors =
+    [
+        Color.Color8(196, 88, 88), Color.Color8(86, 142, 196), Color.Color8(214, 168, 70), Color.Color8(112, 170, 98),
+        Color.Color8(160, 108, 190), Color.Color8(80, 176, 170), Color.Color8(206, 126, 76), Color.Color8(170, 170, 176),
+    ];
+
+    /// <summary>Qui tient une région : un royaume (clé positive), une colonie indépendante (clé négative) ou personne (0).</summary>
+    private int TerritoryKey(int tile)
+    {
+        if (!_world.Regions.TryGetValue(tile, out RegionState? region) || region.OwnerColonyId is not int owner)
+            return 0;
+        Colony? colony = _world.Colonies.FirstOrDefault(c => c.Id == owner);
+        return colony is null ? 0 : colony.RealmId != 0 ? colony.RealmId : -colony.Id;
+    }
+
+    private Color TerritoryColor(int key) => key > 0
+        ? RealmColors[(_world.Realms.FirstOrDefault(r => r.Id == key)?.ColorIndex ?? 0) % RealmColors.Length]
+        : ColorOf((_world.Colonies.FirstOrDefault(c => c.Id == -key)?.Species) ?? Species.Human);
+
+    /// <summary>
+    /// Chaque région possédée est teinte de la couleur de son royaume (ou de celle de son peuple si la colonie est indépendante) ; une ligne se trace là où
+    /// deux cases voisines appartiennent à deux royaumes différents : c'est la frontière.
+    /// </summary>
+    private void DrawTerritories(CanvasItem g)
+    {
+        if (_world.Colonies.Count == 0 || HexWidth < 2f)
+            return;
+        Rect2 visible = Land.Grow(HexWidth);
+        foreach (int tile in _world.Regions.Keys.OrderBy(t => t))
+        {
+            int key = TerritoryKey(tile);
+            if (key == 0)
+                continue;
+            Vector2 center = CenterOf(tile);
+            if (!visible.HasPoint(center))
+                continue;
+            Color color = TerritoryColor(key);
+            Vector2[] hex = Hexagon(center);
+            g.DrawColoredPolygon(hex, new Color(color, key > 0 ? 0.26f : 0.16f));
+            foreach (int neighbor in _world.WorldMap.Grid.Neighbors(tile))
+            {
+                if (TerritoryKey(neighbor) == key)
+                    continue;
+                // L'arête partagée : les deux sommets de l'hexagone les plus proches du milieu des deux centres.
+                Vector2 middle = (center + CenterOf(neighbor)) / 2f;
+                int best = 0;
+                float bestDistance = float.MaxValue;
+                for (int i = 0; i < 6; i++)
+                {
+                    float distance = ((hex[i] + hex[(i + 1) % 6]) / 2f - middle).LengthSquared();
+                    if (distance < bestDistance) { bestDistance = distance; best = i; }
+                }
+                g.DrawLine(hex[best], hex[(best + 1) % 6], key > 0 ? color.Lightened(0.15f) : color.Darkened(0.1f), key > 0 ? 3f : 2f, true);
+            }
+        }
+    }
+
+    private readonly List<(Vector2 Position, Caravan Caravan)> _caravanSpots = [];
+
+    /// <summary>Au survol d'une caravane : son chargement et sa destination (le texte vient de <see cref="TransportView"/>).</summary>
+    private void DrawCaravanTooltip(CanvasItem g, Font font)
+    {
+        Vector2 mouse = HoverPositionForValidation ?? GetLocalMousePosition();
+        foreach ((Vector2 position, Caravan caravan) in _caravanSpots)
+        {
+            if ((position - mouse).Length() > 16f)
+                continue;
+            string text = TransportView.TransportLabel(caravan);
+            Vector2 extent = font.GetStringSize(text, HorizontalAlignment.Left, -1, 12);
+            Vector2 at = mouse + new Vector2(14, -12);
+            g.DrawRect(new Rect2(at + new Vector2(-6, -extent.Y - 1), extent + new Vector2(12, 8)), new Color(ArtDirection.Charcoal, 0.94f));
+            g.DrawString(font, at, text, HorizontalAlignment.Left, -1, 12, ArtDirection.Cream);
+            return;
+        }
+    }
+
     private void DrawColonies(CanvasItem g, Font font)
     {
         for (int i = 0; i < _world.Colonies.Count; i++)
@@ -369,7 +471,7 @@ public partial class WorldMapView : Control
             if (_zoom < 1.6f && i != Observed)
                 continue;
             g.DrawString(font, point + new Vector2(-100, DotRadius + 15), colony.Name, HorizontalAlignment.Center, 200, 12, Ink);
-            g.DrawString(font, point + new Vector2(-100, DotRadius + 28), $"{colony.Species.Plural} · {colony.Members.Count} hab.",
+            g.DrawString(font, point + new Vector2(-100, DotRadius + 28), RegionKnown(_world.WorldMap.TileOf(colony)) ? $"{colony.Species.Plural} · {colony.Members.Count} hab." : "Région inconnue",
                 HorizontalAlignment.Center, 200, 10, Muted);
         }
     }
@@ -378,6 +480,7 @@ public partial class WorldMapView : Control
     private void DrawCaravans(CanvasItem g, Font font)
     {
         long now = _world.Clock.Ticks;
+        _caravanSpots.Clear();
         foreach (int tile in _world.WorldMap.ClosedPassages)
         {
             Vector2 p = CenterOf(tile);
@@ -409,6 +512,7 @@ public partial class WorldMapView : Control
             bool outbound = caravan.State == CaravanState.Outbound;
             bool left = (CenterOf(b).X - CenterOf(a).X) * (caravan.Route is null && !outbound ? -1 : 1) < 0;
             CaravanSprites.Draw(g, position, now / (double)GodColony.Simulation.Time.TimeConstants.TicksPerSecond, left);
+            _caravanSpots.Add((position, caravan));
             if (caravan.BlockedReason is not null)
             {
                 g.DrawCircle(position, 13, ArtDirection.Brass, false, 2);
@@ -506,6 +610,24 @@ public partial class WorldMapView : Control
             g.DrawRect(new Rect2(at, new Vector2(11, 11)), BiomeColor(LegendOrder[i]));
             g.DrawString(font, at + new Vector2(17, 10), BiomeInfo.Of(LegendOrder[i]).Name, HorizontalAlignment.Left, -1, 10, Ink);
         }
+        var realms = _world.Realms.Where(r => r.MemberColonyIds.Count > 1).OrderBy(r => r.Id).ToArray();
+        if (realms.Length == 0) return;
+        float top = box.End.Y + 8;
+        int rows = Math.Min(realms.Length, Math.Max(0, (int)((Size.Y - 80 - top) / rowHeight) - 1));
+        if (rows == 0) return;
+        var kingdoms = new Rect2(box.Position.X - 82, top, width + 82, (rows + 1) * rowHeight + 12);
+        g.DrawRect(kingdoms, new Color(Panel, .9f));
+        g.DrawRect(kingdoms, Edge, false, 1);
+        g.DrawString(font, kingdoms.Position + new Vector2(8, 14), "Royaumes", fontSize: 11, modulate: Ink);
+        for (int i = 0; i < rows; i++)
+        {
+            Vector2 at = kingdoms.Position + new Vector2(8, 22 + i * rowHeight);
+            g.DrawRect(new Rect2(at, new Vector2(11, 11)), TerritoryColor(realms[i].Id));
+            string name = realms[i].Name;
+            while (name.Length > 1 && font.GetStringSize(name, fontSize: 10).X > kingdoms.Size.X - 34) name = name[..^1];
+            if (name != realms[i].Name) name = name.TrimEnd() + "…";
+            g.DrawString(font, at + new Vector2(17, 10), name, fontSize: 10, modulate: Ink);
+        }
     }
 
     /// <summary>La ligne du bas : la case survolée (biome, relief, climat), ou l'état des caravanes.</summary>
@@ -516,6 +638,7 @@ public partial class WorldMapView : Control
             WorldTile tile = _world.WorldMap.Grid[_hovered];
             if (tile.IsOcean)
                 return "Océan";
+            if (!PickingSite && !RegionKnown(_hovered)) return $"{tile.Describe()} · région inconnue";
             string line = $"{tile.Describe()} · {tile.Temperature:0} °C en moyenne · pluies {tile.Rainfall * 100:0} %";
             if (tile.River > 0) line += tile.River == 2 ? " · grand fleuve" : " · rivière";
             if (tile.Coastal) line += " · côte";
@@ -523,6 +646,18 @@ public partial class WorldMapView : Control
             if (_world.WorldMap.ColonyAt(_hovered) is { } colony)
             {
                 line += $" · {colony.Name} ({Knowledge.AgeName(Knowledge.AgeOf(colony)).ToLowerInvariant()})";
+                // Le chef de la colonie, son royaume, son roi et sa loyauté (en mots).
+                line += $" · chef : {(Leadership.ChiefOf(colony) is { } chief ? Leadership.Describe(colony, _world.Clock) : "aucun")}";
+                if (Realms.Of(_world, colony) is { } realm)
+                {
+                    line += $" · {realm.Name}";
+                    if (Realms.King(_world, realm) is { } king)
+                        line += $", {(king.Sex == Sex.Female ? "reine" : "roi")} {king.FullName} ({Realms.Capital(_world, realm)?.Name})";
+                    if (realm.CapitalColonyId != colony.Id)
+                        line += $" · loyauté : {Realms.LoyaltyWord(colony)}";
+                    else
+                        line += " · capitale";
+                }
                 if (Observed >= 0 && Observed < _world.Colonies.Count && _world.Colonies[Observed] is { } observed && observed != colony)
                     line += $" · {observed.Name} la juge {Diplomacy.Attitude(observed.OpinionOf(colony)).ToLowerInvariant()} ({observed.OpinionOf(colony):+0;−0;0})"
                         + Diplomacy.PactBetween(_world, observed, colony)?.Kind switch
@@ -546,6 +681,7 @@ public partial class WorldMapView : Control
             return "Monde vierge · fondez votre première colonie.";
         int blocked = _world.Caravans.Count(c => c.BlockedReason is not null);
         string status = _world.Caravans.Count == 0 ? "Aucune caravane en route." : $"{_world.Caravans.Count} caravane(s) en route · {blocked} en attente.";
+        status += " · Routes : trait laiton niveau 1, trait crème épais niveau 2.";
         if (_world.WorldMap.ClosedPassages.Count > 0) status += "   × Passage fermé";
         int wars = _world.Pacts.Count(p => p.Kind == PactKind.War), alliances = _world.Pacts.Count(p => p.Kind == PactKind.Alliance);
         if (wars > 0) status += $" · {wars} guerre{(wars > 1 ? "s" : "")}";
@@ -553,6 +689,10 @@ public partial class WorldMapView : Control
         if (alliances > 0) status += $" · {alliances} alliance{(alliances > 1 ? "s" : "")}";
         return status;
     }
+
+    private bool RegionKnown(int region) => Observed < 0 || Observed >= _world.Colonies.Count
+        || _world.Colonies[Observed].VisitedRegions.Contains(region) || _world.Colonies[Observed].RegionReach.ContainsKey(region)
+        || _world.Colonies[Observed].Settlements.Any(s => s.RegionTileIndex == region);
 
     // ---------- Souris ----------
 

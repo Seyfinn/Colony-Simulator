@@ -60,7 +60,7 @@ public static class Specialties
         if (colony.Workshops(BuildingType.Market).FirstOrDefault() is not { } market)
             return null;
         ResourceType native = NativeOf(colony);
-        int stock = colony.Stock.Get(native) + Crafting.Pending(colony, native) * 2;
+        int stock = colony.Stock.Get(native) + Crafting.Expected(colony, native);
         return stock < NativeTarget(colony) ? market : null;
     }
 

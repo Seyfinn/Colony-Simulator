@@ -10,7 +10,7 @@ public enum ParcelKind { Building, Field, PublicSpace, AccessCorridor }
 
 public enum ReservationState { Reserved, Occupied, Released }
 
-public enum DevelopmentKind { Housing, Field, Workshop, Civic, Logistics, RoadImprovement, AccessRepair }
+public enum DevelopmentKind { Housing, Field, Workshop, Civic, Logistics, RoadImprovement, AccessRepair, RoadShortcut, WorkshopExtension }
 
 /// <summary>Ordre explicite de la pyramide : la survie d'abord, le confort en dernier.</summary>
 public enum DevelopmentPriority { Survival, Housing, Production, Comfort }
@@ -18,7 +18,7 @@ public enum DevelopmentPriority { Survival, Housing, Production, Comfort }
 public enum ProjectState { Accepted, Working, Paused, Completed, Cancelled, Blocked }
 
 /// <summary>Surface réalisée d'une cellule : un sentier naît des passages, un chemin de terre d'un aménagement. Pavage réservé à plus tard.</summary>
-public enum RoadSurface : byte { None, Trail, DirtRoad }
+public enum RoadSurface : byte { None, Trail, DirtRoad, Bridge }
 
 /// <summary>Une impossibilité physique. L'épuisement du budget de recherche n'en est jamais une (voir <see cref="PlanningOutcome"/>).</summary>
 public enum PlacementFailureKind { NoSuitableTerrain, NoAccess, TravelBudgetExceeded, NoCompatibleDistrict, NoSpace, SearchBudgetExceeded, PrerequisiteMissing }

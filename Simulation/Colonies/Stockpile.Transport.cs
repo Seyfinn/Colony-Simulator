@@ -61,7 +61,7 @@ public sealed partial class Stockpile
         return TryTransferTo(destination, reservation.Resource, reservation.Amount);
     }
 
-    /// <summary>Transfert physique atomique ; les entrées ne rajeunissent pas les lots de viande.</summary>
+    /// <summary>Transfert physique atomique ; les entrées ne rajeunissent pas les lots de viande ni de grain.</summary>
     public bool TryTransferTo(Stockpile destination, ResourceType resource, int amount,
         ResourceFlow outgoing = ResourceFlow.Transfer, ResourceFlow incoming = ResourceFlow.Transfer)
     {
@@ -84,6 +84,8 @@ public sealed partial class Stockpile
             }
             if (left != 0) throw new InvalidOperationException("Les lots de viande ne correspondent pas au stock.");
         }
+        else if (resource == ResourceType.Grain)
+            lots = GrainLots(amount);
         else
             lots.Add(new(resource, amount));
         if (!TryTake(resource, amount, outgoing)) return false;
@@ -92,6 +94,8 @@ public sealed partial class Stockpile
             destination._amounts[resource] = checked(destination.Get(resource) + lot.Amount);
             if (resource == ResourceType.Meat)
                 destination._meatByAge[lot.AgeDays] = checked(destination._meatByAge.GetValueOrDefault(lot.AgeDays) + lot.Amount);
+            else if (resource == ResourceType.Grain)
+                destination.AddGrain(lot.Amount, lot.AgeDays);
         }
         ResourceAccounting.Record(destination, resource, incoming, amount);
         return true;
@@ -127,8 +131,10 @@ public sealed partial class Stockpile
 
     internal void ValidateInventory()
     {
+        _grainByDay ??= []; // un ancien format n'a pas de lots de grain : tout son grain est sans âge connu
         if (_nextReservationId < 0 || _amounts.Any(p => !Enum.IsDefined(p.Key) || p.Value < 0)
             || _meatByAge.Any(p => p.Key < 0 || p.Value <= 0) || _meatByAge.Sum(p => (long)p.Value) != Get(ResourceType.Meat)
+            || _grainByDay.Any(p => p.Value <= 0) || _grainByDay.Sum(p => (long)p.Value) > Get(ResourceType.Grain)
             || _cakeSlices is < 0 or >= PortionsPerCake)
             throw new InvalidDataException("Inventaire ou lots périssables invalides.");
         var ids = new HashSet<int>();

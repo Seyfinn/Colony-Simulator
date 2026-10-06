@@ -16,7 +16,7 @@ public static class WorkSectors
     /// <summary>Les compétences utiles dans un secteur (la nourriture sauvage vient de la cueillette ou de la pêche, les champs de l'agriculture).</summary>
     public static SkillType[] Skills(this WorkSector sector) => sector switch
     {
-        WorkSector.Food => [SkillType.Foraging, SkillType.Fishing],
+        WorkSector.Food => [SkillType.Foraging, SkillType.Fishing, SkillType.Hunting],
         WorkSector.Farm => [SkillType.Farming, SkillType.Husbandry],
         WorkSector.Wood => [SkillType.Woodcutting],
         WorkSector.Stone => [SkillType.Mining],

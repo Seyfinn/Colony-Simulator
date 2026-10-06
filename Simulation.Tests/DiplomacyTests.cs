@@ -90,6 +90,7 @@ public class DiplomacyTests(ITestOutputHelper output)
         a.Stock.Add(ResourceType.Tools, 8);
         Diplomacy.DeclareWar(world, a, b);
         int coins = CoinsInTheWorld(world) + world.CoinsLostToEvents;
+        long dotationsAtStart = world.Money.Dotations;
         int people = a.Members.Count + a.Transients.Count + b.Members.Count;
 
         WarParty party = Warfare.Depart(world, a, b)!;
@@ -107,17 +108,17 @@ public class DiplomacyTests(ITestOutputHelper output)
         while (world.WarParties.Contains(party))
         {
             world.Step();
-            Assert.Equal(coins + world.Money.Minted, CoinsInTheWorld(world) + world.CoinsLostToEvents);
+            Assert.Equal(coins + world.Money.Minted + world.Money.Dotations - dotationsAtStart, CoinsInTheWorld(world) + world.CoinsLostToEvents);
         }
         Assert.NotNull(party.Victory);
         output.WriteLine(string.Join("\n", b.Thoughts.TakeLast(3).Concat(a.Thoughts.TakeLast(2)).Select(t => t.Text)));
 
-        int dead = a.Graves.Count(g => g.Cause == "guerre") + b.Graves.Count(g => g.Cause == "guerre");
+        int dead = a.Deaths.Count(g => g.Cause == "guerre") + b.Deaths.Count(g => g.Cause == "guerre");
         Assert.Equal(people - dead, a.Members.Count + b.Members.Count); // les citoyens de retour restent comptés une seule fois
         Assert.Equal(1, a.BattlesWon + a.BattlesLost);
         Assert.True(b.OpinionOf(a) < 0f && b.GrudgeAgainst(a) > 0f);
         if (party.Victory == false)
-            Assert.Contains(a.Graves, g => g.Cause == "guerre");
+            Assert.Contains(a.Deaths, g => g.Cause == "guerre");
         Assert.Contains(b.RecentEvents, e => e.Kind == ColonyEventKind.Raid);
     }
 

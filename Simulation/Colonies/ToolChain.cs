@@ -5,7 +5,7 @@ namespace GodColony.Simulation.Colonies;
 /// pour un ouvrier moyen : plus la tâche est difficile, plus elle est longue (moudre, brûler du charbon, cuire, tisser, fondre, forger).
 /// Les coûts de référence d'<see cref="Economy.BaselineCost"/> suivent ces durées.
 /// </summary>
-public sealed record Recipe(BuildingType Workshop, (ResourceType Type, int Amount)[] Inputs, ResourceType Output, int OutputAmount, float Seconds);
+public sealed record Recipe(BuildingType Workshop, (ResourceType Type, int Amount)[] Inputs, ResourceType Output, int OutputAmount, float Seconds, ResourceType? Fuel = null);
 
 /// <summary>
 /// Ce que la colonie veut produire pour s'équiper, en remontant la chaîne : outils → fer → charbon de bois,
@@ -34,7 +34,7 @@ public static class ToolChain
     public const float ToolSpeedBonus = 0.35f;
 
     /// <summary>Nombre de gestes de travail qu'un outil supporte avant de casser.</summary>
-    public const float ToolLifeUses = 150f;
+    public const float ToolLifeUses = 240f;
 
     /// <summary>On ne lance pas plus de trois outils d'un coup : la colonie ne s'endette pas en matières premières.</summary>
     private const int MaxBatchTools = 3;
@@ -47,8 +47,8 @@ public static class ToolChain
     private const int CharcoalPerTool = 1;
 
     private static readonly Recipe Charring = new(BuildingType.Kiln, [(ResourceType.Wood, WoodPerBatch)], ResourceType.Charcoal, CharcoalPerBatch, 12f);
-    private static readonly Recipe Smelting = new(BuildingType.Bloomery, [(ResourceType.IronOre, OrePerIron), (ResourceType.Charcoal, CharcoalPerIron)], ResourceType.Iron, 1, 24f);
-    private static readonly Recipe Forging = new(BuildingType.Forge, [(ResourceType.Iron, IronPerTool), (ResourceType.Charcoal, CharcoalPerTool)], ResourceType.Tools, 1, 32f);
+    private static readonly Recipe Smelting = new(BuildingType.Bloomery, [(ResourceType.IronOre, OrePerIron), (ResourceType.Charcoal, CharcoalPerIron)], ResourceType.Iron, 1, 18f);
+    private static readonly Recipe Forging = new(BuildingType.Forge, [(ResourceType.Iron, IronPerTool), (ResourceType.Charcoal, CharcoalPerTool)], ResourceType.Tools, 1, 24f);
 
     public static Recipe RecipeFor(BuildingType workshop) => workshop switch
     {
@@ -139,14 +139,14 @@ public static class ToolChain
         bool Has(Recipe recipe) => MissingInputs(colony, recipe).Count == 0;
 
         if (colony.Workshops(BuildingType.Forge).FirstOrDefault() is { } forge
-            && Has(Forging) && demand.ToolShortfall > Crafting.Pending(colony, ResourceType.Tools))
+            && Has(Forging) && demand.ToolShortfall > Crafting.Expected(colony, ResourceType.Tools))
             return forge;
         if (colony.Workshops(BuildingType.Bloomery).FirstOrDefault() is { } bloomery
-            && Has(Smelting) && stock.Get(ResourceType.Iron) + Crafting.Pending(colony, ResourceType.Iron) < demand.IronTarget)
+            && Has(Smelting) && stock.Get(ResourceType.Iron) + Crafting.Expected(colony, ResourceType.Iron) < demand.IronTarget)
             return bloomery;
         if (colony.Workshops(BuildingType.Kiln).FirstOrDefault() is { } kiln
             && stock.Get(ResourceType.Wood) >= WoodPerBatch + heatingReserve
-            && stock.Get(ResourceType.Charcoal) + CharcoalPerBatch * Crafting.Pending(colony, ResourceType.Charcoal) < demand.CharcoalTarget)
+            && stock.Get(ResourceType.Charcoal) + Crafting.Expected(colony, ResourceType.Charcoal) < demand.CharcoalTarget)
             return kiln;
         return null;
     }
@@ -170,7 +170,8 @@ public static class ToolChain
         foreach ((ResourceType type, int amount) in inputs)
         {
             colony.Stock.TryTransferTo(inventory, type, amount);
-            inputHours += amount * (colony.Labor.HoursPerUnit(type) ?? 0.0);
+            // Un intrant reçu ou acheté garde un coût même si le village ne l'a jamais produit.
+            inputHours += amount * Economy.Cost(colony, type);
         }
         return true;
     }

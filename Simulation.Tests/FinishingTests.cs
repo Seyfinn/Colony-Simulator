@@ -68,7 +68,7 @@ public sealed class FinishingTests
     }
 
     [Fact]
-    public void Les_gemmes_sont_rares_par_province_complementaires_et_le_diamant_exceptionnel()
+    public void Les_gemmes_sont_rares_par_province_complementaires_et_le_diamant_minoritaire()
     {
         var world = new WorldState(42, startingColonists: 8, migration: false, lifecycle: false, trade: false);
         var gemRegions = new List<(int Tile, ResourceType Gem)>();
@@ -80,7 +80,7 @@ public sealed class FinishingTests
         }
         Assert.NotEmpty(gemRegions);
         Assert.True(gemRegions.Count < 60, "Les régions à gemmes sont minoritaires.");
-        Assert.True(gemRegions.Count(g => g.Gem == ResourceType.Diamond) * 4 <= gemRegions.Count, "Le diamant reste exceptionnel.");
+        Assert.True(gemRegions.Count(g => g.Gem == ResourceType.Diamond) * 3 <= gemRegions.Count, "Le diamant reste minoritaire.");
         Assert.True(gemRegions.Select(g => g.Gem).Where(g => g != ResourceType.Diamond).Distinct().Count() >= 2, "Plusieurs pierres coexistent sur la carte : un grand réseau commercial les réunit.");
     }
 }

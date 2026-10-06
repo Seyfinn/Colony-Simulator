@@ -24,6 +24,17 @@ public sealed class Settlement
     public int RegionTileIndex { get; internal set; } = -1;
     public SettlementKind Kind { get; internal set; }
     public SettlementStatus Status { get; internal set; }
+    /// <summary>Les observations de croissance de l'établissement (voir <see cref="GrowthPolicy"/>).</summary>
+    public SettlementGrowthState GrowthState { get; } = new();
+
+    /// <summary>Les mesures quotidiennes de l'établissement : utilisation des ateliers, production et verdicts d'extension (voir <see cref="SettlementScaleLedger"/>).</summary>
+    public SettlementScaleLedger ScaleLedger { get; } = new();
+
+    /// <summary>Les ravitaillements non urgents différés pour grouper leur charge (voir <see cref="SupplyBatching"/>).</summary>
+    public List<SupplyWaitState> SupplyWaits { get; } = [];
+
+    /// <summary>Les flux de déplacements récents (fenêtre de 14 jours, 256 couples au plus) qui nourrissent les raccourcis (voir <see cref="RoadShortcuts"/>).</summary>
+    public List<TravelFlow> TravelFlows { get; } = [];
     internal int StableDays { get; set; }
     internal int UnproductiveDays { get; set; }
 
@@ -66,7 +77,7 @@ public sealed class Settlement
     public (int X, int Y)? Quarry { get; internal set; }
     public Stockpile Stock { get; } = new();
     public LaborLedger Labor { get; } = new();
-    public List<Grave> Graves { get; } = [];
+    public List<Death> Deaths { get; } = [];
     public List<Building> Buildings { get; } = [];
     public List<Canal> Canals { get; } = [];
     internal HashSet<(int X, int Y)> CanalTiles { get; } = [];
@@ -78,6 +89,33 @@ public sealed class Settlement
     public int Chickens { get; internal set; }
     public int Sheep { get; internal set; }
     public int Cows { get; internal set; }
+    /// <summary>Bêtes de trait de l'enclos : elles ne donnent ni œufs ni viande, mais tirent les caravanes (voir <see cref="Husbandry.DraftSpecies"/>).</summary>
+    public int Horses { get; internal set; }
+    public int Oxen { get; internal set; }
+    internal float HorseGrowth { get; set; }
+    /// <summary>Les hardes sauvages visibles autour de l'établissement (leurs bêtes sont empruntées à la population de la région).</summary>
+    /// <summary>Les chantiers de pont de l'établissement (voir <see cref="Bridges"/>).</summary>
+    public List<BridgeSite> BridgeSites => _bridgeSites ??= [];
+    private List<BridgeSite>? _bridgeSites;
+    public List<Nature.WildHerd> Herds => _herds ??= [];
+    private List<Nature.WildHerd>? _herds;
+    /// <summary>Les bêtes capturées qu'on apprivoise à l'enclos.</summary>
+    public List<Nature.TamingAnimal> Taming => _taming ??= [];
+    private List<Nature.TamingAnimal>? _taming;
+    /// <summary>Les lignées d'élevage de la colonie : ses bêtes nées en enclos deviennent plus dociles et plus productives.</summary>
+    public Dictionary<ResourceType, Nature.LivestockLine> Lines => _lines ??= [];
+    private Dictionary<ResourceType, Nature.LivestockLine>? _lines;
+    /// <summary>L'enclos est renforcé : les prédateurs y entrent bien moins souvent.</summary>
+    public bool PenReinforced { get; internal set; }
+    internal int NextHerdId { get; set; }
+    /// <summary>Les bêtes soignées aujourd'hui (au moins un colon est venu apprivoiser).</summary>
+    internal bool TamedToday { get; set; }
+    /// <summary>La nature sauvage de la région de l'établissement (la même instance que celle de <see cref="RegionState.Wildlife"/>), posée par la simulation chaque jour.</summary>
+    internal Nature.RegionWildlife? Wildlife { get; set; }
+    /// <summary>Dernière grande chasse (réussie ou non) : on ne repart pas aussitôt contre l'alpha.</summary>
+    internal long LastGreatHuntTicks { get; set; } = long.MinValue / 2;
+    /// <summary>La grande chasse en cours contre un alpha, ou null.</summary>
+    internal Nature.GreatHuntState? GreatHunt { get; set; }
     public float EggsReady { get; internal set; }
     public float WoolReady { get; internal set; }
     public float MilkReady { get; internal set; }

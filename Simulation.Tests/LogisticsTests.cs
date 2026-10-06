@@ -128,7 +128,8 @@ public sealed class LogisticsTests
         Colony from = world.Colonies[0], to = world.Colonies[1];
         Fixer(from, ResourceType.Food, 28);
         Fixer(from, ResourceType.Grain, 0);
-        Fixer(to, ResourceType.Grain, 300);
+        Fixer(from, ResourceType.Bread, 0);
+        Fixer(to, ResourceType.Bread, 300);
         ColonyBrain.Think(from, from.Map, world.Clock);
         Assert.True(Trade.NeedsEmergencyFood(from));
         Assert.False(from.Sensors!.SurvivalAssured);
@@ -136,7 +137,7 @@ public sealed class LogisticsTests
         foreach (Colonist worker in from.Members.Take(2)) worker.Sector = WorkSector.Free;
         var producers = from.Members.Skip(2).ToArray();
         Assert.True(PlanApresRencontre(world, from, to, emergency: true) is not null,
-            $"Trajet {world.WorldMap.TravelDays(from, to)} j, nutrition {from.Stock.AvailableNutrition}, grain proposé {Economy.Clear(to, from, ResourceType.Grain, 36).Units}");
+            $"Trajet {world.WorldMap.TravelDays(from, to)} j, nutrition {from.Stock.AvailableNutrition}, grain proposé {Economy.Clear(to, from, ResourceType.Bread, 36).Units}");
         Trade.Daily(world, from);
         Caravan caravan = Assert.Single(world.Caravans);
         Assert.All(caravan.Plan, l => Assert.True(!l.IsSale && ResourceCatalog.Nutrition(l.Good) > 0));
@@ -151,7 +152,7 @@ public sealed class LogisticsTests
         WorldState world = Monde();
         Colony from = world.Colonies[0], to = world.Colonies[1];
         Fixer(from, ResourceType.Food, 28);
-        Fixer(to, ResourceType.Grain, 300);
+        Fixer(to, ResourceType.Bread, 300);
         foreach (Colonist worker in from.Members) worker.Sector = WorkSector.Food;
         TradePlan plan = PlanApresRencontre(world, from, to, emergency: true)!;
         Assert.NotNull(plan);

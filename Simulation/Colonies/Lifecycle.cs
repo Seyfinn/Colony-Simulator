@@ -2,8 +2,8 @@ using GodColony.Simulation.Time;
 
 namespace GodColony.Simulation.Colonies;
 
-/// <summary>Une tombe au cimetière de la colonie. X et Y valent -1 si aucune place n'a été trouvée.</summary>
-public sealed record Grave(string FullName, Sex Sex, float AgeYears, string Cause, long Ticks, int X, int Y);
+/// <summary>Un décès enregistré dans le registre de l'établissement : il ne laisse aucune trace sur le terrain.</summary>
+public sealed record Death(string FullName, Sex Sex, float AgeYears, string Cause, long Ticks);
 
 /// <summary>
 /// Le cycle de la vie : on s'attache et on forme un couple (un homme et une femme, pour qu'il puisse avoir des enfants),
@@ -17,9 +17,10 @@ public static class Lifecycle
     public const float CoupleCompatibility = 0.4f;
 
     // Naissances
+    /// <summary>Gestation humaine en jours ; les autres peuples suivent leur échelle de vie.</summary>
     public const float PregnancyDays = 5f;
 
-    /// <summary>Un couple attend au moins un an entre deux naissances.</summary>
+    /// <summary>Intervalle humain entre deux naissances, étiré selon la longévité du peuple.</summary>
     public const float MinBirthIntervalYears = 1f;
     public const float FertileUntilAge = 14f;
 
@@ -161,10 +162,10 @@ public static class Lifecycle
     {
         float prosperity = Prosperity(colony, world.Clock);
         long now = world.Clock.Ticks;
-        long due = now + (long)(PregnancyDays * TimeConstants.TicksPerDay);
 
         foreach (Colonist woman in colony.PresentMembers.Where(m => m.Sex == Sex.Female))
         {
+            long due = now + (long)(PregnancyDays * woman.Species.LifespanScale * TimeConstants.TicksPerDay);
             if (!CanConceive(woman, due))
                 continue;
             if (world.Random.NextSingle() >= ConceptionChancePerDay * prosperity * woman.Species.Fertility)
@@ -176,7 +177,7 @@ public static class Lifecycle
     }
 
     /// <summary>
-    /// En couple, adulte et assez jeune, pas déjà enceinte, et au moins un an entre deux naissances.
+    /// En couple, adulte et assez jeune, pas déjà enceinte, avec un intervalle entre naissances adapté à la longévité.
     /// <paramref name="dueTicks"/> est le moment où l'enfant naîtrait.
     /// </summary>
     public static bool CanConceive(Colonist woman, long dueTicks) =>
@@ -245,6 +246,7 @@ public static class Lifecycle
     public static void Die(WorldState world, Colonist colonist, string cause)
     {
         Colony colony = colonist.Colony;
+        DivinePowers.OnColonistGone(colony, colonist);
         float age = colonist.AgeYears;
         colonist.TravelId = 0; // La mort retire la citoyenneté, même pendant une mission.
         foreach (WarParty party in world.WarParties) party.Warriors.Remove(colonist);
@@ -273,8 +275,8 @@ public static class Lifecycle
         colonist.PregnancyFather = null;
         colonist.Partner = null;
 
-        (int x, int y) = Urbanism.FindGraveSite(colony.Map, colony) ?? (-1, -1);
-        colony.Graves.Add(new Grave(colonist.FullName, colonist.Sex, age, cause, world.Clock.Ticks, x, y));
+        colony.Deaths.Add(new Death(colonist.FullName, colonist.Sex, age, cause, world.Clock.Ticks));
+        colony.TotalDeaths++;
 
         bool female = colonist.Sex == Sex.Female;
         ColonyBrain.Say(colony, world.Clock, cause switch

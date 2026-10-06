@@ -126,7 +126,7 @@ public static class SettlementServices
                 break;
             int x = building.AccessX + dx, y = building.AccessY + dy;
             if (!map.InBounds(x, y) || !map.IsWalkable(x, y) || map.IsWaterway(x, y) || building.Contains(x, y)
-                || index.Has(x, y, CellUse.Building | CellUse.Field | CellUse.Grave))
+                || index.Has(x, y, CellUse.Building | CellUse.Field))
                 continue;
             if (!map.CanStep(building.AccessX, building.AccessY, x, y))
                 continue;

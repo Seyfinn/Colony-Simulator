@@ -109,5 +109,17 @@ public sealed class PlanningJob
     internal int RejectedTravel { get; set; }
     internal int RejectedDistrict { get; set; }
 
+    // --- Un raccourci à l étude (voir <see cref="RoadShortcuts"/>) : les deux extrémités, la mesure du flux, le coût actuel et le coût proposé ---
+
+    public int ShortcutA { get; internal set; }
+    public int ShortcutB { get; internal set; }
+    public double ShortcutCurrentSeconds { get; internal set; }
+    public double ShortcutProposedSeconds { get; internal set; }
+    public double ShortcutCurrentCells { get; internal set; }
+    public double ShortcutTripsPerDay { get; internal set; }
+    public double ShortcutWorkHours { get; internal set; }
+    public ShortcutVerdict ShortcutVerdict { get; internal set; }
+    public List<int> ShortcutCells { get; } = [];
+
     public bool IsFinished => Stage is PlanStage.Ready or PlanStage.Failed;
 }

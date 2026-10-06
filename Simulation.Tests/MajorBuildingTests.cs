@@ -25,7 +25,7 @@ public sealed class MajorBuildingTests
         Assert.NotNull(colony.Pathfinder.FindPath(colony.CampX, colony.CampY, mine.AccessX, mine.AccessY));
         for (int tick = 0; tick < 80 * TimeConstants.TicksPerDay && !mine.IsComplete; tick++) world.Step();
         Assert.True(mine.IsComplete, $"Mine inachevée : bois {mine.WoodDelivered}, pierre {mine.StoneDelivered}, travail {mine.Progress:P0}.");
-        Assert.Equal((120, 100), (mine.WoodDelivered, mine.StoneDelivered));
+        Assert.Equal((72, 72), (mine.WoodDelivered, mine.StoneDelivered));
         Assert.Equal((0, 0), (mine.WoodInTransit, mine.StoneInTransit));
         Assert.Contains(colony.Thoughts, t => t.Text.Contains("La mine est achevée"));
         Assert.Empty(mine.Tiles.Intersect(colony.Buildings.Where(b => b != mine).SelectMany(b => b.Tiles)));

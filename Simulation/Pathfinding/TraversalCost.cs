@@ -19,13 +19,27 @@ public static class TraversalCost
     private const float SecondsPerCell = 1f / SettlementRules.WalkTilesPerSecond;
 
     /// <summary>Durée du pas de (fromX, fromY) à (toX, toY), en secondes : toujours strictement positive.</summary>
-    public static float StepSeconds(LocalMap map, int fromX, int fromY, int toX, int toY)
+    public static float StepSeconds(LocalMap map, int fromX, int fromY, int toX, int toY) =>
+        StepSeconds(map, fromY * map.Width + fromX, toY * map.Width + toX, fromX != toX && fromY != toY);
+
+    /// <summary>La même durée, sur les indices des deux cases (le pathfinder).</summary>
+    internal static float StepSeconds(LocalMap map, int from, int to, bool diagonal)
     {
-        bool diagonal = fromX != toX && fromY != toY;
-        float terrain = map.MoveCost(toX, toY);
-        float road = terrain == 1f ? map.Roads.CostFactor(toY * map.Width + toX) : 1f;
-        float cells = (diagonal ? Diagonal : 1f) * terrain * road * map.Ruggedness(toX, toY);
-        if (map.GetElevation(toX, toY) > map.GetElevation(fromX, fromY))
+        float terrain = map.MoveCostCell(to);
+        float road = terrain == 1f ? map.Roads.CostFactor(to) : 1f;
+        float cells = (diagonal ? Diagonal : 1f) * terrain * road * map.RuggednessCell(to);
+        if (map.ElevationCell(to) > map.ElevationCell(from))
+            cells += UphillCells;
+        return cells * SecondsPerCell;
+    }
+
+    /// <summary>La durée du pas une fois la cellule aménagée en chemin de terre (le coût futur d un raccourci) : jamais moins que ce que la surface actuelle donne déjà.</summary>
+    internal static float StepSecondsPaved(LocalMap map, int from, int to, bool diagonal)
+    {
+        float terrain = map.MoveCostCell(to);
+        float road = terrain == 1f ? Math.Min(map.Roads.CostFactor(to), SettlementRules.DirtRoadCost) : 1f;
+        float cells = (diagonal ? Diagonal : 1f) * terrain * road * map.RuggednessCell(to);
+        if (map.ElevationCell(to) > map.ElevationCell(from))
             cells += UphillCells;
         return cells * SecondsPerCell;
     }

@@ -4,6 +4,7 @@ using GodColony.Simulation.Map;
 using GodColony.Simulation.Pathfinding;
 using GodColony.Simulation.Time;
 using GodColony.Simulation.World;
+using Fauna = GodColony.Simulation.Nature;
 
 namespace GodColony.Simulation;
 
@@ -66,7 +67,7 @@ public sealed partial class WorldState
     /// <summary>Les bandes de guerriers en marche vers une colonie ennemie, ou qui en reviennent.</summary>
     public List<WarParty> WarParties { get; } = [];
 
-    /// <summary>Pièces qui ont quitté le monde par les événements (pillards, colporteurs) : la monnaie ne se perd pas autrement.</summary>
+    /// <summary>Pièces qui ont quitté le monde par les événements (colporteurs) : la monnaie ne se perd pas autrement.</summary>
     public int CoinsLostToEvents { get; internal set; }
 
     /// <summary>Le bilan monétaire : dotations, frappe et quota annuel partagé (voir <see cref="MonetaryLedger"/>).</summary>
@@ -94,6 +95,14 @@ public sealed partial class WorldState
 
     /// <summary>Le hasard de la politique (querelles, présents, batailles, schismes), à part lui aussi.</summary>
     public Random Politics { get; }
+
+    /// <summary>Le hasard de la nature sauvage (faune, chasse, prédation, interception des caravanes), à part de tous les autres.</summary>
+    public Random Nature => _nature ??= new Random(unchecked(Seed * 53 + 0x4A7E));
+    private Random? _nature;
+
+    /// <summary>Les royaumes : des colonies réunies par filiation ou par conquête (voir <see cref="Realms"/>).</summary>
+    public List<Realm> Realms => _realms ??= [];
+    private List<Realm>? _realms;
 
     /// <param name="startingColonists">Nombre de colons fondateurs (par colonie) ; tiré au hasard entre 5 et 10 si l'on n'en précise pas.</param>
     /// <param name="migration">Faux pour couper les arrivées de voyageurs et les départs.</param>
@@ -231,6 +240,11 @@ public sealed partial class WorldState
                 Colony colony = settlement.Owner;
                 using var scope = colony.UseSettlement(settlement);
                 colony.Map.DailyUpdate(Clock.TotalDays, Clock.Season);
+                Fauna.Wildlife.DailySettlement(this, settlement);
+                Fauna.Predation.DailyRaids(this, colony);
+                Fauna.Taming.Daily(this, colony);
+                Fauna.WildResources.Daily(colony, Clock);
+                Fauna.Hunting.Daily(this, colony);
                 RoadDevelopment.OnDayStart(colony);
                 ColonyBrain.OnDayStart(colony, Clock);
                 TerritorialTravel.Daily(this, settlement);
@@ -243,6 +257,12 @@ public sealed partial class WorldState
                     Health.Daily(this, colony);
                     Events.Daily(this, colony);
                 }
+                // Les compteurs d'observation se ferment après les changements du jour.
+                GrowthPolicy.ObserveDaily(this, settlement);
+                settlement.ScaleLedger.Close(Clock.TotalDays);
+                WorkshopCapacity.ReviewDaily(colony, Clock.TotalDays);
+                SpecialistAssignments.RefreshDaily(colony, Clock);
+                RoadShortcuts.ReviewDaily(this, settlement);
             }
         }
 
@@ -254,6 +274,8 @@ public sealed partial class WorldState
                 using var scope = colony.UseSettlement(settlement);
                 colony.Stock.ExpireReservations(Clock.Ticks);
                 ColonyBrain.Think(colony, colony.Map, Clock);
+                Fauna.Wildlife.HourlyMove(this, settlement);
+                Fauna.Predation.HourlyEncounters(this, colony);
                 Offerings.Hourly(this, colony);
                 if (Clock.Hour == FireLightingHour)
                     ColonyBrain.LightFire(colony, Clock);
@@ -273,6 +295,10 @@ public sealed partial class WorldState
             }
             if (Clock.Hour == Diplomacy.PlanningHour)
             {
+                Fauna.Wildlife.WorldDaily(this);
+                foreach (Colony colony in Colonies.ToList())
+                    Leadership.Daily(this, colony);
+                GodColony.Simulation.Colonies.Realms.Daily(this);
                 Diplomacy.Daily(this);
                 if (_migration)
                     foreach (Colony colony in Colonies.ToList())

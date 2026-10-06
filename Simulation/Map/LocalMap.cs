@@ -454,14 +454,24 @@ public sealed class LocalMap
     public bool CanStep(int fromX, int fromY, int toX, int toY, int maxStep = 1) =>
         IsWalkable(toX, toY) && Math.Abs(GetElevation(toX, toY) - GetElevation(fromX, fromY)) <= maxStep;
 
+    /// <summary>La même règle que <see cref="CanStep"/>, sur les indices de deux cases déjà dans la carte : le pathfinder l'appelle des millions de fois.</summary>
+    internal bool CanStepCell(int from, int to, int maxStep) =>
+        _originalElevation[to] > WaterLevel && _floodLevel[to] == 0 && Math.Abs(_elevation[to] - _elevation[from]) <= maxStep;
+
+    internal int ElevationCell(int cell) => _elevation[cell];
+
+    internal bool IsWalkableCell(int cell) => _originalElevation[cell] > WaterLevel && _floodLevel[cell] == 0;
+
     /// <summary>
     /// L'irrégularité du sol, de 0,94 à 1,06 (moyenne 1) : un petit relief de quelques cases, fixé par la graine de la carte. Elle multiplie le coût d'un pas ; les sentiers
     /// et les tracés d'accès épousent ainsi le terrain au lieu de tirer des lignes droites, et un même trajet reste le même d'une fois à l'autre.
     /// </summary>
-    public float Ruggedness(int x, int y)
+    public float Ruggedness(int x, int y) => RuggednessCell(y * Width + x);
+
+    internal float RuggednessCell(int cell)
     {
         byte[] table = _ruggedness ??= BuildRuggedness();
-        return RuggednessMin + (RuggednessMax - RuggednessMin) * (table[y * Width + x] / 255f);
+        return RuggednessMin + (RuggednessMax - RuggednessMin) * (table[cell] / 255f);
     }
 
     public const float RuggednessMin = 0.94f;
@@ -490,11 +500,23 @@ public sealed class LocalMap
     }
 
     /// <summary>Coût de traversée d'une case : on avance moins vite en forêt.</summary>
-    public float MoveCost(int x, int y) =>
-        GetFlora(x, y) == FloraType.Tree ? 1.6f : IsRiver(x, y) ? RiverMoveCost : IsCanalWet(x, y) ? CanalMoveCost : 1f;
+    public float MoveCost(int x, int y) => MoveCostCell(Index(x, y));
 
-    /// <summary>On avance deux fois moins vite dans l'eau d'une rivière.</summary>
-    public const float RiverMoveCost = 2f;
+    internal float MoveCostCell(int cell) =>
+        _flora[cell] == FloraType.Tree ? 1.6f : _river[cell] ? FordCostCell(cell) : _canal[cell] == 2 ? CanalMoveCost : 1f;
+
+    /// <summary>
+    /// Le coût du gué : on avance trois fois moins vite dans une rivière, six fois moins dans un grand fleuve, sauf sur une case de pont
+    /// (<see cref="Colonies.RoadSurface.Bridge"/>), qui ne ralentit plus personne.
+    /// </summary>
+    public float FordCost(int x, int y) => FordCostCell(Index(x, y));
+
+    private float FordCostCell(int cell) =>
+        Roads is { } roads && roads.SurfaceAt(cell) == Colonies.RoadSurface.Bridge ? 1f : _river[cell] && _riverWidth[cell] > 1 ? WideRiverMoveCost : RiverMoveCost;
+
+    /// <summary>Le coût d'une case de rivière à gué, et celui d'un grand fleuve.</summary>
+    public const float RiverMoveCost = 3f;
+    public const float WideRiverMoveCost = 6f;
 
     /// <summary>Matière de la couche numéro <paramref name="level"/> (0 = tout en bas) de la case.</summary>
     public Material MaterialAt(int x, int y, int level)

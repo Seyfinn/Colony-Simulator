@@ -25,8 +25,9 @@ public class VillageLifeTests
         (WorldState world, Colony colony) = Village();
         Build(world, colony, BuildingType.Pen);
         Husbandry.OnPenBuilt(colony, world.Clock);
-        Assert.Equal(Husbandry.StartingHerd(colony.Map.Biome, ResourceType.Chickens), colony.Chickens);
-        Assert.True(Husbandry.Animals(colony) > 0);
+        // L'enclos achevé est vide : tous les animaux sont sauvages au départ, il faut les capturer puis les apprivoiser.
+        Assert.Equal(0, Husbandry.Animals(colony));
+        (colony.Chickens, colony.Sheep, colony.Cows) = (4, 3, 2);
 
         GameClock spring = ClockAtDay(2);
         for (int day = 0; day < 8; day++)
@@ -52,6 +53,7 @@ public class VillageLifeTests
         (WorldState world, Colony colony) = Village();
         Build(world, colony, BuildingType.Pen);
         Husbandry.OnPenBuilt(colony, world.Clock);
+        (colony.Chickens, colony.Sheep, colony.Cows) = (4, 3, 2);
         GameClock winter = ClockAtDay(16);
         Assert.Equal(Season.Hiver, winter.Season);
 
@@ -83,7 +85,9 @@ public class VillageLifeTests
         {
             Build(world, colony, BuildingType.Pen);
             Husbandry.OnPenBuilt(colony, world.Clock);
+            Assert.Equal(0, Husbandry.Animals(colony));
         }
+        rich.Cows = 3; // des bêtes déjà apprivoisées
         Assert.Equal(0, poor.Cows);
         Assert.True(rich.Cows >= 3);
 
@@ -110,10 +114,10 @@ public class VillageLifeTests
         Clearing milk = Economy.Clear(rich, poor, ResourceType.Milk, 36);
         Assert.True(milk.Units > 0 && milk.UnitPrice < Economy.Cost(poor, ResourceType.Cows) / 10);
 
-        // Le lait et les œufs ne se mangent qu'en dernier recours (ils restent à vendre) ; les vaches accélèrent les champs.
+        // Le lait et les œufs ne se mangent qu'en dernier recours (ils restent à vendre), juste avant les céréales crues ; les vaches accélèrent les champs.
         rich.Stock.Add(ResourceType.Grain, 1);
         rich.Stock.TryTake(ResourceType.Food, rich.Stock.Get(ResourceType.Food));
-        Assert.True(rich.Stock.TryTakeMeal() && rich.Stock.Get(ResourceType.Grain) == 0 && rich.Stock.Get(ResourceType.Milk) == 20);
+        Assert.True(rich.Stock.TryTakeMeal() && rich.Stock.Get(ResourceType.Milk) == 19 && rich.Stock.Get(ResourceType.Grain) == 1); // les céréales crues passent après tout le reste
         Assert.True(Husbandry.PloughFactor(rich) > 1f && Husbandry.PloughFactor(poor) > 1f);
     }
 
@@ -198,6 +202,44 @@ public class VillageLifeTests
     }
 
     [Fact]
+    public void Le_grain_en_exces_ne_pourrit_qu_apres_un_an_et_jamais_dans_un_silo()
+    {
+        (WorldState world, Colony colony) = Village();
+        int surplus = 500;
+        colony.Stock.Add(ResourceType.Grain, Civic.StorageCapacity(colony) + surplus);
+        for (int day = 0; day < Civic.GrainShelfDays - 1; day++)
+            Civic.Daily(colony, ClockAtDay(day));
+        Assert.Equal(Civic.StorageCapacity(colony) + surplus, colony.Stock.Get(ResourceType.Grain));   // un grain jeune est protégé
+
+        colony.Stock.Add(ResourceType.Grain, 100);   // récolte plus récente que la précédente
+        Civic.Daily(colony, ClockAtDay(Civic.GrainShelfDays));
+        Assert.True(colony.Stock.Get(ResourceType.Grain) < Civic.StorageCapacity(colony) + surplus + 100);   // le vieux lot pourrit
+        Assert.Equal(100, colony.Stock.GrainAtLeast(1) - colony.Stock.GrainAtLeast(Civic.GrainShelfDays));   // le lot plus récent est intact
+
+        Build(world, colony, BuildingType.Silo);
+        int sheltered = colony.Stock.Get(ResourceType.Grain);
+        for (int day = 0; day < 3 * Civic.GrainShelfDays; day++)
+            Civic.Daily(colony, ClockAtDay(day));
+        Assert.Equal(sheltered, colony.Stock.Get(ResourceType.Grain));   // le silo garde tout, quel que soit l'âge
+    }
+
+    [Fact]
+    public void Le_grain_se_mange_du_plus_vieux_au_plus_jeune_et_garde_son_age_en_voyage()
+    {
+        var stock = new Stockpile();
+        stock.Add(ResourceType.Grain, 10);
+        stock.AgeGrain(); stock.AgeGrain();
+        stock.Add(ResourceType.Grain, 5);
+        Assert.Equal(10, stock.GrainAtLeast(2));
+        var other = new Stockpile();
+        Assert.True(stock.TryTransferTo(other, ResourceType.Grain, 12));   // 10 vieux + 2 jeunes
+        Assert.Equal(10, other.GrainAtLeast(2));
+        Assert.Equal(12, other.GrainAtLeast(0));
+        Assert.Equal(3, stock.Get(ResourceType.Grain));
+        Assert.Equal(0, stock.GrainAtLeast(1));
+    }
+
+    [Fact]
     public void Une_colonie_peut_avoir_plusieurs_enclos_quand_le_troupeau_deborde()
     {
         (WorldState world, Colony colony) = Village(16);
@@ -260,7 +302,7 @@ public class VillageLifeTests
         Assert.Equal(40, colony.Stock.Get(ResourceType.Beer));
         Assert.False(brew.Workshop.IsBrewing);
         Assert.Equal(1.5, colony.Labor.HoursPerUnit(ResourceType.Beer)!.Value);   // 60 h pour 40 chopes
-        Assert.Equal((50 * 1.5 + 2.0) / 40, Economy.BaselineCost(ResourceType.Beer));
+        Assert.Equal((50 * 1.5 + 6 * ScaleRules.HoursPerSecond) / 40, Economy.BaselineCost(ResourceType.Beer));
         Assert.Contains(ResourceType.Beer, Economy.Tradable);
 
         // L'entrain d'une chope dure cinq jours ; on n'en reprend une que quand il est retombé sous la moitié.
@@ -349,7 +391,7 @@ public class VillageLifeTests
         Assert.Equal(1, Health.PatientCount(colony));
         Assert.True(patient.Needs.Mood < 0.95f);
 
-        Health.Treat(colony);
+        Health.Treat(colony, Health.Patients(colony));
         for (int hour = 0; hour < 24; hour++)
             Health.Hourly(world, colony);
         Assert.Equal(Ailment.None, patient.Ailment);
@@ -390,12 +432,19 @@ public class VillageLifeTests
         colony.Stock.Add(ResourceType.Grain, 400);
         int before = colony.Stock.Get(ResourceType.Grain);
         Civic.Daily(colony, world.Clock);
-        Assert.True(colony.Stock.Get(ResourceType.Grain) < before, "Au-delà de la capacité, le grain pourrit.");
+        Assert.Equal(before, colony.Stock.Get(ResourceType.Grain));   // un grain jeune est protégé
+        for (int day = 0; day < Civic.GrainShelfDays; day++)
+            Civic.Daily(colony, world.Clock);
+        Assert.True(colony.Stock.Get(ResourceType.Grain) < before, "Au-delà de la capacité, le vieux grain pourrit.");
 
         int capacity = Civic.StorageCapacity(colony);
         Build(world, colony, BuildingType.Storehouse);
         Assert.True(Civic.StorageCapacity(colony) >= capacity + 100);
-        Assert.Equal(Civic.SchoolLearningBonus, Civic.LearningBonus(BuiltSchool(world, colony)));
+        Building school = BuiltSchool(world, colony).Buildings.First(b => b.Type == BuildingType.School);
+        // Le bonus de l'école ne profite qu'à l'élève qui y étudie vraiment, jamais à tous par la simple existence du bâtiment.
+        Assert.Equal(Civic.SchoolLearningBonus, Civic.LearningBonus(colony, new Activity(ActivityKind.Study, 0, 0, 1) { Building = school }));
+        Assert.Equal(1f, Civic.LearningBonus(colony, new Activity(ActivityKind.Wander, 0, 0, 1)));
+        Assert.Equal(1f, Civic.LearningBonus(colony, null));
     }
 
     private static Colony BuiltSchool(WorldState world, Colony colony)

@@ -50,12 +50,17 @@ public static class RoadDevelopment
 
     /// <summary>
     /// Un colon vient de finir un pas : le passage compte sur la cellule atteinte, une seule fois par pas terminé (jamais une interpolation graphique).
-    /// Un sentier ne naît que sur une cellule éligible : terre nue, hors des bâtiments, cultures, tombes, eau, canaux, place et végétation protégée.
+    /// Un sentier ne naît que sur une cellule éligible : terre nue, hors des bâtiments, cultures, eau, canaux, place et végétation protégée.
     /// </summary>
     internal static void OnStepCompleted(Colony colony, int toX, int toY)
     {
         LocalMap map = colony.Map;
         RoadLayer roads = map.Roads;
+        if (map.IsRiver(toX, toY))
+        {
+            Bridges.OnRiverStep(colony, map, toX, toY);
+            return;
+        }
         if (!IsEligible(colony, map, toX, toY))
             return;
         int cell = toY * map.Width + toX;
@@ -78,7 +83,7 @@ public static class RoadDevelopment
             return false;
         if (map.GetFlora(x, y) is FloraType.Tree or FloraType.Bush)
             return false;
-        return !colony.Spatial.Has(x, y, CellUse.Building | CellUse.Field | CellUse.Grave | CellUse.Canal | CellUse.Plaza | CellUse.PublicSpace);
+        return !colony.Spatial.Has(x, y, CellUse.Building | CellUse.Field | CellUse.Canal | CellUse.Plaza | CellUse.PublicSpace);
     }
 
     /// <summary>Planifie la vérification d'un sentier au jour où son usure, sans nouveau passage, tomberait sous le seuil de maintien (agenda déterministe).</summary>
@@ -103,6 +108,7 @@ public static class RoadDevelopment
         LocalMap map = colony.Map;
         RoadLayer roads = map.Roads;
         long today = colony.Clock.TotalDays;
+        Bridges.OnDayStart(colony);
         roads.TouchedToday.Clear();
         RoadWorks.OnDayStart(colony);
         if (!roads.ExpiryAgenda.Remove(today, out List<int>? due))

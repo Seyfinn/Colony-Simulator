@@ -102,7 +102,7 @@ public static class Cuisine
         if (!(colony.Sensors?.SurvivalAssured ?? true) || colony.Workshops(BuildingType.Oven).FirstOrDefault() is not { } oven)
             return null;
         return stock.Get(ResourceType.Eggs) >= 2 && stock.Get(ResourceType.Milk) >= 2 && stock.Get(ResourceType.Flour) >= 2
-            && stock.Get(ResourceType.Cake) + Crafting.Pending(colony, ResourceType.Cake) < CakeTarget(colony)
+            && stock.Get(ResourceType.Cake) + Crafting.Expected(colony, ResourceType.Cake) < CakeTarget(colony)
             ? (oven, CakeRecipe) : null;
     }
 
@@ -120,7 +120,7 @@ public static class Cuisine
             return null;
         Building? kitchen = colony.Workshops(BuildingType.Tavern).FirstOrDefault() ?? colony.Workshops(BuildingType.Oven).FirstOrDefault();
         return kitchen is not null && MeatOnHand(colony) >= 2 && stock.Get(ResourceType.Eggs) >= 1 && stock.Get(ResourceType.Grain) >= 2 + GrainKept
-            && stock.Get(ResourceType.Stew) + StewRecipe.OutputAmount * Crafting.Pending(colony, ResourceType.Stew) < StewTarget(colony) * fill
+            && stock.Get(ResourceType.Stew) + Crafting.Expected(colony, ResourceType.Stew) < StewTarget(colony) * fill
             ? (kitchen, StewRecipe) : null;
     }
 
@@ -136,7 +136,7 @@ public static class Cuisine
         Building? cask = colony.Workshops(BuildingType.Cask).FirstOrDefault(c => !c.IsBrewing
             && !colony.PresentMembers.Any(m => m.Activity is { Kind: ActivityKind.Craft, Product: ResourceType.Beer } filling && filling.Building == c));
         return cask is not null && stock.Get(ResourceType.Grain) >= BeerRecipe.Inputs[0].Amount + BeerGrainReserve(colony)
-            && stock.Get(ResourceType.Beer) + MugsInCasks(colony) + BeerRecipe.OutputAmount * Crafting.Pending(colony, ResourceType.Beer) < BeerTarget(colony) * fill
+            && stock.Get(ResourceType.Beer) + MugsInCasks(colony) + Crafting.Expected(colony, ResourceType.Beer) < BeerTarget(colony) * fill
             ? (cask, BeerRecipe) : null;
     }
 

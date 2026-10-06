@@ -18,14 +18,43 @@ public class FarmingTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void Les_champs_grandissent_avec_la_population_et_restent_exploitables()
+    {
+        // Un campement défriche petit, un village développé voit grand : la surface existe dans la simulation, pas seulement à l'écran.
+        Assert.Equal(Field.BaseSize, Farming.FieldSizeFor(ClosedColony(8).Colonies[0]));
+        Assert.Equal(6, Farming.FieldSizeFor(ClosedColony(20).Colonies[0]));
+
+        WorldState world = ClosedColony(40);
+        Colony colony = world.Colonies[0];
+        Assert.Equal(Field.MaxSize, Farming.FieldSizeFor(colony));
+        Assert.NotEmpty(colony.Fields);
+        Assert.All(colony.Fields, f => Assert.Equal(Field.MaxSize, f.Size));
+        Assert.All(colony.Fields, f => Assert.Equal(f.Size * f.Size, f.Plots.Count));
+        Assert.Equal(colony.Fields.Sum(f => f.Plots.Count), Farming.PlotCount(colony));
+
+        // Les parcelles sont distinctes, toutes dans l'emprise de leur champ, et le champ est accessible.
+        var tiles = Farming.Plots(colony).Select(p => (p.X, p.Y)).ToList();
+        Assert.Equal(tiles.Count, tiles.Distinct().Count());
+        foreach (Field field in colony.Fields)
+        {
+            Assert.All(field.Plots, p => Assert.True(field.Contains(p.X, p.Y)));
+            Assert.True(field.AccessX >= 0 && !field.Contains(field.AccessX, field.AccessY));
+        }
+
+        // Elles se sèment et se récoltent réellement : le grain entre au stock.
+        RunDays(world, 6 * TimeConstants.DaysPerSeason);
+        Assert.True(colony.Labor.TotalProduced(ResourceType.Grain) > 0, "Les grands champs doivent donner une récolte.");
+    }
+
+    [Fact]
     public void Au_printemps_la_colonie_defriche_des_champs_selon_ses_besoins()
     {
         WorldState world = ClosedColony(10);
         Colony colony = world.Colonies[0];
 
         Assert.NotEmpty(colony.Fields);
-        int plots = colony.Fields.Count * Field.Size * Field.Size;
-        Assert.InRange(plots, 10 * 8 * 0.4, 10 * 8 + Field.Size * Field.Size);
+        int plots = Farming.PlotCount(colony);
+        Assert.InRange(plots, 10 * 8 * 0.4, 10 * 8 + Field.BaseSize * Field.BaseSize);
 
         // Les champs ne se chevauchent pas, restent hors des huttes et sont en terrain plat.
         var tiles = Farming.Plots(colony).Select(p => (p.X, p.Y)).ToList();

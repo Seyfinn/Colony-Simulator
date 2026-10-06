@@ -62,6 +62,7 @@ public class WorkTests(ITestOutputHelper output)
         colony.WorkShares[WorkSector.Wood] = 0.3f;
         colony.WorkShares[WorkSector.Stone] = 0.2f;
         colony.WorkShares[WorkSector.Free] = 0f;
+        colony.WorkShares[WorkSector.Farm] = 0f;
         colony.AssignSectors();
 
         Assert.Equal(10, colony.Members.Count(m => m.Sector == WorkSector.Food));

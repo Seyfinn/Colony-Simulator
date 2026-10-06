@@ -68,7 +68,43 @@ public static class LogisticsPlanner
             if (site.WoodStillToBring - place.Stock.Get(ResourceType.Wood) > 0)
                 needs.Add(new SupplyNeed(place.Id, ResourceType.Wood, site.WoodStillToBring - place.Stock.Get(ResourceType.Wood), 0, SupplyPriority.Expansion, now + TimeConstants.TicksPerDay * 20, "chantier"));
         }
-        return needs.OrderBy(n => n.Priority).ThenBy(n => n.DueTicks).ThenBy(n => n.Good is null ? -1 : (int)n.Good).ToList();
+        return Uncovered(world, place, needs).OrderBy(n => n.Priority).ThenBy(n => n.DueTicks).ThenBy(n => n.Good is null ? -1 : (int)n.Good).ToList();
+    }
+
+    /// <summary>
+    /// Ce qui manque encore une fois retranché ce qu'une livraison en route apporte déjà : un besoin couvert par une cargaison qui roule n'est jamais compté deux fois
+    /// (ni chargé une seconde fois pour remplir une charrette).
+    /// </summary>
+    private static IEnumerable<SupplyNeed> Uncovered(WorldState world, Settlement place, List<SupplyNeed> needs)
+    {
+        var arriving = world.Caravans.Where(t => t.Purpose == TerritorialPurpose.Supply && t.ToSettlementId == place.Id && !t.Delivered && t.State != CaravanState.Home).ToList();
+        if (arriving.Count == 0)
+            return needs;
+        var covered = new Dictionary<ResourceType, int>();
+        decimal nutrition = 0;
+        foreach (Caravan trip in arriving)
+            foreach ((ResourceType good, int units) in trip.Inventory.Amounts)
+            {
+                covered[good] = covered.GetValueOrDefault(good) + units;
+                nutrition += units * ResourceCatalog.Nutrition(good);
+            }
+        var result = new List<SupplyNeed>();
+        foreach (SupplyNeed need in needs)
+        {
+            if (need.Good is null)
+            {
+                decimal take = Math.Min(nutrition, need.Nutrition);
+                nutrition -= take;
+                if (need.Nutrition - take > 0) result.Add(need with { Nutrition = need.Nutrition - take });
+            }
+            else
+            {
+                int take = Math.Min(covered.GetValueOrDefault(need.Good.Value), need.Units);
+                covered[need.Good.Value] = covered.GetValueOrDefault(need.Good.Value) - take;
+                if (need.Units - take > 0) result.Add(need with { Units = need.Units - take });
+            }
+        }
+        return result;
     }
 
     /// <summary>Ce que le village qui donne peut céder sans se priver : surplus au-delà de ses propres besoins et de ses réserves de survie.</summary>
@@ -85,10 +121,15 @@ public static class LogisticsPlanner
     }
 
     /// <summary>Un chargement qui couvre les besoins du plus pressé au moins pressé dans la limite de la charge, avec des vivres variés pour les besoins de nutrition.</summary>
-    public static Dictionary<ResourceType, int>? Cargo(WorldState world, Colony owner, Settlement source, IReadOnlyList<SupplyNeed> needs, int people, double routeDays)
+    public static Dictionary<ResourceType, int>? Cargo(WorldState world, Colony owner, Settlement source, IReadOnlyList<SupplyNeed> needs, int people, double routeDays) =>
+        Cargo(world, owner, source, needs, people, routeDays, out _);
+
+    /// <summary>Comme ci-dessus, et renvoie la charge utile du voyage (la capacité dont les vivres du trajet sont déjà déduits), pour mesurer son remplissage.</summary>
+    public static Dictionary<ResourceType, int>? Cargo(WorldState world, Colony owner, Settlement source, IReadOnlyList<SupplyNeed> needs, int people, double routeDays, out double usefulCapacity)
     {
-        // Les vivres du voyage pèsent sur la charge : on les réserve d'avance.
-        double capacity = CapacityPerPerson * people - 2 * routeDays * people * (double)Trade.TravelerNutritionPerDay / (double)Stockpile.GrainMealValue - 4;
+        // Les vivres du voyage pèsent sur la charge : on les réserve d avance.
+        double capacity = CapacityPerPerson * people * Trade.SupplyCapacityFactor(owner) - 2 * routeDays * people * (double)Trade.TravelerNutritionPerDay / (double)Stockpile.BreadMealValue - 4;
+        usefulCapacity = Math.Max(0, capacity);
         var cargo = new Dictionary<ResourceType, int>();
         decimal foodSpare;
         using (owner.UseSettlement(source))
@@ -100,7 +141,7 @@ public static class LogisticsPlanner
             {
                 decimal wanted = Math.Min(need.Nutrition, foodSpare);
                 // Les denrées qui se gâtent d'abord, puis ce qui se conserve ; ce qui est déjà promis plus haut dans le chargement n'est pas repris.
-                foreach (ResourceType food in new[] { ResourceType.Bread, ResourceType.SaltedMeat, ResourceType.Eggs, ResourceType.Milk, ResourceType.Grain })
+                foreach (ResourceType food in ResourceCatalog.TravelFood)
                 {
                     if (wanted <= 0 || capacity <= 0) break;
                     decimal each = ResourceCatalog.Nutrition(food);
@@ -130,22 +171,27 @@ public static class LogisticsPlanner
         const int people = 2;
         var candidates = owner.Settlements.Where(s => s != source && s.Status == SettlementStatus.Active)
             .Select(s => (Place: s, Needs: Needs(world, owner, s))).Where(p => p.Needs.Count > 0)
-            .OrderBy(p => p.Needs[0].Priority).ThenBy(p => p.Needs[0].DueTicks).ThenBy(p => p.Place.Id);
+            .OrderBy(p => p.Needs[0].Priority).ThenBy(p => p.Needs[0].DueTicks).ThenBy(p => p.Place.Id).ToList();
+        SupplyBatching.Prune(source, candidates.Select(p => p.Place.Id));
         foreach ((Settlement place, List<SupplyNeed> needs) in candidates)
         {
             var route = world.WorldMap.TravelRoute(source.RegionTileIndex, place.RegionTileIndex, Trade.HostileRegions(world, owner));
             if (route is null) continue;
             double days = route.Cost / WorldMap.CaravanTilesPerDay;
+            long arrival = world.Clock.Ticks + (long)(days * TimeConstants.TicksPerDay);
             // Une livraison de survie qui arriverait trop tard est quand même envoyée (mieux vaut tard), mais signalée.
-            if (needs[0].Priority == SupplyPriority.Survival && source.Population.Count > 0 && world.Clock.Ticks + days * TimeConstants.TicksPerDay > needs[0].DueTicks)
+            if (needs[0].Priority == SupplyPriority.Survival && source.Population.Count > 0 && arrival > needs[0].DueTicks)
                 ColonyBrain.Say(owner, world.Clock, $"{place.Name} manque de {needs[0].Reason} : la livraison prévue arrivera après la rupture.");
-            Dictionary<ResourceType, int>? cargo = Cargo(world, owner, source, needs, people, days);
-            // Un voyage de routine attend d'avoir de quoi remplir sa charge utile et laisse passer quelques jours entre deux livraisons ; la survie ne patiente pas.
-            if (cargo is null || needs[0].Priority != SupplyPriority.Survival
-                && (world.Clock.Ticks - place.LastSupplyTicks < RegularIntervalDays * TimeConstants.TicksPerDay || ResourceCatalog.WeightOf(cargo) < MinWorthwhileWeight)) continue;
+            Dictionary<ResourceType, int>? cargo = Cargo(world, owner, source, needs, people, days, out double useful);
+            if (cargo is null) continue;
+            // Une urgence part sans seuil ; une attente d'un jour de plus qui ferait arriver le chargement après la rupture est interdite, quelle que soit la priorité nominale.
+            bool urgent = needs[0].Priority == SupplyPriority.Survival || arrival + SupplyBatching.MaxWaitDays * TimeConstants.TicksPerDay > needs[0].DueTicks;
+            if (!SupplyBatching.ShouldDepart(source, place, world.Clock.Ticks, urgent, ResourceCatalog.WeightOf(cargo), useful, MinWorthwhileWeight, out _)) continue;
+            // Au départ : les stocks sont revalidés par le voyage lui-même ; l'attente ne s'efface que si le départ réussit.
             if (TerritorialTravel.Depart(world, source, place.RegionTileIndex, TerritorialPurpose.Supply, cargo, people, place) is not null)
             {
                 place.LastSupplyTicks = world.Clock.Ticks;
+                SupplyBatching.Clear(source, place);
                 return true;
             }
         }
@@ -168,10 +214,19 @@ public static class LogisticsPlanner
             if (wanted.Count == 0) continue;
             var route = world.WorldMap.TravelRoute(camp.RegionTileIndex, main.RegionTileIndex, Trade.HostileRegions(world, owner));
             if (route is null) continue;
-            Dictionary<ResourceType, int>? cargo = Cargo(world, owner, camp, wanted, 2, route.Cost / WorldMap.CaravanTilesPerDay);
-            if (cargo is not null && ResourceCatalog.WeightOf(cargo) >= MinWorthwhileWeight
+            Dictionary<ResourceType, int>? cargo = Cargo(world, owner, camp, wanted, 2, route.Cost / WorldMap.CaravanTilesPerDay, out double useful);
+            if (cargo is null)
+            {
+                SupplyBatching.Clear(camp, main);
+                continue;
+            }
+            // Un surplus de camp n'est jamais urgent : on groupe la charge (70 % remplie, ou un jour d'attente au plus).
+            if (SupplyBatching.ShouldDepart(camp, main, world.Clock.Ticks, urgent: false, ResourceCatalog.WeightOf(cargo), useful, MinWorthwhileWeight, out _)
                 && TerritorialTravel.Depart(world, camp, main.RegionTileIndex, TerritorialPurpose.Supply, cargo, 2, main) is not null)
+            {
+                SupplyBatching.Clear(camp, main);
                 return true;
+            }
         }
         return false;
     }

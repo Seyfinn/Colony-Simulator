@@ -248,12 +248,17 @@ public sealed class RoadWorksTests
         Assert.True(RoadWorks.IsAllowed(colony));
         RoadWorks.OnDayStart(colony);
         DevelopmentProject project = Assert.IsType<DevelopmentProject>(RoadWorks.ActiveProject(colony));
-        Assert.Equal(segment.Id, Assert.Single(project.SegmentIds));
+        // Le projet vise un tronçon usé et aménageable (pas forcément le plus long : les cases bâties ne comptent pas).
+        int chosen = Assert.Single(project.SegmentIds);
+        Assert.Contains(colony.Layout.RoadSegments, r => r.Id == chosen && r.ActiveProjectId == project.Id);
 
-        Colonist worker = colony.Workers.First();
-        Activity? activity = RoadWorks.NextActivity(worker, 1f, idleHands: true);
+        // Les habitants peuvent déjà avoir commencé pendant les trois jours de préparation ; ce poste compte dans le plafond.
+        Colonist worker = colony.Workers.FirstOrDefault(m => m.Activity?.SegmentId == chosen) ?? colony.Workers.First();
+        Activity? activity = worker.Activity is { SegmentId: > 0 } started ? started : RoadWorks.NextActivity(worker, 1f, idleHands: true);
         Assert.NotNull(activity);
-        Assert.Equal(segment.Id, activity!.SegmentId);
+        if (RoadWorks.ActiveWorkers(colony) >= RoadWorks.WorkerCap(colony))
+            Assert.Null(RoadWorks.NextActivity(colony.Workers.First(m => m != worker), 1f, idleHands: true));
+        Assert.Equal(chosen, activity!.SegmentId);
         Assert.True(activity.Kind is ActivityKind.BuildRoad or ActivityKind.ClearAccess or ActivityKind.Chop);
         // Au plus 10 % des travailleurs (arrondi inférieur), et un seul bras en temps libre si le plafond vaut zéro.
         Assert.Equal((int)(colony.Workers.Count() * SettlementRules.RoadWorkerShare), RoadWorks.WorkerCap(colony));

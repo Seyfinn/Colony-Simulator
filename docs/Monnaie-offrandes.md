@@ -1,11 +1,11 @@
 # Monnaie frappée, offrandes et souhaits
 
-Contrats des lots 7 et 8 du plan économique, confrontés au code actuel. Les valeurs sont des réglages initiaux, non validés par une campagne d'équilibrage.
+Contrats des lots 7 et 8 du plan économique, confrontés au code actuel. Les réglages courants et leur campagne de mesure sont décrits dans [Equilibrage.md](Equilibrage.md).
 
 ## Frappe monétaire (`MonetaryLedger`, `Minting`)
 
-- L'atelier de frappe (`BuildingType.Mint`) demande le savoir `Coinage`. Sa recette : 1 or → 2 pièces, 24 secondes, par une activité de fabrication ordinaire (intrants engagés, compétence de forge). Les pièces naissent à l'achèvement, directement dans le stock local de l'atelier.
-- Le quota est une règle de capacité : au début de chaque année de 20 jours, `WorldState.Money` établit un plafond mondial de 5 % de la monnaie présente (stocks de tous les établissements et caravanes), avec un reste de conversion inférieur à une pièce reporté à l'année suivante. Il est réparti entre les colonies vivantes selon leur population citoyenne (plus fort reste, puis identifiant). Un quota inutilisé expire ; une colonie fondée en cours d'année n'a pas de part ; ouvrir plusieurs ateliers ou camps n'augmente pas le quota.
+- L'atelier de frappe (`BuildingType.Mint`) demande le savoir `Coinage`. Sa recette : 1 or → 40 pièces, 24 secondes, par une activité de fabrication ordinaire (intrants engagés, compétence de forge). Ce rendement est proche du coût de référence de l'or affiné ; les pièces naissent à l'achèvement, directement dans le stock local de l'atelier.
+- Le quota est une règle de capacité : au début de chaque année de 20 jours, `WorldState.Money` établit un plafond mondial de 20 % de la monnaie présente (stocks de tous les établissements et caravanes), avec un reste de conversion inférieur à une pièce reporté à l'année suivante. Il est réparti entre les colonies vivantes selon leur population citoyenne (plus fort reste, puis identifiant). Un quota inutilisé expire ; une colonie fondée en cours d'année n'a pas de part ; ouvrir plusieurs ateliers ou camps n'augmente pas le quota.
 - Un lot engage son quota au départ (`Activity.MintCoins`, `MintYear`). Interrompu, il rend l'or et l'engagement (si l'année est encore celle du budget) ; un lot qui traverse la fin d'année garde son engagement dans le budget de son année et ne réduit pas le nouveau.
 - La frappe ne dépend d'aucune vente. Une colonie ne veut frapper que lorsqu'elle a moins de 40 pièces par habitant, de l'or non réservé aux bijoux, du quota, et qu'elle n'est pas en crise ; l'or à affiner pour la frappe reste borné (les gîtes d'or sont finis).
 - Comptabilité : `MonetaryLedger.Imbalance` = pièces présentes − (dotations + frappe − pertes). Une dotation de fondation d'une colonie politique est enregistrée ; aucun camp n'en reçoit. Un schisme partage le quota restant et la monnaie existante sans créer de pièce.

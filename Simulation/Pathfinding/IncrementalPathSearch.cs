@@ -53,6 +53,9 @@ public sealed class PathSearchState
     public int Expanded { get; internal set; }
     public SearchStatus Status { get; internal set; }
 
+    /// <summary>Vrai pour un raccourci : chaque pas de terre ordinaire est compté au coût d un chemin de terre aménagé (le coût futur), jamais un passage par des cases infranchissables.</summary>
+    public bool AssumeDirtRoad { get; internal set; }
+
     /// <summary>La durée du chemin trouvé, en secondes.</summary>
     public float ResultSeconds { get; internal set; }
 
@@ -72,7 +75,7 @@ public sealed class PathSearchState
 /// <summary>
 /// Un A* reprenable pour la planification urbaine : il avance de quelques expansions par rendez-vous et garde son état entre deux. Son contexte est indépendant
 /// du pathfinder individuel des colons, dont le travail mutable ne doit jamais être écrasé entre deux lots. Même relief, mêmes diagonales, même coût de
-/// pas que le mouvement (<see cref="TraversalCost"/>) ; l'emprise future est déjà occupée, les champs, tombes et bâtiments existants sont des obstacles.
+/// pas que le mouvement (<see cref="TraversalCost"/>) ; l'emprise future est déjà occupée, les champs et bâtiments existants sont des obstacles.
 /// </summary>
 public static class IncrementalPathSearch
 {
@@ -87,12 +90,13 @@ public static class IncrementalPathSearch
 
     /// <summary>Ouvre une recherche de <paramref name="start"/> à <paramref name="goal"/> (index de cellule). Réutilise les tableaux d'une recherche terminée.</summary>
     public static PathSearchState Begin(LocalMap map, LocalSpatialIndex index, int start, int goal, float maxSeconds,
-        (int X, int Y, int Width, int Height)? blocked = null)
+        (int X, int Y, int Width, int Height)? blocked = null, bool assumeDirtRoad = false)
     {
         PathSearchState state = Rent(map.Width * map.Height);
         state.StartCell = start;
         state.GoalCell = goal;
         state.MaxSeconds = maxSeconds;
+        state.AssumeDirtRoad = assumeDirtRoad;
         (state.BlockX, state.BlockY, state.BlockWidth, state.BlockHeight) = blocked ?? (0, 0, 0, 0);
         state.OccupancyRevision = index.Revision;
         state.TerrainRevision = map.TerrainRevision;
@@ -189,7 +193,7 @@ public static class IncrementalPathSearch
                 if (state.Mark[next] == 2 || IsBlocked(state, index, nx, ny, next))
                     continue;
 
-                float step = TraversalCost.StepSeconds(map, cx, cy, nx, ny) + FloraSeconds(map, nx, ny);
+                float step = (state.AssumeDirtRoad ? TraversalCost.StepSecondsPaved(map, cy * width + cx, ny * width + nx, diagonal) : TraversalCost.StepSeconds(map, cx, cy, nx, ny)) + FloraSeconds(map, nx, ny);
                 float cost = state.Cost[current] + step;
                 if (cost > state.MaxSeconds)
                 {
@@ -224,7 +228,7 @@ public static class IncrementalPathSearch
     }
 
     private static bool IsStale(PathSearchState state, LocalMap map, LocalSpatialIndex index) =>
-        state.SurfaceRevision != map.Roads.SurfaceRevision
+        (!state.AssumeDirtRoad && state.SurfaceRevision != map.Roads.SurfaceRevision)
         || !map.TerrainUnchangedSince(state.TerrainRevision, state.MinX - 1, state.MinY - 1, state.MaxX + 1, state.MaxY + 1)
         || !index.UnchangedSince(state.OccupancyRevision, state.MinX - 1, state.MinY - 1, state.MaxX + 1, state.MaxY + 1);
 
@@ -234,7 +238,7 @@ public static class IncrementalPathSearch
             return false;
         if (state.BlockWidth > 0 && x >= state.BlockX && y >= state.BlockY && x < state.BlockX + state.BlockWidth && y < state.BlockY + state.BlockHeight)
             return true;
-        return (index.UseAt(cell) & (CellUse.Building | CellUse.Field | CellUse.Grave)) != 0 && !index.IsLegacyOpen(x, y);
+        return (index.UseAt(cell) & (CellUse.Building | CellUse.Field)) != 0 && !index.IsLegacyOpen(x, y);
     }
 
     private static float FloraSeconds(LocalMap map, int x, int y) => map.GetFlora(x, y) switch

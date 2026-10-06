@@ -27,6 +27,24 @@ public sealed class MintingTests
     }
 
     [Fact]
+    public void La_frappe_expose_son_lot_son_utilisation_et_les_pieces_produites_sans_double_compte()
+    {
+        var (world, colony, mint) = Mint();
+        var activity = new Activity(ActivityKind.Craft, mint.X, mint.Y, 1) { Building = mint };
+        Recipe recipe = Crafting.RecipeFor(colony, BuildingType.Mint);
+        Assert.True(Minting.TryCommit(colony, activity, recipe));
+        Assert.Equal(recipe.OutputAmount, world.Money.CommittedThisYear);
+        Minting.Complete(colony, activity);
+        Minting.Complete(colony, activity);
+        Assert.Equal(recipe.OutputAmount, colony.PrimarySettlement.ScaleLedger.Today.Produced[ResourceType.Coins]);
+        Assert.Equal(0, world.Money.CommittedThisYear);
+        MintWorkshopView view = Assert.Single(ScaleSnapshot.Of(colony.PrimarySettlement).Mints);
+        Assert.Equal(recipe.OutputAmount, view.BatchCoins);
+        Assert.Null(view.Utilization);
+        Assert.Equal(0, view.OutputWaiting);
+    }
+
+    [Fact]
     public void Le_plafond_annuel_est_partage_exactement_et_de_facon_deterministe()
     {
         var world = new WorldState(3, startingColonists: 9, migration: false, lifecycle: false, trade: false, colonyCount: 3);
@@ -41,7 +59,7 @@ public sealed class MintingTests
     }
 
     [Fact]
-    public void Un_atelier_frappe_deux_pieces_par_or_dans_la_limite_du_quota()
+    public void Un_atelier_frappe_quarante_pieces_par_or_dans_la_limite_du_quota()
     {
         var (world, colony, _) = Mint();
         long allowance = world.Money.AllowanceOf(colony);
@@ -49,10 +67,10 @@ public sealed class MintingTests
         colony.Stock.Add(ResourceType.Gold, 100); // beaucoup plus d'or que de quota
         Run(world, 24 * 12);
         long minted = world.Money.Minted;
-        Assert.InRange(minted, 2, allowance);
-        Assert.Equal(0, minted % 2);
+        Assert.InRange(minted, MonetaryLedger.CoinsPerGold, allowance);
+        Assert.Equal(0, minted % MonetaryLedger.CoinsPerGold);
         Assert.Equal(ColonyFounder.StartingCoins + minted, colony.Stock.Get(ResourceType.Coins));
-        Assert.Equal(120 - minted / 2, colony.Stock.Get(ResourceType.Gold));
+        Assert.InRange(colony.Stock.Get(ResourceType.Gold), 120 - minted / MonetaryLedger.CoinsPerGold - 2, 120 - minted / MonetaryLedger.CoinsPerGold); // un lot en cours (ou un bijou) peut avoir déjà pris de l'or
         Assert.Equal(0, world.Money.Imbalance(world));
         Assert.InRange(world.Money.UsedBy(colony), minted, allowance);
     }
@@ -79,7 +97,7 @@ public sealed class MintingTests
         Assert.True(ToolChain.TryTakeInputs(colony, recipe, out double hours, out Stockpile inputs));
         activity.InputsTaken = true; activity.InputsInventory = inputs; activity.CommittedRecipe = recipe; activity.InputLaborHours = hours;
         worker.Activity = activity;
-        Assert.Equal(before + 2, world.Money.UsedBy(colony));
+        Assert.Equal(before + MonetaryLedger.CoinsPerGold, world.Money.UsedBy(colony));
         Assert.Equal(19, colony.Stock.Get(ResourceType.Gold));
         ColonistAI.DetachFromColony(worker);
         Assert.Equal(before, world.Money.UsedBy(colony));
@@ -102,7 +120,7 @@ public sealed class MintingTests
         Assert.Equal(oldYear + 1, world.Money.Year);
         Assert.Equal(0, world.Money.UsedBy(colony));
         world.Money.Complete(activity.MintYear, activity.MintCoins);
-        Assert.Equal(2, world.Money.Minted);
+        Assert.Equal(MonetaryLedger.CoinsPerGold, world.Money.Minted);
         Assert.Equal(0, world.Money.MintedThisYear);
         world.Money.Release(colony, activity.MintYear, activity.MintCoins);
         Assert.Equal(0, world.Money.UsedBy(colony));

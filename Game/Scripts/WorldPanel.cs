@@ -121,15 +121,15 @@ public partial class WorldPanel : CanvasLayer
         _mapButton.Name = "CarteMonde"; _mapButton.ToggleMode = true;
         _mapButton.Pressed += () => MapOpen = !MapOpen;
         navigation.AddChild(_mapButton);
-        _economyButton = Chip("Économie", "Stocks, coûts et commerce de la colonie · E");
+        _economyButton = Chip("Économie", "Stocks, coûts et commerce de l'empire · E");
         _economyButton.Name = "Economie"; _economyButton.ToggleMode = true;
         _economyButton.Pressed += () => Open = !Open;
         navigation.AddChild(_economyButton);
-        _civilizationButton = Chip("Savoirs et relations", "Âge, savoirs, alliances et guerres de la colonie · R");
+        _civilizationButton = Chip("Savoirs et relations", "Âge, savoirs, alliances et guerres de l'empire · R");
         _civilizationButton.Name = "Civilisation"; _civilizationButton.ToggleMode = true;
         _civilizationButton.Pressed += () => CivilizationOpen = !CivilizationOpen;
         navigation.AddChild(_civilizationButton);
-        _foundingButton = Chip("+ Fonder une colonie", "Choisir un peuple, une région et un emplacement de camp");
+        _foundingButton = Chip("+ Fonder un empire", "Choisir un peuple, une région et un emplacement de camp");
         _foundingButton.Name = "FonderColonie";
         _foundingButton.Pressed += () => FoundingRequested?.Invoke();
         navigation.AddChild(_foundingButton);
@@ -200,7 +200,7 @@ public partial class WorldPanel : CanvasLayer
         while (_colonyButtons.Count < _world.Colonies.Count)
         {
             int index = _colonyButtons.Count;
-            var button = Chip("", "Observer cette colonie · Tab pour passer à la suivante");
+            var button = Chip("", "Observer cet empire · Tab pour passer au suivant");
             button.Name = $"Colonie{index}"; button.ToggleMode = true;
             button.CustomMinimumSize = new Vector2(120, 30);
             button.Pressed += () => { MapOpen = false; ColonyRequested?.Invoke(index); };
@@ -211,7 +211,7 @@ public partial class WorldPanel : CanvasLayer
             Colony colony = _world.Colonies[i];
             var button = _colonyButtons[i];
             button.Text = $"{colony.Name} · {colony.Members.Count}";
-            button.TooltipText = $"{colony.Name} · {colony.Species.Plural}\n{colony.Members.Count} habitants · Humeur {colony.AverageMood * 100:0} %\nObserver cette colonie · Tab pour passer à la suivante";
+            button.TooltipText = $"{colony.Name} · {colony.Species.Plural}\n{colony.Members.Count} habitants · Humeur {colony.AverageMood * 100:0} %\nObserver cet empire · Tab pour passer au suivant";
             button.SetPressedNoSignal(i == _observed);
         }
         _map.Observed = _observed;

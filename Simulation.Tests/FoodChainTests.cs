@@ -16,10 +16,10 @@ public class FoodChainTests(ITestOutputHelper output)
         stock.Add(ResourceType.Grain, 2);
         stock.Add(ResourceType.Bread, 1);
         stock.Add(ResourceType.Flour, 100);
-        Assert.Equal(9.85m, stock.FoodNutrition);
-        Assert.Equal(16, stock.FoodUnits);
+        Assert.Equal(8.85m, stock.FoodNutrition);
+        Assert.Equal(14, stock.FoodUnits); // deux grains crus ne valent pas même un repas
         Assert.True(stock.TryTakeMeal());
-        Assert.Equal(9.25m, stock.FoodNutrition);
+        Assert.Equal(8.25m, stock.FoodNutrition);
     }
 
     [Fact]
@@ -63,7 +63,8 @@ public class FoodChainTests(ITestOutputHelper output)
         stock.Add(ResourceType.Bread, 1);
         stock.Add(ResourceType.Grain, 1);
         stock.Add(ResourceType.Flour, 5);
-        Assert.Equal(3, stock.FoodUnits); // la farine ne se mange pas
+        Assert.Equal(2, stock.FoodUnits); // la farine ne se mange pas, un grain cru ne fait pas un repas
+        Assert.True(stock.HasAnyMeal);
 
         Assert.True(stock.TryTakeMeal(out float first));
         Assert.Equal(Stockpile.WildMealValue, first);
@@ -72,6 +73,7 @@ public class FoodChainTests(ITestOutputHelper output)
         Assert.True(stock.TryTakeMeal(out float third));
         Assert.Equal(Stockpile.GrainMealValue, third);
         Assert.False(stock.TryTakeMeal(out _));
+        Assert.InRange(Stockpile.GrainMealValue, 0.01f, 0.15f); // très faible, mais jamais nulle
         Assert.True(Stockpile.BreadMealValue > Stockpile.GrainMealValue);
     }
 
@@ -90,14 +92,15 @@ public class FoodChainTests(ITestOutputHelper output)
         (WorldState world, Colony colony) = Closed();
         colony.Labor.Record(ResourceType.Grain, workerHours: 20, units: 20);
 
+        // Le four d'abord : il moud à bras, de quoi faire du pain sans cours d'eau.
         Set(colony, ResourceType.Grain, 10);
-        Assert.Null(FoodChain.NextWorkshopToBuild(colony, world.Map));   // pas encore de surplus
+        Assert.Equal(BuildingType.Oven, FoodChain.NextWorkshopToBuild(colony, world.Map));
+        Complete(world, colony, BuildingType.Oven);
+        Assert.Null(FoodChain.NextWorkshopToBuild(colony, world.Map));   // pas encore de surplus pour un moulin
 
         Set(colony, ResourceType.Grain, 200);
         Assert.Equal(BuildingType.Mill, FoodChain.NextWorkshopToBuild(colony, world.Map));
         Complete(world, colony, BuildingType.Mill);
-        Assert.Equal(BuildingType.Oven, FoodChain.NextWorkshopToBuild(colony, world.Map));
-        Complete(world, colony, BuildingType.Oven);
         Assert.Null(FoodChain.NextWorkshopToBuild(colony, world.Map));
     }
 
@@ -126,7 +129,7 @@ public class FoodChainTests(ITestOutputHelper output)
         colony.Labor.Record(ResourceType.Grain, workerHours: 20, units: 20);
         Complete(world, colony, BuildingType.Mill);
         Complete(world, colony, BuildingType.Oven);
-        int reserve = (int)Math.Ceiling(10 * ColonyBrain.MealsPerColonistPerDay * 3);
+        int reserve = (int)Math.Ceiling(10 * ColonyBrain.MealsPerColonistPerDay * 0.5f);
 
         Set(colony, ResourceType.Grain, reserve + 2);
         Assert.Null(FoodChain.PickJob(colony, 20));                 // surplus de 2 : pas assez pour une mesure
@@ -144,6 +147,28 @@ public class FoodChainTests(ITestOutputHelper output)
         Set(colony, ResourceType.Bread, 500);
         Set(colony, ResourceType.Flour, 6);
         Assert.NotEqual(BuildingType.Oven, FoodChain.PickJob(colony, 20)?.Type);
+    }
+
+    [Fact]
+    public void Sans_moulin_le_four_moud_a_bras_pour_un_rendement_moindre()
+    {
+        (WorldState world, Colony colony) = Closed();
+        colony.Labor.Record(ResourceType.Grain, workerHours: 20, units: 20);
+        Complete(world, colony, BuildingType.Oven);
+        Set(colony, ResourceType.Wood, 100);
+        Set(colony, ResourceType.Grain, 100);
+
+        Assert.True(FoodChain.HandMills(colony));
+        Recipe hand = Crafting.RecipeFor(colony, BuildingType.Oven);
+        Assert.Contains(hand.Inputs, i => i.Type == ResourceType.Grain);
+        Assert.Equal(BuildingType.Oven, FoodChain.PickJob(colony, 20)!.Type);
+
+        Complete(world, colony, BuildingType.Mill);
+        Assert.False(FoodChain.HandMills(colony));
+        Recipe flour = Crafting.RecipeFor(colony, BuildingType.Oven);
+        Assert.Contains(flour.Inputs, i => i.Type == ResourceType.Flour);
+        Assert.Equal(ResourceType.Bread, flour.Output);
+        Assert.True(flour.OutputAmount > hand.OutputAmount); // pour trois mesures de grain, le moulin donne plus de pain que la meule à bras
     }
 
     [Fact]

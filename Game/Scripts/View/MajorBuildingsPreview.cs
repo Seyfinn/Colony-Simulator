@@ -21,12 +21,14 @@ public partial class MajorBuildingsPreview : Node2D
         TextureFilter = TextureFilterEnum.Nearest;
         bool extensions = false;
         bool details = false;
+        bool mines = false;
         foreach (string arg in OS.GetCmdlineUserArgs())
         {
             if (arg.StartsWith("--capture=")) _capture = arg[10..];
             if (arg == "--fallback") AssetLibrary.NativeFallbackForValidation = true;
             if (arg == "--extensions") extensions = true;
             if (arg == "--details") details = true;
+            if (arg == "--mine-stages") mines = true;
         }
         var world = new WorldState(42, 128, 128, startingColonists: 8, migration: false, lifecycle: false, trade: false);
         Colony colony = world.Colonies[0];
@@ -35,7 +37,7 @@ public partial class MajorBuildingsPreview : Node2D
         MethodInfo river = typeof(LocalMap).GetMethod("SetRiver", BindingFlags.Instance | BindingFlags.NonPublic)!;
         for (int y = 0; y < map.Height; y++)
         for (int x = 0; x < map.Width; x++) terrain.Invoke(map, [x, y, 5, SoilType.Grass, FloraType.None, 0f, 0.5f]);
-        if (!extensions && !details)
+        if (!extensions && !details && !mines)
         {
             for (int y = 5; y < 31; y++) river.Invoke(map, [41, y, 41, y + 1, 3]);
             for (int x = 25; x < 39; x++) river.Invoke(map, [x, 27, x + 1, 27, 3]);
@@ -45,7 +47,7 @@ public partial class MajorBuildingsPreview : Node2D
         var terrainView = new MapView(); terrainView.Init(map); AddChild(terrainView);
         var view = new ColonistsView { Alpha = 1, AmbientEffectsEnabled = false };
         view.Init(world, colony); AddChild(view);
-        AddChild(new Camera2D { Position = new Vector2(details ? 26 : extensions ? 31 : 27, details ? 18 : extensions ? 21 : 20) * 32,
+        AddChild(new Camera2D { Position = new Vector2(mines ? 25 : details ? 26 : extensions ? 31 : 27, mines || details ? 18 : extensions ? 21 : 20) * 32,
             Zoom = Vector2.One * (details ? 1.6f : 1.15f) });
         Building BuildingAt(BuildingType type, int x, int y, float progress = 1)
         {
@@ -53,16 +55,32 @@ public partial class MajorBuildingsPreview : Node2D
             Set(building, "Progress", progress);
             Set(building, "WoodDelivered", building.WoodRequired);
             Set(building, "StoneDelivered", building.StoneRequired);
-            Texture2D image = BuildingSprites.For(building);
-            if (image.GetWidth() != building.Width * 32 || image.GetHeight() != building.Height * 32 + 16)
-                throw new InvalidOperationException("La silhouette ne suit pas l'emprise : " + type);
-            var label = new Label { Text = $"{Building.NameOf(type)} · {building.Width} × {building.Height}\n{building.WoodRequired} bois · {building.StoneRequired} pierres",
+            foreach (WoodlandBiome biome in Enum.GetValues<WoodlandBiome>())
+            {
+                Texture2D image = BuildingSprites.For(building, biome);
+                if (image.GetWidth() != building.Width * 32 || image.GetHeight() != building.Height * 32 + 16)
+                    throw new InvalidOperationException("La silhouette ne suit pas l'emprise : " + type);
+                if (type == BuildingType.MineDepot && !building.IsComplete)
+                {
+                    Texture2D chantier = BuildingSprites.MineSite(building, biome);
+                    if (chantier.GetWidth() != image.GetWidth() || chantier.GetHeight() != image.GetHeight())
+                        throw new InvalidOperationException("Le chantier de mine tronque son emprise.");
+                }
+            }
+            string avancement = building.IsComplete ? "" : $" · chantier {progress:P0}";
+            var label = new Label { Text = $"{Building.NameOf(type)} · {building.Width} × {building.Height}{avancement}\n{building.WoodRequired} bois · {building.StoneRequired} pierres",
                 Position = new Vector2(building.X, building.Y + building.Height) * 32 + new Vector2(0, 6) };
             label.AddThemeFontSizeOverride("font_size", 13); label.AddThemeColorOverride("font_color", ArtDirection.Charcoal);
             if (!extensions) AddChild(label);
+            else label.Free();
             return building;
         }
-        if (details)
+        if (mines)
+        {
+            float[] etapes = [.05f, .25f, .55f, .85f, 1f];
+            for (int i = 0; i < etapes.Length; i++) BuildingAt(BuildingType.MineDepot, 5 + i * 8, 16, etapes[i]);
+        }
+        else if (details)
         {
             BuildingAt(BuildingType.MineDepot, 13, 12);
             BuildingAt(BuildingType.Pen, 24, 12);
@@ -132,7 +150,7 @@ public partial class MajorBuildingsPreview : Node2D
             Set(person, "X", x); Set(person, "PrevX", x); Set(person, "Y", y); Set(person, "PrevY", y);
         }
         var layer = new CanvasLayer(); AddChild(layer);
-        var title = new Label { Text = details ? "Mines, enclos et marchés · matériaux et détails" : extensions ? "Des bâtiments qui grandissent avec le village" : "Des équipements aux grands ouvrages", Position = new Vector2(30, 18) };
+        var title = new Label { Text = mines ? "Mine · fondations, ossatures, couverture et mécanismes" : details ? "Mines, enclos et marchés · matériaux et détails" : extensions ? "Des bâtiments qui grandissent avec le village" : "Des équipements aux grands ouvrages", Position = new Vector2(30, 18) };
         title.AddThemeFontSizeOverride("font_size", 28); title.AddThemeColorOverride("font_color", ArtDirection.Charcoal); layer.AddChild(title);
         GD.Print("Grandes emprises : silhouettes, chantiers et orientations validés.");
     }

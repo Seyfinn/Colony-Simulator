@@ -144,7 +144,7 @@ public partial class Main
     {
         int population = _world.Colonies.Sum(c => c.Members.Count);
         _hud.ShowUnsettled("Vue chiffrée",
-            $"{_world.Colonies.Count} colonie{(_world.Colonies.Count > 1 ? "s" : "")} · {population:N0} habitants · la carte est en veille pendant que le temps file");
+            $"{_world.Colonies.Count} empire{(_world.Colonies.Count > 1 ? "s" : "")} · {population:N0} habitants · la carte est en veille pendant que le temps file");
         _hud.SetTileInfo("Vue chiffrée : ni terrain ni habitants à dessiner, la simulation a presque tout le processeur.   1, 2 ou 3 : retour à la carte.");
         bool stopped = _speed == GameSpeed.Pause || _menu.IsOpen || _foundingPanel.IsOpen;
         _statsPanel!.Refresh(_world, _history, _observed,
